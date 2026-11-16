@@ -127,7 +127,7 @@ First generation, nothing replaced: `input/pattern_rgba8.png`,
 | CI `unit` job: `UnsupportedOperationException at DefaultSdkProvider` (run 1) | Robolectric's SDK 36 runtime requires Java 21; CI uses JDK 17 (local checks had run on JDK 21) | Screenshot test runs on Robolectric SDK 35; image re-recorded before first merge; local verification repeated on JDK 17 |
 | `OPT_IN_USAGE_ERROR` in `LoType.kt` | Variable-font axis API is `@ExperimentalTextApi` | Explicit opt-in on that one function |
 
-Plan B used: see "Proof" for the emulator job.
+Plan B used: no. Both emulator jobs (API 34 and API 36) passed on the first run without `continue-on-error`.
 
 ## Proof
 
