@@ -105,8 +105,12 @@ python3 tools/golden/generate.py --check
 - **Module plugins:** a module applies only `lineover.*` plugins. Third-party Gradle
   plugins are added to `build-logic` and wrapped in a convention plugin.
 - **Signing:** release is signed from the `KEYSTORE_B64` / `KEYSTORE_PASS` / `KEY_ALIAS` /
-  `KEY_PASS` secrets and falls back to the debug key when they are absent. The debug build
+  `KEY_PASS` secrets and falls back to the debug key when they are absent or invalid (CI
+  then shows a warning naming the bad secret; `release.yml` fails instead). The debug build
   has the application id `dev.mark.lineover.debug` so both can be installed side by side.
+- **NDK in CI** is installed by `tools/ci/install-native-toolchain.sh` (verified, retried)
+  before Gradle runs. Do not rely on AGP's own NDK download: it is not retried and a
+  truncated archive fails the build.
 - **Emulator = SwiftShader.** Instrumented tests prove correctness only. Performance is
   measured on the phone (`:benchmark`), never in CI.
 

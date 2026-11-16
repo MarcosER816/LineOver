@@ -315,6 +315,6 @@ The 27 blend modes: Normal, Dissolve, Darken, Multiply, Color Burn, Linear Burn,
 | --- | --- | --- | --- | --- | --- |
 | `workflow.batch` | Batch | — (shell) | `home/batch` | 28 | reserved |
 | `workflow.sync_settings` | Sync settings | — (shell) | `home/sync-settings` | 28 | reserved |
-| `workflow.tool_search` | Tool search | — (shell) | `topbar/tool-search` | 28 | reserved |
+| `workflow.tool_search` | Tool search | — (shell) | `topbar/tool-search` | 3 | reserved |
 | `workflow.mini_tutorials` | Mini tutorials | — (shell) | `settings/tutorials` | 28 | reserved |
 | `workflow.guides_grid_rulers` | Guides / grid / rulers | — (shell) | `canvas/overlay/guides` | 28 | reserved |

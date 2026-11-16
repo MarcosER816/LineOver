@@ -30,6 +30,8 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
       - uses: gradle/actions/setup-gradle@v6
+      - name: Install NDK and CMake
+        run: tools/ci/install-native-toolchain.sh
       - name: detekt + ktlint
         run: ./gradlew detekt ktlintCheck --continue
       - name: Android lint
@@ -56,6 +58,8 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
       - uses: gradle/actions/setup-gradle@v6
+      - name: Install NDK and CMake
+        run: tools/ci/install-native-toolchain.sh
       - name: Unit tests + screenshot verification
         run: ./gradlew testDebugUnitTest verifyRoborazziDebug --continue
       - name: Upload screenshot and golden diffs
@@ -120,17 +124,26 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
       - uses: gradle/actions/setup-gradle@v6
+      - name: Install NDK and CMake
+        run: tools/ci/install-native-toolchain.sh
       - name: Decode release keystore (if the secrets exist)
         id: keystore
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          LINEOVER_KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          LINEOVER_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEYSTORE_PROBLEM_LEVEL: warning
         run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/lineover-release.jks"
-            echo "LINEOVER_KEYSTORE_FILE=$RUNNER_TEMP/lineover-release.jks" >> "$GITHUB_ENV"
+          # No secrets, or secrets that do not hold a usable keystore: the release
+          # build is signed with the debug key (a warning explains what is wrong).
+          # Tagged releases (release.yml) always require a valid keystore.
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "signing=debug key (KEYSTORE_B64 secret not set)" >> "$GITHUB_OUTPUT"
+          elif tools/ci/decode-keystore.sh "$RUNNER_TEMP/release-keystore.jks"; then
+            echo "LINEOVER_KEYSTORE_FILE=$RUNNER_TEMP/release-keystore.jks" >> "$GITHUB_ENV"
             echo "signing=release keystore" >> "$GITHUB_OUTPUT"
           else
-            echo "signing=debug key (KEYSTORE_B64 secret not set)" >> "$GITHUB_OUTPUT"
+            echo "signing=debug key (the keystore secrets are invalid, see the warning on this run)" >> "$GITHUB_OUTPUT"
           fi
       - name: Assemble
         env:
@@ -155,7 +168,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Remove decoded keystore
         if: always()
-        run: rm -f "$RUNNER_TEMP/lineover-release.jks"
+        run: rm -f "$RUNNER_TEMP/release-keystore.jks"
       - name: Upload APKs
         uses: actions/upload-artifact@v7
         with:
@@ -180,6 +193,8 @@ jobs:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
       - uses: gradle/actions/setup-gradle@v6
+      - name: Install NDK and CMake
+        run: tools/ci/install-native-toolchain.sh
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

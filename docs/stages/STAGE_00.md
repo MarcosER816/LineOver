@@ -81,8 +81,8 @@ None (by design). `TOOL_CATALOG.md` created: 162 tools, all `reserved`.
    Roborazzi test of this stage is in `:core:designsystem`.
 10. **Emulator matrix: API 34 and API 36.** A stable `google_apis` x86_64 image exists for
     36. The GL smoke test uses an off-screen pbuffer surface.
-11. **Proposed scope for stages 1–4 and 29–30** is in `ROADMAP.md`; the brief only fixed
-    the tools of stages 5–28.
+11. **Scope of stages 1–4 and 29–30** was proposed here and then replaced by Mark's
+    split (see Open questions).
 
 ## Dependencies added (R10)
 
@@ -126,6 +126,7 @@ First generation, nothing replaced: `input/pattern_rgba8.png`,
 | `checkDebugAarMetadata`: "requires compileSdk 37" | Newest AndroidX needs compileSdk 37 | Pinned the newest versions with `minCompileSdk ≤ 36` (decision 2) |
 | CI `unit` job: `UnsupportedOperationException at DefaultSdkProvider` (run 1) | Robolectric's SDK 36 runtime requires Java 21; CI uses JDK 17 (local checks had run on JDK 21) | Screenshot test runs on Robolectric SDK 35; image re-recorded before first merge; local verification repeated on JDK 17 |
 | `OPT_IN_USAGE_ERROR` in `LoType.kt` | Variable-font axis API is `@ExperimentalTextApi` | Explicit opt-in on that one function |
+| CI `unit` job on PR #2: `InstallFailedException … ndk;28.2.13676358`, "Archive is not a ZIP archive" | AGP downloads the NDK itself at configure time on every runner, without retry; one download was truncated | `tools/ci/install-native-toolchain.sh` installs NDK + CMake before Gradle, verifies them and retries |
 
 Plan B used: no. Both emulator jobs (API 34 and API 36) passed on the first run without `continue-on-error`.
 
@@ -148,11 +149,16 @@ On the POCO F7 Ultra (Android 16):
 
 ## Open questions (R12)
 
-1. **Keystore secrets.** Have you added `KEYSTORE_B64`, `KEYSTORE_PASS`, `KEY_ALIAS`,
-   `KEY_PASS`? Until then the release APK is signed with the debug key (default used).
-   Steps for Termux are in `README.md`, section Signing.
-2. **LibRaw (LGPL-2.1) for Stage 25**, built and shipped as a separate shared library
-   (`libraw.so`, dynamically linked, never statically): acceptable? Default if no answer:
-   yes, under exactly that condition (R10).
-3. **Stages 1–4 and 29–30**: is the proposed scope in `ROADMAP.md` what you want?
-   Default: proceed as proposed.
+Answered by Mark on 2026-11-16:
+
+1. **Keystore secrets.** Added by Mark (`KEYSTORE_B64`, `KEYSTORE_PASS`, `KEY_ALIAS`,
+   `KEY_PASS`). Release APKs are signed with the release key from the next CI run on.
+2. **LibRaw (LGPL-2.1) for Stage 25.** Approved, only as a separate, dynamically linked
+   `libraw.so` (R10).
+3. **Stage split.** The scope proposed for stages 1–4 and 29–30 was replaced by Mark's
+   split, now in `ROADMAP.md`: 1 design system and `Lo*` components (no screens); 2 app
+   shell, home and settings; 3 editor shell with a placeholder slot for every tool,
+   canvas gestures, side sheets, export sheet and tool search, layout frozen afterwards;
+   4 engine foundation, file loading and edit graph; 29 performance hardening;
+   30 accessibility, polish and release v1.0. Consequence in `TOOL_CATALOG.md`: tool
+   search moves from stage 28 to stage 3; no other stage number changed.
