@@ -1,0 +1,6 @@
+# Reference implementations for golden images. Versions are pinned so that the
+# committed files in testdata/golden can be reproduced exactly.
+numpy==2.5.3
+# opencv-python without GUI dependencies (same cv2 module, works on headless CI).
+opencv-python-headless==5.0.0.93
+colour-science==0.4.7
