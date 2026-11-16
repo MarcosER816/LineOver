@@ -1,0 +1,27 @@
+# Gradle / build
+.gradle/
+build/
+.kotlin/
+local.properties
+.cxx/
+.externalNativeBuild/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Secrets: never commit keystores or signing material (rule R8)
+*.jks
+*.keystore
+*.p12
+keystore.properties
+*.b64
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# OS
+.DS_Store
