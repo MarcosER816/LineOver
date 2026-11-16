@@ -5,11 +5,15 @@
 #
 # usage: decode-keystore.sh <output.jks>
 # env:   KEYSTORE_B64, LINEOVER_KEYSTORE_PASS, LINEOVER_KEY_ALIAS
+#        KEYSTORE_PROBLEM_LEVEL  "error" (default) or "warning": how a bad secret is
+#                                annotated. The exit status is 1 either way; the
+#                                caller decides whether that fails the job.
 set -euo pipefail
 
 out="$1"
+level="${KEYSTORE_PROBLEM_LEVEL:-error}"
 fail() {
-    echo "::error::$1"
+    echo "::$level::$1"
     rm -f "$out"
     exit 1
 }

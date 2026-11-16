@@ -132,13 +132,18 @@ jobs:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
           LINEOVER_KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
           LINEOVER_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEYSTORE_PROBLEM_LEVEL: warning
         run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            tools/ci/decode-keystore.sh "$RUNNER_TEMP/release-keystore.jks"
+          # No secrets, or secrets that do not hold a usable keystore: the release
+          # build is signed with the debug key (a warning explains what is wrong).
+          # Tagged releases (release.yml) always require a valid keystore.
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "signing=debug key (KEYSTORE_B64 secret not set)" >> "$GITHUB_OUTPUT"
+          elif tools/ci/decode-keystore.sh "$RUNNER_TEMP/release-keystore.jks"; then
             echo "LINEOVER_KEYSTORE_FILE=$RUNNER_TEMP/release-keystore.jks" >> "$GITHUB_ENV"
             echo "signing=release keystore" >> "$GITHUB_OUTPUT"
           else
-            echo "signing=debug key (KEYSTORE_B64 secret not set)" >> "$GITHUB_OUTPUT"
+            echo "signing=debug key (the keystore secrets are invalid, see the warning on this run)" >> "$GITHUB_OUTPUT"
           fi
       - name: Assemble
         env:
