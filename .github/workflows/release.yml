@@ -20,6 +20,8 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v6
+      - name: Install NDK and CMake
+        run: tools/ci/install-native-toolchain.sh
       - name: Decode release keystore
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}

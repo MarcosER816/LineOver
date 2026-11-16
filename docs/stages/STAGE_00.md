@@ -126,6 +126,7 @@ First generation, nothing replaced: `input/pattern_rgba8.png`,
 | `checkDebugAarMetadata`: "requires compileSdk 37" | Newest AndroidX needs compileSdk 37 | Pinned the newest versions with `minCompileSdk ≤ 36` (decision 2) |
 | CI `unit` job: `UnsupportedOperationException at DefaultSdkProvider` (run 1) | Robolectric's SDK 36 runtime requires Java 21; CI uses JDK 17 (local checks had run on JDK 21) | Screenshot test runs on Robolectric SDK 35; image re-recorded before first merge; local verification repeated on JDK 17 |
 | `OPT_IN_USAGE_ERROR` in `LoType.kt` | Variable-font axis API is `@ExperimentalTextApi` | Explicit opt-in on that one function |
+| CI `unit` job on PR #2: `InstallFailedException … ndk;28.2.13676358`, "Archive is not a ZIP archive" | AGP downloads the NDK itself at configure time on every runner, without retry; one download was truncated | `tools/ci/install-native-toolchain.sh` installs NDK + CMake before Gradle, verifies them and retries |
 
 Plan B used: no. Both emulator jobs (API 34 and API 36) passed on the first run without `continue-on-error`.
 
