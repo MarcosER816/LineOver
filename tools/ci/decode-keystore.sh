@@ -15,8 +15,21 @@ fail() {
 }
 
 # Secrets pasted on a phone often carry line breaks or spaces; base64 has none.
-if ! printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]' | base64 --decode >"$out" 2>/dev/null; then
-    fail "KEYSTORE_B64 is not valid base64. Re-create it with: base64 -w 0 lineover-release.jks (paste the whole output, nothing else)."
+clean="$(printf '%s' "$KEYSTORE_B64" | tr -d '[:space:]')"
+
+if ! printf '%s' "$clean" | base64 --decode >"$out" 2>/dev/null; then
+    # Describe the shape of the value without revealing any of it.
+    length=${#clean}
+    foreign="$(printf '%s' "$clean" | tr -d 'A-Za-z0-9+/=' | wc -c)"
+    hint="unknown problem"
+    if [ "$length" -lt 1000 ]; then
+        hint="far too short for a keystore (expected about 3500-4500 characters); it looks like a file name, a password or a cut-off copy was pasted"
+    elif [ "$foreign" -gt 0 ]; then
+        hint="it contains $foreign character(s) that are not base64 (allowed: A-Z a-z 0-9 + / =)"
+    elif [ $((length % 4)) -ne 0 ]; then
+        hint="its length is not a multiple of 4, so the end of the text was cut off when copying"
+    fi
+    fail "KEYSTORE_B64 is not valid base64: $length characters after removing whitespace; $hint. Re-create it with base64 -w 0 on the .jks file and paste the whole output, nothing else."
 fi
 [ -s "$out" ] || fail "KEYSTORE_B64 decodes to an empty file."
 
