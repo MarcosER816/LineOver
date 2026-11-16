@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mirrors LoColors.Bg / LoColors.Accent for the window and launcher icon. -->
+    <color name="lo_bg">#0E0E10</color>
+    <color name="lo_accent">#5B9DFF</color>
+    <color name="lo_text_primary">#ECECEE</color>
+</resources>

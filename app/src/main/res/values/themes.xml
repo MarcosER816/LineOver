@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Window theme only; all UI is Compose and styled by LineOverTheme. -->
+    <style name="Theme.LineOver" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/lo_bg</item>
+        <item name="android:windowSplashScreenBackground">@color/lo_bg</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>

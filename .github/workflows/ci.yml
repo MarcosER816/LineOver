@@ -1,0 +1,207 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  JAVA_VERSION: '17'
+  GRADLE_OPTS: -Dorg.gradle.daemon=false
+
+jobs:
+  # (a) Static analysis.
+  lint:
+    name: lint (detekt, ktlint, Android lint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: gradle/actions/setup-gradle@v6
+      - name: detekt + ktlint
+        run: ./gradlew detekt ktlintCheck --continue
+      - name: Android lint
+        run: ./gradlew :app:lintDebug
+      - name: Upload lint reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lint-reports
+          path: |
+            **/build/reports/detekt/
+            **/build/reports/lint-results-*.html
+          if-no-files-found: ignore
+
+  # (b) JVM unit tests and Roborazzi screenshot verification.
+  unit:
+    name: unit (tests + screenshots)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Unit tests + screenshot verification
+        run: ./gradlew testDebugUnitTest verifyRoborazziDebug --continue
+      - name: Upload screenshot and golden diffs
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshot-diffs
+          path: |
+            **/build/outputs/roborazzi/
+            **/build/outputs/golden-diffs/
+            **/build/reports/roborazzi/
+          if-no-files-found: ignore
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: unit-test-reports
+          path: '**/build/reports/tests/'
+          if-no-files-found: ignore
+
+  # (c) Host (Linux) build of the C++ engine, ctest, and golden-file freshness.
+  native:
+    name: native (cmake host + ctest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ninja-build zlib1g-dev
+      - name: Configure
+        run: cmake -S core/engine-native/src/main/cpp -B build/native-host -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build/native-host
+      - name: ctest
+        run: ctest --test-dir build/native-host --output-on-failure
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.13'
+          cache: pip
+          cache-dependency-path: tools/golden/requirements.txt
+      - name: Golden files match the Python reference
+        run: |
+          python -m pip install -r tools/golden/requirements.txt
+          python tools/golden/generate.py --check
+      - name: Upload golden diff heatmaps
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: native-golden-diffs
+          path: build/native-host/golden-diffs/
+          if-no-files-found: ignore
+
+  # (d) Debug and release APKs.
+  build:
+    name: build (debug + release APK)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Decode release keystore (if the secrets exist)
+        id: keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/lineover-release.jks"
+            echo "LINEOVER_KEYSTORE_FILE=$RUNNER_TEMP/lineover-release.jks" >> "$GITHUB_ENV"
+            echo "signing=release keystore" >> "$GITHUB_OUTPUT"
+          else
+            echo "signing=debug key (KEYSTORE_B64 secret not set)" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Assemble
+        env:
+          LINEOVER_KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          LINEOVER_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          LINEOVER_KEY_PASS: ${{ secrets.KEY_PASS }}
+        run: ./gradlew assembleDebug assembleRelease
+      - name: Collect APKs
+        id: apks
+        run: |
+          sha="$(git rev-parse --short=7 HEAD)"
+          mkdir -p dist
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/lineover-${sha}-debug.apk"
+          cp app/build/outputs/apk/release/app-release.apk "dist/lineover-${sha}-release.apk"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### LineOver ${sha}"
+            echo "Release APK signed with: ${{ steps.keystore.outputs.signing }}"
+            echo '```'
+            ls -l dist
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove decoded keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/lineover-release.jks"
+      - name: Upload APKs
+        uses: actions/upload-artifact@v7
+        with:
+          name: lineover-${{ steps.apks.outputs.sha }}
+          path: dist/*.apk
+          if-no-files-found: error
+
+  # (e) Instrumented tests on an emulator. The emulator renders with SwiftShader:
+  # these tests prove correctness only, never performance.
+  emulator:
+    name: emulator (API ${{ matrix.api-level }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [34, 36]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Build the test APKs
+        run: ./gradlew assembleDebug assembleDebugAndroidTest
+      - name: Run instrumented tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          target: google_apis
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim
+          disable-animations: true
+          script: ./gradlew connectedDebugAndroidTest
+      - name: Upload instrumented test reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: emulator-reports-api${{ matrix.api-level }}
+          path: |
+            **/build/reports/androidTests/
+            **/build/outputs/androidTest-results/
+          if-no-files-found: ignore
