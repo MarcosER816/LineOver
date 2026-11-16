@@ -35,7 +35,7 @@ for attempt in 1 2 3 4; do
     echo "Installing NDK $ndk and CMake $cmake (attempt $attempt)..."
     # A failed attempt can leave a partial directory behind; start clean.
     rm -rf "$sdk/ndk/$ndk" "$sdk/cmake/$cmake"
-    yes | "$sdkmanager" --install "ndk;$ndk" "cmake;$cmake" >/dev/null || true
+    yes 2>/dev/null | "$sdkmanager" --install "ndk;$ndk" "cmake;$cmake" >/dev/null || true
     installed || sleep $((attempt * 10))
 done
 

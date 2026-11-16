@@ -130,10 +130,12 @@ jobs:
         id: keystore
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          LINEOVER_KEYSTORE_PASS: ${{ secrets.KEYSTORE_PASS }}
+          LINEOVER_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         run: |
           if [ -n "$KEYSTORE_B64" ]; then
-            printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/lineover-release.jks"
-            echo "LINEOVER_KEYSTORE_FILE=$RUNNER_TEMP/lineover-release.jks" >> "$GITHUB_ENV"
+            tools/ci/decode-keystore.sh "$RUNNER_TEMP/release-keystore.jks"
+            echo "LINEOVER_KEYSTORE_FILE=$RUNNER_TEMP/release-keystore.jks" >> "$GITHUB_ENV"
             echo "signing=release keystore" >> "$GITHUB_OUTPUT"
           else
             echo "signing=debug key (KEYSTORE_B64 secret not set)" >> "$GITHUB_OUTPUT"
@@ -161,7 +163,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Remove decoded keystore
         if: always()
-        run: rm -f "$RUNNER_TEMP/lineover-release.jks"
+        run: rm -f "$RUNNER_TEMP/release-keystore.jks"
       - name: Upload APKs
         uses: actions/upload-artifact@v7
         with:
