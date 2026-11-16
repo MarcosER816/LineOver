@@ -23,10 +23,15 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** Locks the colour and type tokens: any change to them shows up as a screenshot diff. */
+/**
+ * Locks the colour and type tokens: any change to them shows up as a screenshot diff.
+ *
+ * Screenshot tests run on Robolectric's SDK 35 runtime: its SDK 36 runtime needs
+ * Java 21, and the build (CI included) runs on JDK 17.
+ */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
-@Config(sdk = [36], qualifiers = "w411dp-h891dp-xxhdpi")
+@Config(sdk = [35], qualifiers = "w411dp-h891dp-xxhdpi")
 class DesignTokensScreenshotTest {
     @Test
     fun designTokens() {

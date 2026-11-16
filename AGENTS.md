@@ -116,6 +116,8 @@ python3 tools/golden/generate.py --check
   compare with `GoldenAssert` (C++ and Kotlin). Tolerances: 8-bit max |diff| ≤ 2/255 and
   mean ≤ 0.5/255; float ops max 1e-3; GPU vs CPU reference max 3/255. A failure writes a
   diff heatmap PNG.
-- **Screenshot tests:** Roborazzi, `@GraphicsMode(NATIVE)`, wrapped in `LineOverTheme`,
-  recorded images committed under `src/test/screenshots`.
+- **Screenshot tests:** Roborazzi, `@GraphicsMode(NATIVE)`, `@Config(sdk = [35])`, wrapped
+  in `LineOverTheme`, recorded images committed under `src/test/screenshots`. Robolectric's
+  SDK 36 runtime needs Java 21 and CI runs JDK 17, so screenshot tests use SDK 35. Verify
+  on JDK 17 before pushing.
 - **Engine code** gets a host ctest and, when it touches GL, an instrumented test.

@@ -124,6 +124,7 @@ First generation, nothing replaced: `input/pattern_rgba8.png`,
 | --- | --- | --- |
 | `Plugin 'androidx.baselineprofile' was not found` | A plugin that is only on the build-logic classpath cannot be applied by id from a module | Wrapped in `lineover.android.baselineprofile` |
 | `checkDebugAarMetadata`: "requires compileSdk 37" | Newest AndroidX needs compileSdk 37 | Pinned the newest versions with `minCompileSdk ≤ 36` (decision 2) |
+| CI `unit` job: `UnsupportedOperationException at DefaultSdkProvider` (run 1) | Robolectric's SDK 36 runtime requires Java 21; CI uses JDK 17 (local checks had run on JDK 21) | Screenshot test runs on Robolectric SDK 35; image re-recorded before first merge; local verification repeated on JDK 17 |
 | `OPT_IN_USAGE_ERROR` in `LoType.kt` | Variable-font axis API is `@ExperimentalTextApi` | Explicit opt-in on that one function |
 
 Plan B used: see "Proof" for the emulator job.
