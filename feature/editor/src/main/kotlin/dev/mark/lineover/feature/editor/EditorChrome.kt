@@ -92,39 +92,46 @@ internal fun EditorTopBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         LoIconButton(LoIcons.ArrowBack, "Back", onClick = onBack)
-        if (wide) {
-            Text(
-                state.project?.name.orEmpty(),
-                style = LoType.Title,
-                color = LoColors.TextPrimary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(horizontal = LoSpacing.Xs),
-            )
-        } else {
-            Spacer(Modifier.weight(1f))
+        // Back, More and Export are pinned. The actions between them scroll sideways when the
+        // window is too narrow for all eight buttons (< 384 dp: small phones, large display
+        // size, split screen), so Export can never be pushed off the screen.
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            if (wide) {
+                Text(
+                    state.project?.name.orEmpty(),
+                    style = LoType.Title,
+                    color = LoColors.TextPrimary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f).padding(horizontal = LoSpacing.Xs),
+                )
+            } else {
+                Spacer(Modifier.weight(1f))
+            }
+            Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
+                val undo = "history.undo_redo"
+                LoIconButton(LoIcons.Undo, "Undo", onClick = { onIntent(EditorIntent.SelectTool(undo)) })
+                LoIconButton(LoIcons.Redo, "Redo", onClick = { onIntent(EditorIntent.SelectTool(undo)) })
+                LoIconButton(
+                    LoIcons.Compare,
+                    "Compare",
+                    onClick = { onIntent(EditorIntent.SelectTool("history.before_after")) },
+                    selected = state.selectedToolId == "history.before_after",
+                )
+                LoIconButton(
+                    LoIcons.History,
+                    "History",
+                    onClick = { onIntent(EditorIntent.OpenPanel(EditorPanel.History)) },
+                    selected = state.panel == EditorPanel.History,
+                )
+                LoIconButton(
+                    LoIcons.Layers,
+                    "Layers",
+                    onClick = { onIntent(EditorIntent.OpenPanel(EditorPanel.Layers)) },
+                    selected = state.panel == EditorPanel.Layers,
+                )
+            }
         }
-        val undo = "history.undo_redo"
-        LoIconButton(LoIcons.Undo, "Undo", onClick = { onIntent(EditorIntent.SelectTool(undo)) })
-        LoIconButton(LoIcons.Redo, "Redo", onClick = { onIntent(EditorIntent.SelectTool(undo)) })
-        LoIconButton(
-            LoIcons.Compare,
-            "Compare",
-            onClick = { onIntent(EditorIntent.SelectTool("history.before_after")) },
-            selected = state.selectedToolId == "history.before_after",
-        )
-        LoIconButton(
-            LoIcons.History,
-            "History",
-            onClick = { onIntent(EditorIntent.OpenPanel(EditorPanel.History)) },
-            selected = state.panel == EditorPanel.History,
-        )
-        LoIconButton(
-            LoIcons.Layers,
-            "Layers",
-            onClick = { onIntent(EditorIntent.OpenPanel(EditorPanel.Layers)) },
-            selected = state.panel == EditorPanel.Layers,
-        )
         Box {
             LoIconButton(
                 LoIcons.MoreVert,

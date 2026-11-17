@@ -23,6 +23,8 @@ All notable changes, newest first. One section per stage.
 - Tablets, unfolded foldables and landscape: categories in a rail on the left, panels in a
   column on the right.
 - Settings → Canvas surround: dark or mid grey around the photo.
+- On narrow screens (large display size, split screen) Back, More and Export always stay
+  visible; the other top-bar buttons scroll.
 - Home → More: HDR merge, panorama, focus stacking, batch and sync settings, with their stages.
 
 ## Stage 2 follow-up — Device albums (0.2.1)

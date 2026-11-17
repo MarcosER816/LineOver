@@ -50,8 +50,8 @@ Tests added: `ToolCatalogTest` (4), `ToolSearchTest` (7), `CanvasTransformTest` 
 `TwoFingerTrackerTest` (3), `FlingDecayTest` (2), `EditorViewModelTest` (11),
 `Compact/ExpandedEditorReachabilityTest` (4), `CanvasRecompositionTest`,
 `ExportReachabilityTest`, `HomeReachabilityTest`, `SettingsReachabilityTest` (2),
-`AppPreferencesTest` (2), `ProjectLibraryTest` +2 (preview decode), 78 new screenshots;
-instrumented `CanvasFrameTimingTest`. Unit + screenshot total: 223.
+`AppPreferencesTest` (2), `ProjectLibraryTest` +2 (preview decode), `NarrowEditorTest`, 79 new screenshots;
+instrumented `CanvasFrameTimingTest`. Unit + screenshot total: 224.
 
 ## Tools delivered
 
@@ -91,28 +91,31 @@ against `ToolRegistry` by `ToolCatalogTest`, so neither can change alone.
    file. No catalog slot moved.
 6. **Undo, Redo and Compare** open their placeholder panels (Stage 8); nothing pretends to
    undo. The coach mark says hold-to-compare arrives in Stage 8.
-7. **Canvas.** `CanvasView` is a `GLSurfaceView` (GLES 3.0 through the Java bindings, so
+7. **Top bar on narrow windows**: Back, More and Export never move; below 384 dp (small
+   phones, large display size, split screen) the five actions between them scroll
+   sideways. At the POCO's default 411 dp all eight fit, unchanged.
+8. **Canvas.** `CanvasView` is a `GLSurfaceView` (GLES 3.0 through the Java bindings, so
    `:core:engine` stays the only JNI module); render-on-demand; `Surface.setFrameRate(120,
    FRAME_RATE_COMPATIBILITY_DEFAULT)` on surface creation. The UI thread writes the 3×3
    matrix under a lock; the GL thread copies it. No allocation per event or per frame
    (preallocated arrays, `Choreographer` frame callback for fling and the double-tap
    animation). Stage 4 replaces the renderer with the engine; view and gestures stay.
-8. **Zoom is in original pixels**: 100 % = one pixel of the original (the preview is
+9. **Zoom is in original pixels**: 100 % = one pixel of the original (the preview is
    upscaled until Stage 4's full-resolution tiles). Range 0.1×–32× (a panorama whose fit is
    below 0.1× may zoom out to fit). Pan is limited so the middle of the view always shows
    the photo. Rotation starts after 10° of twist (a pinch never tilts the photo) and snaps
    within ±5° of 0/90/180/270° with one `CLOCK_TICK`. Double tap: fit ↔ 100 % around the
    tap, animated with `MotionTokens.Standard` (a jump under reduced motion). Fling after a
    two-finger pan, exponential decay. **One finger is left to the tools** of later stages.
-9. **Preview**: ImageDecoder straight to ≤ 2048 px, software bitmap, sRGB, mipmapped
+10. **Preview**: ImageDecoder straight to ≤ 2048 px, software bitmap, sRGB, mipmapped
    texture. Formats that cannot be decoded yet (TIFF, RAW) show an explanation instead of a
    photo.
-10. **Placeholders say "Arrives in Stage N"** in the editor (the brief's wording); Settings
+11. **Placeholders say "Arrives in Stage N"** in the editor (the brief's wording); Settings
     keeps `LoPlaceholderTool`'s "Coming in Stage N".
-11. **Canvas surround** (Settings row reserved for Stage 3) works: dark `#121212` / mid
+12. **Canvas surround** (Settings row reserved for Stage 3) works: dark `#121212` / mid
     grey `#777777`, used as the GL clear colour.
-12. Compose UI tests use the `junit4.v2` rules (the v1 rules are deprecated in Compose 1.11).
-13. Version 0.3.0 (5). Branch: session branch `ccr-a94fce54-a1j7s3`, as in earlier stages.
+13. Compose UI tests use the `junit4.v2` rules (the v1 rules are deprecated in Compose 1.11).
+14. Version 0.3.0 (5). Branch: session branch `ccr-a94fce54-a1j7s3`, as in earlier stages.
 
 ## Dependencies added (R10)
 
@@ -145,7 +148,7 @@ No golden files. Screenshots changed on purpose:
 | Menu screenshots written to `src/test/screenshots/src/test/screenshots/…` | `captureScreenRoboImage` paths are relative to the Roborazzi output directory | Relative paths like the other captures |
 | A restored category (AI) off-screen in the category bar and rail | Visibility was checked before the first layout | Wait for the first layout (`snapshotFlow`), jump the first time, animate afterwards; screenshots captured through the compose rule so effects settle |
 | Layers sheet opened at 160 dp on phones | The panel state kept the tool panel's detent | One panel state per mode (sheet tall, tool low) |
-| Emulator (API 34 and 36) `NavigationTest`: export sheet never opened | The test looked for the coach marks before the editor had composed, so it did not dismiss them; their full-screen scrim (which swallows taps by design) then took the Export tap. Export is also disabled until the project has loaded asynchronously, and the export sheet is a dialog whose window attaches asynchronously | The test waits for the editor, dismisses the coach marks, waits until their scrim is gone and Export is enabled, then waits for the sheet's window. Product behaviour unchanged |
+| Emulator (API 34 and 36) `NavigationTest`: export sheet never opened | Attempts 1–2 (wait for Export to be enabled; dismiss the coach marks first; wait for the dialog window) did not fix it. A semantics dump (attempt 3, diagnostics) showed the root cause, a **real bug**: the CI emulator is 320 dp wide and the eight 48 dp top-bar buttons need 384 dp, so Export was laid out at zero width off the right edge and More was squeezed to 32 dp. The same would happen on a phone with a large display size or in split screen | Back, More and Export are pinned; Undo, Redo, Compare, History and Layers scroll sideways when the window is narrower than 384 dp. `NarrowEditorTest` (320 dp) fails on the old top bar and passes now. The test's waits stay: they are correct on a slow device |
 | `NavigationRobolectricTest`: no scroll parent for the export caption | The caption fits on screen; there was nothing to scroll | Assert it exists |
 | detekt: magic numbers in ToolRegistry | Stage numbers in a data table | `@file:Suppress("MagicNumber")` with the reason; matrix indices likewise |
 
