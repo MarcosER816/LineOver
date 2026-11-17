@@ -15,6 +15,8 @@ a green CI run and an APK artifact he installs on the phone.
 - **D1** App name `LineOver`. Package `dev.mark.lineover`. Theme `LineOverTheme`.
   Component prefix `Lo` (`LoSlider`, `LoPanel`, …). Project file extension `.loproj`.
   Export folder `Pictures/LineOver`. APK artifacts `lineover-<sha>`.
+  (Since Stage 1: `lineover-<sha>.apk` = signed release, the one Mark installs; the debug
+  build is a separate `lineover-<sha>-debug.apk`. Both are uploaded unzipped.)
 - **D2** `minSdk 34`, `compileSdk 36`, `targetSdk 36`. The test phone runs Android 16.
 - **D3** AI models are never bundled in the APK. Each model downloads on first use of its
   tool, with size and licence shown, a SHA-256 check, and a delete option in Settings.

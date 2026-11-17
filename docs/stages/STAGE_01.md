@@ -94,7 +94,8 @@ Plan B used: no.
 
 ## Phone checklist
 
-POCO F7 Ultra, **debug** APK (`lineover-<sha>-debug.apk`, installs next to the release one):
+POCO F7 Ultra. The gallery is only in the **debug** APK: download
+`lineover-<sha>-debug.apk` from the run (it installs as a second app next to LineOver):
 
 - [ ] Open LineOver (debug), tap the bug icon (top right) → **Component gallery**.
 - [ ] Drag each slider: it follows the finger smoothly at 120 Hz, no jank, and the value
@@ -116,7 +117,11 @@ POCO F7 Ultra, **debug** APK (`lineover-<sha>-debug.apk`, installs next to the r
 
 ## Open questions (R12)
 
-1. **Accent colour**: keep blue `#5B9DFF`, or switch to violet `#9A8CFF` or teal
-   `#4FD1C5`? Default: keep blue. A change is one token plus re-recorded screenshots.
-2. **Haptic strength on HyperOS**: are the slider tick and the reset confirm comfortable,
-   too weak, or missing? Default: as is (system constants, vibrator fallback).
+Answered by Mark on 2026-11-17:
+
+1. **Accent colour**: keep blue `#5B9DFF`.
+2. **Haptic strength on HyperOS**: comfortable; no change.
+
+Follow-up request: the CI download should offer one APK to install. Since then the run has
+two unzipped artifacts: `lineover-<sha>.apk` (signed release, the app) and
+`lineover-<sha>-debug.apk` (test build, only for checklists that need the debug menu).
