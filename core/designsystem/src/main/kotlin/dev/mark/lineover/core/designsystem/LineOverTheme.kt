@@ -1,12 +1,9 @@
 package dev.mark.lineover.core.designsystem
 
-import android.provider.Settings
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.remember
-import androidx.compose.ui.platform.LocalContext
 
 private val LoColorScheme =
     darkColorScheme(
@@ -31,18 +28,18 @@ private val LoColorScheme =
         onError = LoColors.OnAccent,
     )
 
-/** The one theme of the app. Wrap every screen and every screenshot test in it. */
+/**
+ * The one theme of the app, dark only (there is no light theme). Wrap every screen and
+ * every screenshot test in it.
+ */
 @Composable
 fun LineOverTheme(content: @Composable () -> Unit) {
-    val context = LocalContext.current
-    val reducedMotion =
-        remember(context) {
-            Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
-        }
+    val reducedMotion = rememberReducedMotion()
     CompositionLocalProvider(LocalReducedMotion provides reducedMotion) {
         MaterialTheme(
             colorScheme = LoColorScheme,
             typography = LoMaterialTypography,
+            shapes = LoMaterialShapes,
             content = content,
         )
     }

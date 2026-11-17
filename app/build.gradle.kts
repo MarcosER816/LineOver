@@ -15,8 +15,8 @@ android {
 
     defaultConfig {
         applicationId = "dev.mark.lineover"
-        versionCode = 1
-        versionName = "0.0.1"
+        versionCode = 2
+        versionName = "0.1.0"
     }
 
     signingConfigs {
@@ -40,6 +40,16 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName(if (hasReleaseKeystore) "release" else "debug")
+        }
+    }
+}
+
+// src/debug holds the debug menu and gallery entry; every other build type gets the
+// no-op DebugHost from src/nonDebug, so release builds never contain the gallery.
+androidComponents {
+    onVariants { variant ->
+        if (variant.buildType != "debug") {
+            variant.sources.kotlin?.addStaticSourceDirectory("src/nonDebug/kotlin")
         }
     }
 }

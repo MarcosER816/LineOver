@@ -2,6 +2,10 @@
 # Formatting is ktlint's job (.editorconfig); detekt checks complexity and bugs.
 
 naming:
+  MatchingDeclarationName:
+    # Compose files are named after their main composable (LoSlider.kt), which is a
+    # function; the rule would demand they be named after a helper class instead.
+    active: false
   FunctionNaming:
     # @Composable functions are PascalCase by convention.
     ignoreAnnotated: ['Composable']

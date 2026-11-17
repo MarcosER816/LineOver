@@ -20,6 +20,8 @@ object LoDimens {
     val ToolStripHeight = 56.dp
     val PanelMinHeight = 160.dp
     val PanelMaxHeight = 280.dp
+    val IconSize = 24.dp
+    val SelectionIndicatorHeight = 2.dp
     val SidePanelWidth = 320.dp
 
     /** A bottom panel never covers more than this fraction of the window height. */

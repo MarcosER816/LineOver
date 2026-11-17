@@ -12,6 +12,31 @@ The category bar always shows these 18 categories in this order (also `ToolCateg
 
 1 Favorites · 2 Presets · 3 Auto · 4 Light · 5 Color · 6 Effects · 7 Detail · 8 Optics · 9 Crop · 10 Masks · 11 Select · 12 Retouch · 13 Paint · 14 Filters · 15 Liquify · 16 Text · 17 Shapes · 18 AI
 
+## Design system
+
+Components of `:core:designsystem` that every tool is built from (Stage 1). Not tools,
+so they have no UI slot and are not counted above.
+
+| id | Name | Stage | Status |
+| --- | --- | --- | --- |
+| `ds.theme` | LineOverTheme (colours, type, shapes, motion, reduced motion) | 1 | done |
+| `ds.haptics` | LoHaptics | 1 | done |
+| `ds.icons` | LoIcons (Material Symbols Rounded) | 1 | done |
+| `ds.slider` | LoSlider | 1 | done |
+| `ds.tool_button` | LoToolButton | 1 | done |
+| `ds.category_bar` | LoCategoryBar | 1 | done |
+| `ds.panel` | LoPanel | 1 | done |
+| `ds.icon_button` | LoIconButton | 1 | done |
+| `ds.chip` | LoChip | 1 | done |
+| `ds.segmented` | LoSegmented | 1 | done |
+| `ds.switch_row` | LoSwitchRow | 1 | done |
+| `ds.color_wheel` | LoColorWheel | 1 | done |
+| `ds.curve_editor_placeholder` | LoCurveEditorPlaceholder | 1 | done |
+| `ds.toast` | LoToast / undo snackbar | 1 | done |
+| `ds.empty_state` | LoEmptyState | 1 | done |
+| `ds.placeholder_tool` | LoPlaceholderTool | 1 | done |
+| `ds.gallery` | ComponentGalleryScreen (debug only) | 1 | done |
+
 ## Slot naming
 
 | Slot | Meaning |
