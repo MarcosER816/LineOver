@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -58,6 +60,10 @@ class NavigationTest {
         composeRule.onNodeWithContentDescription("Layers").assertIsDisplayed()
         composeRule.onNodeWithText("Exposure").assertIsDisplayed()
 
+        // Export is enabled once the project has loaded (asynchronously on a device).
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodes(hasContentDescription("Export") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithContentDescription("Export").performClick()
         composeRule
             .onNodeWithText(
