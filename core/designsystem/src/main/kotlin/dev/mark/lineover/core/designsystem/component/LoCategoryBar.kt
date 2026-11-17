@@ -13,6 +13,11 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import dev.mark.lineover.core.designsystem.LineOverTheme
@@ -21,6 +26,7 @@ import dev.mark.lineover.core.designsystem.LoDimens
 import dev.mark.lineover.core.designsystem.LoIcons
 import dev.mark.lineover.core.designsystem.LoSpacing
 import dev.mark.lineover.core.designsystem.LocalReducedMotion
+import kotlinx.coroutines.flow.first
 
 /** One entry of a [LoCategoryBar]. [id] is stable (e.g. "light"); [label] is shown. */
 @Immutable
@@ -42,20 +48,26 @@ fun LoCategoryBar(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    itemModifier: (id: String) -> Modifier = { Modifier },
 ) {
     val state = rememberLazyListState()
     val reducedMotion = LocalReducedMotion.current
+    var positioned by remember { mutableStateOf(false) }
     LaunchedEffect(selectedId) {
         val index = categories.indexOfFirst { it.id == selectedId }
         if (index < 0) return@LaunchedEffect
+        // Wait for the first layout: before it nothing looks visible.
+        snapshotFlow { state.layoutInfo.visibleItemsInfo.isNotEmpty() }.first { it }
         val visible = state.layoutInfo.visibleItemsInfo
         val fullyVisible =
             visible.any {
                 it.index == index && it.offset >= 0 && it.offset + it.size <= state.layoutInfo.viewportEndOffset
             }
         if (!fullyVisible) {
-            if (reducedMotion) state.scrollToItem(index) else state.animateScrollToItem(index)
+            // The first positioning (e.g. a restored category) jumps; later changes animate.
+            if (reducedMotion || !positioned) state.scrollToItem(index) else state.animateScrollToItem(index)
         }
+        positioned = true
     }
     LazyRow(
         state = state,
@@ -76,6 +88,7 @@ fun LoCategoryBar(
                 onClick = { onSelect(category.id) },
                 enabled = enabled,
                 minHeight = LoDimens.CategoryBarHeight,
+                modifier = itemModifier(category.id),
             )
         }
     }

@@ -36,7 +36,9 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import dev.mark.lineover.core.designsystem.LineOverTheme
 import dev.mark.lineover.core.designsystem.LoColors
 import dev.mark.lineover.core.designsystem.LoDimens
@@ -100,14 +102,16 @@ object LoPanelMath {
 
 /**
  * The tool panel: a bottom sheet with two detents (160 / 280 dp, capped at 40 % of the
- * window height). Drag or tap the handle to switch; it settles with the panel spring
- * (a snap under reduced motion). While the finger is down the height follows it 1:1.
+ * window height, and at [maxHeight] when given — the editor passes 40 % of the canvas).
+ * Drag or tap the handle to switch; it settles with the panel spring (a snap under
+ * reduced motion). While the finger is down the height follows it 1:1.
  */
 @Composable
 fun LoPanel(
     state: LoPanelState,
     modifier: Modifier = Modifier,
     title: String? = null,
+    maxHeight: Dp = Dp.Unspecified,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val density = LocalDensity.current
@@ -119,7 +123,12 @@ fun LoPanel(
             LoPanelMath.heights(
                 windowHeightPx = if (windowHeightPx > 0f) windowHeightPx else Float.MAX_VALUE,
                 collapsedPx = LoDimens.PanelMinHeight.toPx(),
-                expandedPx = LoDimens.PanelMaxHeight.toPx(),
+                expandedPx =
+                    if (maxHeight.isSpecified) {
+                        minOf(LoDimens.PanelMaxHeight, maxHeight).toPx()
+                    } else {
+                        LoDimens.PanelMaxHeight.toPx()
+                    },
             )
         }
 

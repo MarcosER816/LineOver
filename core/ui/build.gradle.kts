@@ -9,6 +9,7 @@ android {
 
 dependencies {
     api(project(":core:designsystem"))
+    api(project(":core:model"))
     api(libs.androidx.lifecycle.viewmodel)
     api(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.coroutines.android)

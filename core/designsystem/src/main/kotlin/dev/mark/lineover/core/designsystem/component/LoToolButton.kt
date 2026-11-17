@@ -2,6 +2,7 @@ package dev.mark.lineover.core.designsystem.component
 
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,7 +14,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -23,6 +23,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -44,7 +46,8 @@ object LoToolButtonDefaults {
 
 /**
  * A tool in the tool strip or the category bar: 24 dp icon above an 11 sp label.
- * Selected = accent tint plus a 2 dp accent indicator under the label.
+ * Selected = accent tint plus a 2 dp accent indicator under the label. [onLongClick]
+ * (e.g. "Add to Favorites") is optional.
  */
 @Composable
 fun LoToolButton(
@@ -55,6 +58,8 @@ fun LoToolButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     minHeight: Dp = LoDimens.ToolStripHeight,
+    onLongClick: (() -> Unit)? = null,
+    onLongClickLabel: String? = null,
 ) {
     val tint =
         when {
@@ -69,8 +74,14 @@ fun LoToolButton(
             modifier
                 .widthIn(min = LoToolButtonDefaults.MinWidth, max = LoToolButtonDefaults.MaxWidth * fontScale)
                 .heightIn(min = minHeight)
-                .selectable(selected = selected, enabled = enabled, role = Role.Tab, onClick = onClick)
-                .padding(horizontal = LoSpacing.Xxs),
+                .semantics { this.selected = selected }
+                .combinedClickable(
+                    enabled = enabled,
+                    role = Role.Tab,
+                    onLongClickLabel = onLongClickLabel,
+                    onLongClick = onLongClick,
+                    onClick = onClick,
+                ).padding(horizontal = LoSpacing.Xxs),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {

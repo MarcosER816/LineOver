@@ -56,6 +56,16 @@ interface ProjectLibrary {
     suspend fun purge(project: Project)
 
     suspend fun markOpened(id: Long)
+
+    /**
+     * Decodes [project]'s original for the canvas, directly at a long edge of at most
+     * [maxEdge] px (never a full-size bitmap). Null when the format cannot be decoded yet
+     * (TIFF before Stage 12, RAW before Stage 25) or the original is gone.
+     */
+    suspend fun decodePreview(
+        project: Project,
+        maxEdge: Int = PreviewDecoder.MAX_EDGE,
+    ): PreviewImage?
 }
 
 /** Builds the project library; the database opens lazily on first use. */
@@ -79,6 +89,7 @@ internal class AndroidProjectLibrary(
     private val io: CoroutineDispatcher = Dispatchers.IO,
 ) : ProjectLibrary {
     private val thumbnailer = Thumbnailer(resolver)
+    private val previewDecoder = PreviewDecoder(resolver)
 
     override fun observeProjects() = repository.observeProjects()
 
@@ -213,4 +224,9 @@ internal class AndroidProjectLibrary(
         }
 
     override suspend fun markOpened(id: Long) = repository.markOpened(id, clock())
+
+    override suspend fun decodePreview(
+        project: Project,
+        maxEdge: Int,
+    ): PreviewImage? = withContext(io) { previewDecoder.decode(Uri.parse(project.sourceUri), maxEdge) }
 }

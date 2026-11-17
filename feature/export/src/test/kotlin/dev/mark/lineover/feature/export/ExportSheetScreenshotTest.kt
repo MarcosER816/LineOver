@@ -19,3 +19,16 @@ class ExportSheetScreenshotTest {
         }
     }
 }
+
+/** Tablets and landscape: the sheet is centred and at most 640 dp wide. */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(sdk = [35], qualifiers = "w1280dp-h800dp-mdpi")
+class ExpandedExportSheetScreenshotTest {
+    @Test
+    fun exportSheet() {
+        captureRoboImage("export/expanded/export_sheet.png") {
+            LineOverTheme { ExportSheet(ExportState("Harbour at dusk"), onClose = {}) }
+        }
+    }
+}

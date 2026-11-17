@@ -92,6 +92,37 @@ preview and is never animated; the committed value becomes a new edit graph on r
   `ContentResolver.loadThumbnail`. A photo opened from an album is imported through
   `ProjectLibrary` (copy fallback, original untouched).
 
+## Editor shell (`:feature:editor`) — layout FROZEN after Stage 3
+
+**The editor layout is frozen (R9).** Later stages only fill the slots listed in
+`TOOL_CATALOG.md`; they never move a slot or restructure the shell.
+
+- **One source of truth for tools:** `ToolRegistry` (`:core:ui`, `tools/`) lists all 162
+  tools (id, name, icon, category, place, slot, stage, panel type, synonyms, done).
+  `ToolCatalogTest` checks it against `TOOL_CATALOG.md`; the strips, menus, sheets, tool
+  search and Home → More all read it. Reachability tests prove every slot is ≤ 2 taps away.
+- **Phone** (compact, medium portrait): top bar 56 dp · canvas · selection options (Select)
+  · tool strip 56 dp · category bar 64 dp. The panel slot (a tool's panel or a sheet)
+  overlays the bottom of the canvas, ≤ 40 % of the canvas height, so the GL surface never
+  resizes while a panel moves.
+- **Wide** (expanded width, or medium in landscape): category rail 88 dp · (top bar, canvas,
+  tool strip) · 320 dp right column for panels and sheets (the category's tool list when
+  nothing is open).
+- **Panel slot** (`EditorPanel`): Tool(id), Layers, History, Info; the Masks category's
+  panel is the Masks sheet. Menus: More, Add layer, Add mask. Tool search is a full-screen
+  layer of the editor. `EditorViewModel` (MVI) keeps all of it; `AppPreferences` stores the
+  last category, favourites, coach marks and the canvas surround.
+- **Canvas** (`canvas/`): `CanvasView` is a `GLSurfaceView` rendering on demand with
+  `CanvasRenderer` (one textured quad, GLES 3.0) and asking for 120 Hz
+  (`Surface.setFrameRate`). Gestures are handled in `onTouchEvent`, never in Compose:
+  `TwoFingerTracker` → `CanvasTransform` (similarity transform in original-image pixels;
+  0.1×–32×, pan limit, right-angle snap) → a 3×3 matrix handed to the GL thread under a
+  lock. Fling (`FlingDecay`) and the double-tap animation run on a `Choreographer` callback.
+  Nothing allocates per event or per frame. The preview is decoded at ≤ 2048 px
+  (`ProjectLibrary.decodePreview`). Stage 4 replaces the renderer with the engine; the
+  view, gestures and transform stay. A Compose overlay above the surface is reserved for
+  on-canvas handles (hidden until a tool needs it).
+
 ## Edit graph
 
 Defined in `:core:model`, serialised with kotlinx.serialization.
@@ -153,6 +184,8 @@ SHA-256 (`Sha256`) before loading, and Settings can delete it. The runtime is Li
 | Engine on device (JNI, GL) | Instrumented tests + `GoldenAssert` (Kotlin) | `core/engine/src/androidTest` |
 | Kotlin logic | JUnit 4 | `src/test` of each module |
 | UI | Roborazzi screenshots (Robolectric native graphics) | `src/test`, images in `src/test/screenshots` |
+| Slot reachability, recomposition | Compose UI tests on Robolectric | `*ReachabilityTest`, `CanvasRecompositionTest` |
+| Canvas frame timing | Instrumented (correctness on SwiftShader, timing logged) | `feature/editor/src/androidTest` |
 | Performance | Macrobenchmark on the phone | `:benchmark` |
 
 `GoldenAssert` tolerances: 8-bit max |diff| ≤ 2/255 and mean ≤ 0.5/255; float ops max

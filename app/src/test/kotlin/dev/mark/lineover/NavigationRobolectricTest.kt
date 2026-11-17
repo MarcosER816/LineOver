@@ -4,7 +4,11 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onAllNodesWithContentDescription
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -14,6 +18,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.mark.lineover.core.io.project.ImportResult
 import dev.mark.lineover.core.io.project.ProjectLibraries
+import dev.mark.lineover.feature.editor.EditorTags
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertTrue
@@ -55,11 +60,25 @@ class NavigationRobolectricTest {
         composeRule.waitUntil(5_000) { composeRule.onAllNodesWithText(name).fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithText(name).performClick()
 
-        composeRule.onNodeWithText("The editor arrives in Stage 3").assertIsDisplayed()
-        composeRule.onNodeWithText(name).assertIsDisplayed()
+        // The editor opens with its first-open coach marks; Skip dismisses them for good.
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithContentDescription("Layers").fetchSemanticsNodes().isNotEmpty() }
+        if (composeRule.onAllNodesWithTag(EditorTags.COACH).fetchSemanticsNodes().isNotEmpty()) {
+            composeRule.onNodeWithText("Skip").performClick()
+        }
+        // The coach-mark scrim swallows taps: make sure it is gone before tapping Export.
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag(EditorTags.COACH).fetchSemanticsNodes().isEmpty() }
+        // Export stays on screen at any width; Layers may sit in the scrolling actions (narrow windows).
+        composeRule.onNodeWithContentDescription("Export").assertIsDisplayed()
+        composeRule.onNodeWithText("Exposure").assertIsDisplayed()
 
+        // Export is enabled once the project has loaded (asynchronously on a device).
+        composeRule.waitUntil(5_000) {
+            composeRule.onAllNodes(hasContentDescription("Export") and isEnabled()).fetchSemanticsNodes().isNotEmpty()
+        }
         composeRule.onNodeWithContentDescription("Export").performClick()
-        composeRule.onNodeWithText("Exports will be saved to Pictures/LineOver. The original photo is never changed.").assertIsDisplayed()
+        // The export sheet is a dialog: its window attaches asynchronously on a device.
+        val caption = "Exports are saved to Pictures/LineOver. The original photo is never changed."
+        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithText(caption).fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithContentDescription("Close").performClick()
 
         composeRule.onNodeWithContentDescription("Back").performClick()

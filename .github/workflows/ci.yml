@@ -74,6 +74,14 @@ jobs:
             **/build/outputs/golden-diffs/
             **/build/reports/roborazzi/
           if-no-files-found: ignore
+      # Every committed (verified) screenshot, so the frozen layout can be reviewed from a phone.
+      - name: Upload screenshot gallery
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshot-gallery
+          path: '**/src/test/screenshots/**/*.png'
+          if-no-files-found: error
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v7

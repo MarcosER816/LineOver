@@ -3,6 +3,7 @@ package dev.mark.lineover.feature.settings
 import androidx.compose.foundation.layout.Column
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.mark.lineover.core.designsystem.LineOverTheme
+import dev.mark.lineover.core.io.prefs.InMemoryAppPreferences
 import dev.mark.lineover.core.ui.adaptive.LoWindowInfo
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -36,14 +37,24 @@ abstract class SettingsScreenshots(
     @Test
     fun aboutSection() {
         captureRoboImage("settings/$widthClass/settings_about.png") {
-            LineOverTheme { SettingsSectionScreen(SettingsSection.About, "0.2.0", onBack = {}, onOpenGallery = null) }
+            LineOverTheme {
+                SettingsSectionScreen(
+                    SettingsSection.About,
+                    "0.2.0",
+                    InMemoryAppPreferences(),
+                    onBack = {},
+                    onOpenGallery = null,
+                )
+            }
         }
     }
 
     @Test
     fun reservedSection() {
         captureRoboImage("settings/$widthClass/settings_export_defaults.png") {
-            LineOverTheme { SettingsSectionScreen(SettingsSection.ExportDefaults, "0.2.0", onBack = {}, onOpenGallery = null) }
+            LineOverTheme {
+                SettingsSectionScreen(SettingsSection.ExportDefaults, "0.2.0", InMemoryAppPreferences(), onBack = {}, onOpenGallery = null)
+            }
         }
     }
 

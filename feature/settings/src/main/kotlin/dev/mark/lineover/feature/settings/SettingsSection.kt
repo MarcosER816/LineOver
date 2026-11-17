@@ -14,7 +14,7 @@ enum class SettingsSection(
     @param:DrawableRes val icon: Int,
     val stage: Int?,
 ) {
-    SurroundColor("surround", "Canvas surround", "Dark or mid grey around the photo", LoIcons.Palette, 3),
+    SurroundColor("surround", "Canvas surround", "Dark or mid grey around the photo", LoIcons.Palette, null),
     PreviewQuality("preview", "Preview quality", "Resolution of the live preview", LoIcons.HighQuality, 4),
     ExportDefaults("export", "Export defaults", "Format, quality, size and metadata", LoIcons.IosShare, 12),
     ColorManagement("color", "Colour management", "Working space and display profile", LoIcons.Lens, 4),

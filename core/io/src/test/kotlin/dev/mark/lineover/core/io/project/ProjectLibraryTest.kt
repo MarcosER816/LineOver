@@ -81,6 +81,38 @@ class ProjectLibraryTest {
         }
 
     @Test
+    fun previewIsDecodedAtMost2048PxAndKnowsTheOriginalSize() =
+        runTest {
+            val library = library(StandardTestDispatcher(testScheduler))
+            val file = File(temp.root, "big.png")
+            Bitmap.createBitmap(6000, 4000, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.rgb(10, 200, 90)) }.also { big ->
+                file.outputStream().use { big.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                big.recycle()
+            }
+            val id = (library.importPicked(listOf(Uri.fromFile(file))) as ImportResult.Imported).ids.single()
+            val project = library.observe(id).first()!!
+
+            val preview = library.decodePreview(project)!!
+
+            assertEquals(2048, preview.bitmap.width)
+            assertEquals(1365, preview.bitmap.height)
+            assertEquals(6000, preview.originalWidth)
+            assertEquals(4000, preview.originalHeight)
+            assertEquals(Bitmap.Config.ARGB_8888, preview.bitmap.config)
+        }
+
+    @Test
+    fun previewOfAMissingOriginalIsNull() =
+        runTest {
+            val library = library(StandardTestDispatcher(testScheduler))
+            val project =
+                dev.mark.lineover.core.model
+                    .Project(9, "gone", Uri.fromFile(File(temp.root, "gone.jpg")).toString(), null, 0, 0)
+
+            assertNull(library.decodePreview(project))
+        }
+
+    @Test
     fun unreadableSourcesAreCountedAndLeaveNoRow() =
         runTest {
             val library = library(StandardTestDispatcher(testScheduler))

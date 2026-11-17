@@ -91,6 +91,7 @@ fun LineOverNavigation(
                     EditorScreenRoute(
                         projectId = key.projectId,
                         library = container.projects,
+                        preferences = container.preferences,
                         onBack = back,
                         onExport = { backStack.add(ExportRoute(key.projectId)) },
                     )
@@ -113,6 +114,7 @@ fun LineOverNavigation(
                 entry<SettingsRoute> {
                     SettingsScreenRoute(
                         versionName = versionName,
+                        preferences = container.preferences,
                         onBack = back,
                         onOpenSection = { section ->
                             if (section == SettingsSection.Debug && openGallery != null) {
@@ -128,6 +130,7 @@ fun LineOverNavigation(
                     SettingsSectionScreen(
                         section = SettingsSection.fromId(key.sectionId) ?: SettingsSection.About,
                         versionName = versionName,
+                        preferences = container.preferences,
                         onBack = back,
                         onOpenGallery = openGallery,
                     )

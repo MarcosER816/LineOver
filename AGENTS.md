@@ -120,6 +120,15 @@ python3 tools/golden/generate.py --check
 - **Emulator = SwiftShader.** Instrumented tests prove correctness only. Performance is
   measured on the phone (`:benchmark`), never in CI.
 
+## Editor shell (frozen after Stage 3)
+
+- Every tool is defined once in `core/ui/.../tools/ToolRegistry.kt`; `ToolCatalogTest`
+  fails when it and `docs/TOOL_CATALOG.md` disagree. Change both together.
+- A stage fills a tool's slot (replaces its placeholder panel); it never moves a slot.
+  The `*ReachabilityTest`s keep every slot within two taps.
+- Canvas gestures stay in `CanvasView.onTouchEvent`; `CanvasRecompositionTest` fails if a
+  gesture recomposes.
+
 ## Testing conventions
 
 - **Golden tests:** add the reference to `tools/golden/reference.py`, regenerate, and
