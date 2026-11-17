@@ -3,6 +3,8 @@ package dev.mark.lineover
 import android.app.Application
 import dev.mark.lineover.core.io.gallery.DeviceGallery
 import dev.mark.lineover.core.io.gallery.MediaStoreGallery
+import dev.mark.lineover.core.io.prefs.AppPreferences
+import dev.mark.lineover.core.io.prefs.SharedAppPreferences
 import dev.mark.lineover.core.io.project.ProjectLibraries
 import dev.mark.lineover.core.io.project.ProjectLibrary
 import kotlinx.coroutines.CoroutineScope
@@ -28,4 +30,7 @@ class AppContainer(
 
     /** The device's photo library (Home → Albums). */
     val gallery: DeviceGallery by lazy { MediaStoreGallery(app.contentResolver) }
+
+    /** Editor and canvas preferences (last category, favourites, coach marks, surround). */
+    val preferences: AppPreferences by lazy { SharedAppPreferences(app) }
 }

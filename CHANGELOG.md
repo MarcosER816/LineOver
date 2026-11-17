@@ -2,6 +2,29 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 3 — Editor shell (0.3.0)
+
+### Added
+
+- The full editor layout, now final: top bar (Back, Undo, Redo, Compare, History, Layers,
+  More, Export), the photo canvas, a tool strip and the 18 categories. Every one of the 162
+  planned tools has its place and says which stage brings it.
+- Photo canvas: pinch to zoom (10 % to 3200 %), two fingers to move and turn the photo (it
+  snaps straight with a tick), double tap for fit / 100 %, a glide when you let go. It asks
+  the screen for 120 Hz.
+- Layers, History (history, snapshots, versions) and Masks sheets; the selection options bar;
+  the export sheet with all its sections.
+- More menu: copy / paste settings, batch, histogram, clipping warnings, guides, info,
+  tool search, favourites, help.
+- Tool search over every tool, including what you want to do ("heal", "erase object").
+- Long-press any tool to pin it to Favorites.
+- First-open tips (pinch, compare, categories), shown once; More → Help shows them again.
+- The last category you used is selected when you come back.
+- Tablets, unfolded foldables and landscape: categories in a rail on the left, panels in a
+  column on the right.
+- Settings → Canvas surround: dark or mid grey around the photo.
+- Home → More: HDR merge, panorama, focus stacking, batch and sync settings, with their stages.
+
 ## Stage 2 follow-up — Device albums (0.2.1)
 
 ### Added

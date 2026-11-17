@@ -55,11 +55,17 @@ class NavigationRobolectricTest {
         composeRule.waitUntil(5_000) { composeRule.onAllNodesWithText(name).fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithText(name).performClick()
 
-        composeRule.onNodeWithText("The editor arrives in Stage 3").assertIsDisplayed()
-        composeRule.onNodeWithText(name).assertIsDisplayed()
+        // First open of the editor: the coach marks, dismissed for good with Skip.
+        composeRule.onNodeWithText("Pinch to zoom").assertIsDisplayed()
+        composeRule.onNodeWithText("Skip").performClick()
+        composeRule.onNodeWithContentDescription("Layers").assertIsDisplayed()
+        composeRule.onNodeWithText("Exposure").assertIsDisplayed()
 
         composeRule.onNodeWithContentDescription("Export").performClick()
-        composeRule.onNodeWithText("Exports will be saved to Pictures/LineOver. The original photo is never changed.").assertIsDisplayed()
+        composeRule
+            .onNodeWithText(
+                "Exports are saved to Pictures/LineOver. The original photo is never changed.",
+            ).assertExists()
         composeRule.onNodeWithContentDescription("Close").performClick()
 
         composeRule.onNodeWithContentDescription("Back").performClick()

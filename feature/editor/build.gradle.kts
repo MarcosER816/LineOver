@@ -10,6 +10,19 @@ dependencies {
     implementation(project(":core:io"))
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    // BackHandler (already in the app through :app).
+    implementation(libs.androidx.activity.compose)
 
     testImplementation(libs.kotlinx.coroutines.test)
+    // Reachability and recomposition tests drive the real editor on the JVM (Robolectric).
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.androidx.test.ext.junit)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
+
+    // Frame timing of the GL canvas on a device or emulator.
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
 }

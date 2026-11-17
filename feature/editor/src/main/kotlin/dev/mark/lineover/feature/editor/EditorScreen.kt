@@ -1,135 +1,303 @@
 package dev.mark.lineover.feature.editor
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.mark.lineover.core.designsystem.LoColors
+import dev.mark.lineover.core.designsystem.LoDimens
 import dev.mark.lineover.core.designsystem.LoIcons
 import dev.mark.lineover.core.designsystem.LoShapes
 import dev.mark.lineover.core.designsystem.LoSpacing
 import dev.mark.lineover.core.designsystem.LoType
+import dev.mark.lineover.core.designsystem.LocalReducedMotion
+import dev.mark.lineover.core.designsystem.MotionTokens
 import dev.mark.lineover.core.designsystem.component.LoEmptyState
-import dev.mark.lineover.core.designsystem.component.LoIconButton
+import dev.mark.lineover.core.designsystem.component.LoPanel
+import dev.mark.lineover.core.designsystem.component.LoPanelDetent
+import dev.mark.lineover.core.designsystem.component.LoPanelState
+import dev.mark.lineover.core.designsystem.component.LoToastHost
+import dev.mark.lineover.core.designsystem.component.LoToastState
+import dev.mark.lineover.core.io.prefs.AppPreferences
+import dev.mark.lineover.core.io.prefs.CanvasSurround
 import dev.mark.lineover.core.io.project.ProjectLibrary
-import dev.mark.lineover.core.model.Project
-import dev.mark.lineover.core.ui.image.ProjectThumbnail
-import dev.mark.lineover.core.ui.mvi.MviViewModel
+import dev.mark.lineover.core.model.ToolCategory
+import dev.mark.lineover.core.ui.adaptive.LoWidthClass
+import dev.mark.lineover.core.ui.adaptive.LoWindowInfo
+import dev.mark.lineover.core.ui.adaptive.rememberLoWindowInfo
+import dev.mark.lineover.core.ui.tools.ToolRegistry
+import dev.mark.lineover.feature.editor.canvas.CanvasView
 import kotlinx.coroutines.launch
-
-data class EditorState(
-    val project: Project? = null,
-    val loaded: Boolean = false,
-)
-
-/** The editor of one project. Until Stage 3 it only shows which project is open. */
-class EditorViewModel(
-    projectId: Long,
-    library: ProjectLibrary,
-) : MviViewModel<EditorState, Nothing, Nothing>(EditorState()) {
-    init {
-        viewModelScope.launch { library.markOpened(projectId) }
-        viewModelScope.launch {
-            library.observe(projectId).collect { project -> setState { copy(project = project, loaded = true) } }
-        }
-    }
-
-    override fun onIntent(intent: Nothing) = Unit
-}
 
 @Composable
 fun EditorRoute(
     projectId: Long,
     library: ProjectLibrary,
+    preferences: AppPreferences,
     onBack: () -> Unit,
     onExport: () -> Unit,
 ) {
-    val viewModel = viewModel(key = "editor-$projectId") { EditorViewModel(projectId, library) }
+    val viewModel = viewModel(key = "editor-$projectId") { EditorViewModel(projectId, library, preferences) }
     val state by viewModel.state.collectAsStateWithLifecycle()
-    EditorScreen(state, onBack, onExport)
+    val toast = remember { LoToastState() }
+    LaunchedEffect(viewModel) {
+        viewModel.effects.collect { effect ->
+            when (effect) {
+                is EditorEffect.Message -> launch { toast.show(effect.text) }
+            }
+        }
+    }
+    EditorScreen(
+        state = state,
+        onIntent = viewModel::onIntent,
+        onBack = onBack,
+        onExport = onExport,
+        toast = toast,
+        canvas = { modifier -> PhotoCanvas(state, modifier) },
+    )
 }
 
-/** Editor placeholder: the shell with every tool slot arrives in Stage 3, the engine in Stage 4. */
+/**
+ * The GL canvas. Only a new preview or surround colour reaches [AndroidView.update];
+ * gestures stay inside [CanvasView] and never recompose.
+ */
+@Composable
+internal fun PhotoCanvas(
+    state: EditorState,
+    modifier: Modifier,
+) {
+    val preview = state.preview
+    val surround = state.surround.color.toArgb()
+    AndroidView(
+        factory = { CanvasView(it) },
+        modifier = modifier,
+        update = { view ->
+            view.setSurround(surround)
+            view.setImage(preview?.bitmap, preview?.originalWidth ?: 0, preview?.originalHeight ?: 0)
+        },
+    )
+}
+
+val CanvasSurround.color: Color
+    get() = if (this == CanvasSurround.MidGrey) LoColors.CanvasSurroundGrey else LoColors.CanvasSurroundDark
+
+/** Rail + right column on tablets, unfolded foldables and landscape phones (D4). */
+internal val LoWindowInfo.editorIsWide: Boolean
+    get() = widthClass == LoWidthClass.Expanded || (widthClass == LoWidthClass.Medium && isLandscape)
+
+/**
+ * The editor shell (layout frozen after Stage 3, rule R9).
+ *
+ * Phone: top bar · canvas (panel over its lower part, ≤ 40 % of it) · selection options ·
+ * tool strip · category bar. Wide: category rail · (top bar, canvas, tool strip) · 320 dp
+ * column for panels and sheets.
+ *
+ * [canvas] draws the photo; production passes the GL [CanvasView], screenshot tests a stand-in.
+ */
 @Composable
 fun EditorScreen(
     state: EditorState,
+    onIntent: (EditorIntent) -> Unit,
     onBack: () -> Unit,
     onExport: () -> Unit,
     modifier: Modifier = Modifier,
+    toast: LoToastState = remember { LoToastState() },
+    canvas: @Composable (Modifier) -> Unit = {},
+    autoFocusSearch: Boolean = true,
 ) {
-    Box(modifier.fillMaxSize().background(LoColors.CanvasSurroundDark).windowInsetsPadding(WindowInsets.safeDrawing)) {
-        Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().heightIn(min = 56.dp).background(LoColors.Surface1),
-                verticalAlignment = Alignment.CenterVertically,
+    val window = rememberLoWindowInfo()
+    val wide = window.editorIsWide
+    BackHandler(enabled = state.searchOpen) { onIntent(EditorIntent.CloseSearch) }
+    BackHandler(enabled = !state.searchOpen && state.panel != null) { onIntent(EditorIntent.ClosePanel) }
+    Box(modifier.fillMaxSize().background(LoColors.Surface1).windowInsetsPadding(WindowInsets.safeDrawing)) {
+        if (wide) {
+            WideLayout(state, onIntent, onBack, onExport, canvas)
+        } else {
+            CompactLayout(state, onIntent, onBack, onExport, canvas)
+        }
+        LoToastHost(
+            toast,
+            Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = LoDimens.ToolStripHeight + LoDimens.CategoryBarHeight + LoSpacing.M),
+        )
+        if (state.searchOpen) ToolSearchScreen(state, onIntent, autoFocus = autoFocusSearch)
+        state.coachStep?.let { step -> CoachMarks(step, wide, onIntent) }
+    }
+}
+
+@Composable
+private fun CompactLayout(
+    state: EditorState,
+    onIntent: (EditorIntent) -> Unit,
+    onBack: () -> Unit,
+    onExport: () -> Unit,
+    canvas: @Composable (Modifier) -> Unit,
+) {
+    val reducedMotion = LocalReducedMotion.current
+    // Sheets (layers, history, masks, info) open tall; a tool's panel opens at its low detent.
+    val sheetOpen = state.hasCompactPanel && state.panel !is EditorPanel.Tool
+    Column(Modifier.fillMaxSize()) {
+        EditorTopBar(state, wide = false, onIntent = onIntent, onBack = onBack, onExport = onExport)
+        BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+            CanvasArea(state, canvas)
+            androidx.compose.animation.AnimatedVisibility(
+                visible = state.hasCompactPanel,
+                modifier = Modifier.align(Alignment.BottomCenter),
+                enter = slideInVertically(MotionTokens.enter(reducedMotion)) { it },
+                exit = slideOutVertically(MotionTokens.exit(reducedMotion)) { it },
             ) {
-                LoIconButton(LoIcons.ArrowBack, "Back", onClick = onBack)
-                Text(
-                    state.project?.name.orEmpty(),
-                    style = LoType.Title,
-                    color = LoColors.TextPrimary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-            }
-            Column(Modifier.weight(1f).fillMaxWidth().padding(LoSpacing.M), horizontalAlignment = Alignment.CenterHorizontally) {
-                val project = state.project
-                if (state.loaded && project == null) {
-                    LoEmptyState(LoIcons.Image, "Project not found", body = "It may have been deleted.")
-                } else if (project != null) {
-                    ProjectThumbnail(
-                        project.thumbPath,
-                        Modifier
-                            .widthIn(max = 280.dp)
-                            .fillMaxWidth()
-                            .aspectRatio(1f)
-                            .clip(LoShapes.Medium),
-                    )
-                    LoEmptyState(
-                        icon = LoIcons.Tune,
-                        title = "The editor arrives in Stage 3",
-                        body = "This project is saved. Editing tools are added stage by stage; your original photo is never changed.",
-                    )
+                key(sheetOpen) {
+                    val panelState = remember { LoPanelState(if (sheetOpen) LoPanelDetent.Expanded else LoPanelDetent.Collapsed) }
+                    LoPanel(
+                        state = panelState,
+                        modifier = Modifier.testTag(EditorTags.PANEL),
+                        maxHeight = maxHeight * LoDimens.PANEL_MAX_HEIGHT_FRACTION,
+                    ) {
+                        PanelContent(state, wide = false, onIntent = onIntent)
+                    }
                 }
             }
         }
-        if (state.project != null) {
-            ExtendedFloatingActionButton(
-                onClick = onExport,
-                // The extended FAB does not merge its text into its semantics: name it explicitly.
-                modifier = Modifier.align(Alignment.BottomEnd).padding(LoSpacing.M).semantics { contentDescription = "Export" },
-                containerColor = LoColors.Surface3,
-                contentColor = LoColors.TextPrimary,
-                shape = LoShapes.Large,
-                icon = { Icon(painterResource(LoIcons.IosShare), contentDescription = null) },
-                text = { Text("Export", style = LoType.Title) },
-            )
+        if (state.category == ToolCategory.Select) SelectionOptionsBar()
+        ToolStrip(state, onIntent)
+        CategoryBar(state, onIntent)
+    }
+}
+
+@Composable
+private fun WideLayout(
+    state: EditorState,
+    onIntent: (EditorIntent) -> Unit,
+    onBack: () -> Unit,
+    onExport: () -> Unit,
+    canvas: @Composable (Modifier) -> Unit,
+) {
+    Row(Modifier.fillMaxSize()) {
+        CategoryRail(state, onIntent)
+        Column(Modifier.weight(1f).fillMaxHeight()) {
+            EditorTopBar(state, wide = true, onIntent = onIntent, onBack = onBack, onExport = onExport)
+            Box(Modifier.weight(1f).fillMaxWidth()) { CanvasArea(state, canvas) }
+            if (state.category == ToolCategory.Select) SelectionOptionsBar()
+            ToolStrip(state, onIntent)
+        }
+        Column(
+            Modifier
+                .width(LoDimens.SidePanelWidth)
+                .fillMaxHeight()
+                .background(LoColors.Surface1)
+                .verticalScroll(rememberScrollState())
+                .padding(vertical = LoSpacing.Xs)
+                .testTag(EditorTags.PANEL),
+        ) {
+            PanelContent(state, wide = true, onIntent = onIntent)
         }
     }
 }
+
+/** Canvas, its status, the overlay placeholders and the (hidden) handle layer. */
+@Composable
+private fun CanvasArea(
+    state: EditorState,
+    canvas: @Composable (Modifier) -> Unit,
+) {
+    Box(Modifier.fillMaxSize().background(state.surround.color)) {
+        canvas(Modifier.fillMaxSize().testTag(EditorTags.CANVAS))
+        when {
+            state.loaded && state.project == null -> {
+                LoEmptyState(
+                    LoIcons.Image,
+                    "Project not found",
+                    body = "It may have been deleted.",
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            }
+
+            state.previewUnavailable -> {
+                LoEmptyState(
+                    LoIcons.Image,
+                    "This format can't be shown yet",
+                    body = "TIFF arrives in Stage 12 and RAW in Stage 25. The project is kept; your original is never changed.",
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            }
+        }
+        CanvasBadges(state, Modifier.align(Alignment.TopStart))
+        // Overlay for the on-canvas handles of later stages (crop, gradients, pins). Hidden for now.
+        CanvasOverlayLayer(visible = false)
+    }
+}
+
+@Composable
+private fun CanvasOverlayLayer(visible: Boolean) {
+    if (visible) Box(Modifier.fillMaxSize().testTag(EditorTags.CANVAS_OVERLAY))
+}
+
+/** The canvas overlays switched on in More (histogram, clipping, guides), as placeholders. */
+@Composable
+private fun CanvasBadges(
+    state: EditorState,
+    modifier: Modifier = Modifier,
+) {
+    val reducedMotion = LocalReducedMotion.current
+    Column(modifier.padding(LoSpacing.Xs), verticalArrangement = Arrangement.spacedBy(LoSpacing.Xxs)) {
+        listOf("light.histogram", "light.clipping_warnings", "workflow.guides_grid_rulers").forEach { id ->
+            AnimatedVisibility(
+                visible = id in state.overlays,
+                enter = fadeIn(MotionTokens.enter(reducedMotion)),
+                exit = fadeOut(MotionTokens.exit(reducedMotion)),
+            ) {
+                val tool = requireNotNull(ToolRegistry[id])
+                Row(
+                    Modifier
+                        .clip(LoShapes.Small)
+                        .background(LoColors.Surface2.copy(alpha = BADGE_ALPHA))
+                        .padding(horizontal = LoSpacing.Xs, vertical = LoSpacing.Xxs)
+                        .testTag(EditorTags.slot(id)),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(LoSpacing.Xxs),
+                ) {
+                    Icon(painterResource(tool.icon), contentDescription = null, tint = LoColors.TextSecondary)
+                    Text("${tool.name} · Stage ${tool.stage}", style = LoType.Caption, color = LoColors.TextPrimary)
+                }
+            }
+        }
+    }
+}
+
+private const val BADGE_ALPHA = 0.9f

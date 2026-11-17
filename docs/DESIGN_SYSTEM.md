@@ -126,9 +126,9 @@ through the `Vibrator` (some OEM builds ignore the view constants).
 | Component | What it is |
 | --- | --- |
 | `LoSlider` | Value slider: centred-zero (`FromDefault`) or min-start (`FromStart`) fill; tabular value label; relative drag over the whole row; fine mode (finger ≥ 2 row heights below the slider → ¼ speed); tap left/right of the thumb = ±1 step; double tap resets (haptic confirm); haptic detent at the default; optional gradient track (`Temperature`, `Tint`, `Hue`); reports a second finger down (`onSecondaryPointerChange`) for the clipping preview. Math in `LoSliderModel` |
-| `LoToolButton` | 24 dp icon + 11 sp label; selected = accent tint + 2 dp indicator |
-| `LoCategoryBar` | Scrolling, snapping category bar (64 dp); scrolls the selected category into view |
-| `LoPanel` | Bottom panel with detents 160 / 280 dp (≤ 40 % of the window), spring settle, drag or tap the handle |
+| `LoToolButton` | 24 dp icon + 11 sp label; selected = accent tint + 2 dp indicator; optional long press (pin to Favorites) |
+| `LoCategoryBar` | Scrolling, snapping category bar (64 dp); after its first layout it jumps to an off-screen selected category, later changes scroll it into view |
+| `LoPanel` | Bottom panel with detents 160 / 280 dp (≤ 40 % of the window, or of `maxHeight`: the editor passes 40 % of the canvas), spring settle, drag or tap the handle |
 | `LoIconButton` | 48 dp icon button, optional selected (toggle) state |
 | `LoChip` | Selectable chip, 32 dp drawn, 48 dp touch |
 | `LoSegmented` | Segmented control |
@@ -145,9 +145,11 @@ part of release builds.
 
 ## Layout
 
-- Phone portrait: top bar · canvas · bottom panel · tool strip · category bar.
-- Tablet, foldable and landscape (from Stage 2, D4): the panel moves to a 320 dp side
-  panel and the canvas keeps the remaining space.
+- Phone portrait: top bar · canvas (the bottom panel overlays its lower ≤ 40 %) ·
+  selection options (Select) · tool strip · category bar.
+- Tablet, unfolded foldable and landscape (D4): the category bar becomes an 88 dp rail on
+  the left and panels and sheets dock in a 320 dp column on the right.
+- **Frozen after Stage 3** (R9): see ARCHITECTURE, "Editor shell".
 - The canvas is always the largest element; chrome never covers more than it must.
 
 ## Category order (fixed)

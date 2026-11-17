@@ -43,11 +43,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -73,6 +75,8 @@ import dev.mark.lineover.core.model.Project
 import dev.mark.lineover.core.ui.adaptive.LoWidthClass
 import dev.mark.lineover.core.ui.adaptive.rememberLoWindowInfo
 import dev.mark.lineover.core.ui.image.ProjectThumbnail
+import dev.mark.lineover.core.ui.tools.ToolRegistry
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -104,6 +108,7 @@ fun HomeScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text("LineOver", style = LoType.Headline, color = LoColors.TextPrimary, modifier = Modifier.weight(1f))
+                HomeMoreMenu(toast)
                 LoIconButton(LoIcons.Settings, "Settings", onClick = onOpenSettings)
             }
             when {
@@ -227,6 +232,43 @@ private fun ProjectCard(
         }
     }
 }
+
+/** Home → More: the reserved slots of merging (Stage 27), batch and sync settings (Stage 28). */
+@Composable
+private fun HomeMoreMenu(toast: LoToastState) {
+    var open by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    Box {
+        LoIconButton(LoIcons.MoreVert, "More", onClick = { open = true }, selected = open)
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            containerColor = LoColors.Surface2,
+            shape = LoShapes.Medium,
+        ) {
+            HOME_MORE_TOOLS.mapNotNull { ToolRegistry[it] }.forEach { tool ->
+                DropdownMenuItem(
+                    text = {
+                        Column {
+                            Text(tool.name, style = LoType.Body, color = LoColors.TextPrimary)
+                            Text("Arrives in Stage ${tool.stage}", style = LoType.Micro, color = LoColors.TextSecondary)
+                        }
+                    },
+                    leadingIcon = { Icon(painterResource(tool.icon), contentDescription = null, tint = LoColors.TextSecondary) },
+                    onClick = {
+                        open = false
+                        scope.launch { toast.show("${tool.name} arrives in Stage ${tool.stage}") }
+                    },
+                    modifier = Modifier.testTag("slot:${tool.id}"),
+                )
+            }
+        }
+    }
+}
+
+/** Tools whose reserved slot is Home → More. */
+internal val HOME_MORE_TOOLS =
+    listOf("merge.hdr_merge", "merge.panorama", "merge.focus_stacking", "workflow.batch", "workflow.sync_settings")
 
 @Composable
 private fun MenuItem(

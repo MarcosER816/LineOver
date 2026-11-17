@@ -2,6 +2,7 @@ package dev.mark.lineover.feature.home
 
 import android.net.Uri
 import dev.mark.lineover.core.io.project.ImportResult
+import dev.mark.lineover.core.io.project.PreviewImage
 import dev.mark.lineover.core.io.project.ProjectLibrary
 import dev.mark.lineover.core.model.Project
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,4 +57,9 @@ class FakeProjectLibrary : ProjectLibrary {
     }
 
     override suspend fun markOpened(id: Long) = Unit
+
+    override suspend fun decodePreview(
+        project: Project,
+        maxEdge: Int,
+    ): PreviewImage? = null
 }

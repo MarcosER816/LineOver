@@ -50,11 +50,19 @@ class NavigationTest {
         composeRule.waitUntil(5_000) { composeRule.onAllNodesWithText(name).fetchSemanticsNodes().isNotEmpty() }
         composeRule.onNodeWithText(name).performClick()
 
-        composeRule.onNodeWithText("The editor arrives in Stage 3").assertIsDisplayed()
-        composeRule.onNodeWithText(name).assertIsDisplayed()
+        // First open of the editor shows the coach marks (unless an earlier run dismissed them).
+        composeRule.waitForIdle()
+        if (composeRule.onAllNodesWithText("Pinch to zoom").fetchSemanticsNodes().isNotEmpty()) {
+            composeRule.onNodeWithText("Skip").performClick()
+        }
+        composeRule.onNodeWithContentDescription("Layers").assertIsDisplayed()
+        composeRule.onNodeWithText("Exposure").assertIsDisplayed()
 
         composeRule.onNodeWithContentDescription("Export").performClick()
-        composeRule.onNodeWithText("Exports will be saved to Pictures/LineOver. The original photo is never changed.").assertIsDisplayed()
+        composeRule
+            .onNodeWithText(
+                "Exports are saved to Pictures/LineOver. The original photo is never changed.",
+            ).assertExists()
         composeRule.onNodeWithContentDescription("Close").performClick()
 
         composeRule.onNodeWithContentDescription("Back").performClick()

@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
@@ -41,6 +42,9 @@ import dev.mark.lineover.core.designsystem.LocalReducedMotion
 import dev.mark.lineover.core.designsystem.component.LoEmptyState
 import dev.mark.lineover.core.designsystem.component.LoIconButton
 import dev.mark.lineover.core.designsystem.component.LoPlaceholderTool
+import dev.mark.lineover.core.designsystem.component.LoSegmented
+import dev.mark.lineover.core.io.prefs.AppPreferences
+import dev.mark.lineover.core.io.prefs.CanvasSurround
 import dev.mark.lineover.core.ui.adaptive.rememberLoWindowInfo
 import java.util.Locale
 import kotlin.math.roundToLong
@@ -48,11 +52,12 @@ import kotlin.math.roundToLong
 @Composable
 fun SettingsRoute(
     versionName: String,
+    preferences: AppPreferences,
     onBack: () -> Unit,
     onOpenSection: (SettingsSection) -> Unit,
     onOpenGallery: (() -> Unit)?,
 ) {
-    val viewModel = viewModel { SettingsViewModel(versionName, showDebug = onOpenGallery != null) }
+    val viewModel = viewModel { SettingsViewModel(versionName, showDebug = onOpenGallery != null, preferences = preferences) }
     val state by viewModel.state.collectAsStateWithLifecycle()
     SettingsScreen(
         state = state,
@@ -103,13 +108,21 @@ fun SettingsScreen(
 fun SettingsSectionScreen(
     section: SettingsSection,
     versionName: String,
+    preferences: AppPreferences,
     onBack: () -> Unit,
     onOpenGallery: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
+    val surround by preferences.surround.collectAsStateWithLifecycle()
     Column(modifier.fillMaxSize().background(LoColors.Bg).windowInsetsPadding(WindowInsets.safeDrawing)) {
         TitleBar(section.title, onBack)
-        SectionDetail(section, SettingsState(versionName = versionName), onIntent = {}, onOpenGallery, Modifier.fillMaxSize())
+        SectionDetail(
+            section,
+            SettingsState(versionName = versionName, surround = surround),
+            onIntent = { if (it is SettingsIntent.SetSurround) preferences.setSurround(it.surround) },
+            onOpenGallery,
+            Modifier.fillMaxSize(),
+        )
     }
 }
 
@@ -147,6 +160,7 @@ private fun SectionRow(
             .heightIn(min = 64.dp)
             .background(if (selected) LoColors.Surface1 else Color.Transparent)
             .selectable(selected = selected, role = Role.Button, onClick = onClick)
+            .testTag("section:${section.id}")
             .padding(horizontal = LoSpacing.M, vertical = LoSpacing.Xs),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(LoSpacing.M),
@@ -188,6 +202,21 @@ private fun SectionDetail(
 
             SettingsSection.Debug -> {
                 DebugDetail(onOpenGallery)
+            }
+
+            SettingsSection.SurroundColor -> {
+                Text(section.summary, style = LoType.Body, color = LoColors.TextSecondary)
+                LoSegmented(
+                    options = listOf("Dark", "Mid grey"),
+                    selectedIndex = if (state.surround == CanvasSurround.MidGrey) 1 else 0,
+                    onSelect = { onIntent(SettingsIntent.SetSurround(if (it == 1) CanvasSurround.MidGrey else CanvasSurround.Dark)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "Mid grey helps judge brightness and contrast; dark keeps attention on the photo.",
+                    style = LoType.Caption,
+                    color = LoColors.TextSecondary,
+                )
             }
 
             SettingsSection.ReducedMotion -> {

@@ -1,6 +1,6 @@
 # Tool catalog
 
-Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 0 done.**
+Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 1 done.**
 
 - **id**: stable identifier (`<group>.<tool>`), used in code, favourites and project files. Never renamed.
 - **UI slot**: where the tool lives. Slots are reserved now and are never moved (rule R9); a stage only *fills* slots.
@@ -340,6 +340,6 @@ The 27 blend modes: Normal, Dissolve, Darken, Multiply, Color Burn, Linear Burn,
 | --- | --- | --- | --- | --- | --- |
 | `workflow.batch` | Batch | — (shell) | `home/batch` | 28 | reserved |
 | `workflow.sync_settings` | Sync settings | — (shell) | `home/sync-settings` | 28 | reserved |
-| `workflow.tool_search` | Tool search | — (shell) | `topbar/tool-search` | 3 | reserved |
+| `workflow.tool_search` | Tool search | — (shell) | `topbar/tool-search` | 3 | done |
 | `workflow.mini_tutorials` | Mini tutorials | — (shell) | `settings/tutorials` | 28 | reserved |
 | `workflow.guides_grid_rulers` | Guides / grid / rulers | — (shell) | `canvas/overlay/guides` | 28 | reserved |
