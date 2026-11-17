@@ -156,24 +156,30 @@ jobs:
         run: |
           sha="$(git rev-parse --short=7 HEAD)"
           mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/lineover-${sha}.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "dist/lineover-${sha}-debug.apk"
-          cp app/build/outputs/apk/release/app-release.apk "dist/lineover-${sha}-release.apk"
           echo "sha=${sha}" >> "$GITHUB_OUTPUT"
           {
             echo "### LineOver ${sha}"
-            echo "Release APK signed with: ${{ steps.keystore.outputs.signing }}"
-            echo '```'
-            ls -l dist
-            echo '```'
+            echo "- **lineover-${sha}.apk**: the app to install (release, signed with: ${{ steps.keystore.outputs.signing }})"
+            echo "- lineover-${sha}-debug.apk: test build with the debug menu, only when a phone checklist asks for it"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Remove decoded keystore
         if: always()
         run: rm -f "$RUNNER_TEMP/release-keystore.jks"
-      - name: Upload APKs
+      # Each APK is uploaded on its own and unzipped (archive: false), so the download
+      # is the .apk itself; the file name becomes the artifact name.
+      - name: Upload release APK
         uses: actions/upload-artifact@v7
         with:
-          name: lineover-${{ steps.apks.outputs.sha }}
-          path: dist/*.apk
+          path: dist/lineover-${{ steps.apks.outputs.sha }}.apk
+          archive: false
+          if-no-files-found: error
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v7
+        with:
+          path: dist/lineover-${{ steps.apks.outputs.sha }}-debug.apk
+          archive: false
           if-no-files-found: error
 
   # (e) Instrumented tests on an emulator. The emulator renders with SwiftShader:

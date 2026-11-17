@@ -11,11 +11,15 @@ non-destructive, GPU-accelerated, everything on the device. Built stage by stage
 
 ## Getting the APK
 
-Every CI run on `main` uploads an artifact `lineover-<sha>` containing
-`lineover-<sha>-debug.apk` and `lineover-<sha>-release.apk`
-(Actions → CI → latest run → Artifacts). Pushing a tag `v*` publishes a GitHub Release.
+Every CI run on `main` (Actions → CI → latest run → Artifacts) has two downloads, each a
+plain `.apk` (not a zip):
 
-The debug build installs as `dev.mark.lineover.debug`, next to the release build.
+- **`lineover-<sha>.apk`**: the app. Release build, signed with your key. Install this one.
+- `lineover-<sha>-debug.apk`: a test build with the debug menu (component gallery…),
+  installed as a separate app (`dev.mark.lineover.debug`). Only needed when a stage's
+  phone checklist says so.
+
+Pushing a tag `v*` publishes a GitHub Release with the signed APK.
 
 ## Signing
 

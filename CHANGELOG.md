@@ -19,6 +19,8 @@ All notable changes, newest first. One section per stage.
 ### Changed
 
 - `LoMotion` is now `MotionTokens`.
+- CI downloads: `lineover-<sha>.apk` (the signed app) and `lineover-<sha>-debug.apk` are
+  separate, unzipped artifacts instead of one zip holding both.
 
  — Scaffolding (0.0.1)
 
