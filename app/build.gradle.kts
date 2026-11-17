@@ -77,6 +77,12 @@ dependencies {
     implementation(libs.androidx.profileinstaller)
     baselineProfile(project(":baselineprofile"))
 
+    // The navigation flow also runs on the JVM (Robolectric) in the unit job.
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.ext.junit)
+
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.runner)

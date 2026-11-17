@@ -22,6 +22,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -120,7 +122,8 @@ fun EditorScreen(
         if (state.project != null) {
             ExtendedFloatingActionButton(
                 onClick = onExport,
-                modifier = Modifier.align(Alignment.BottomEnd).padding(LoSpacing.M),
+                // The extended FAB does not merge its text into its semantics: name it explicitly.
+                modifier = Modifier.align(Alignment.BottomEnd).padding(LoSpacing.M).semantics { contentDescription = "Export" },
                 containerColor = LoColors.Surface3,
                 contentColor = LoColors.TextPrimary,
                 shape = LoShapes.Large,

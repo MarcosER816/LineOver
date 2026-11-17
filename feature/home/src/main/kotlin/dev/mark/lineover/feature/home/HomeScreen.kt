@@ -49,6 +49,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -290,6 +292,8 @@ private fun BottomActions(
         )
         ExtendedFloatingActionButton(
             onClick = onImport,
+            // The extended FAB does not merge its text into its semantics: name it explicitly.
+            modifier = Modifier.semantics { contentDescription = "Import photos" },
             containerColor = LoColors.Accent,
             contentColor = LoColors.OnAccent,
             shape = LoShapes.Large,

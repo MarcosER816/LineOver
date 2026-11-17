@@ -35,7 +35,8 @@ landscape. No editor internals.
 Tests added: `ProjectDatabaseMigrationTest` (2), `ProjectLibraryTest` (7, real Room + real
 image decode), `ProjectNamesTest`, `ThumbnailMathTest`, `LoWindowInfoTest`,
 `HomeViewModelTest` (8), `FormatSizeTest`, 19 screenshots; instrumented `NavigationTest`
-(3, replaces Stage 1's `DebugMenuTest`). Unit + screenshot total: 121.
+(3, replaces Stage 1's `DebugMenuTest`) and its JVM twin `NavigationRobolectricTest`.
+Unit + screenshot total: 124.
 
 ## Tools delivered
 
@@ -98,6 +99,8 @@ None changed. New screenshots under `feature/*/src/test/screenshots/`.
 | Home screenshot: a card visible through the tab switch | The bottom actions had no background over the scrolling grid | Opaque bottom bar plus an opaque strip behind the navigation bar |
 | Tab switch stretched across tablets | `weight(1f)` overrides `widthIn(max)` | Weighted box containing a width-capped switch |
 | `FormatSizeTest`: 716 KB instead of 717 KB | Truncation | Round |
+| Emulator `NavigationTest`: "Export" not found in the merged tree | Material's extended FAB does not merge its text into its semantics, so TalkBack would only say "Button" (an accessibility bug) | Explicit content description on the Export and Import FABs |
+| Emulator `NavigationTest`: gallery not shown | The test tapped the Debug row while it was scrolled off-screen | `performScrollTo()` before tapping; the flow also runs on the JVM now (`NavigationRobolectricTest`), which reproduced both failures locally |
 
 Plan B used: no.
 

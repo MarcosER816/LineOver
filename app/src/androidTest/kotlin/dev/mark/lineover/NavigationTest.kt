@@ -9,6 +9,7 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.mark.lineover.core.io.project.ImportResult
@@ -52,7 +53,7 @@ class NavigationTest {
         composeRule.onNodeWithText("The editor arrives in Stage 3").assertIsDisplayed()
         composeRule.onNodeWithText(name).assertIsDisplayed()
 
-        composeRule.onNodeWithText("Export").performClick()
+        composeRule.onNodeWithContentDescription("Export").performClick()
         composeRule.onNodeWithText("Exports will be saved to Pictures/LineOver. The original photo is never changed.").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Close").performClick()
 
@@ -65,11 +66,11 @@ class NavigationTest {
         composeRule.onNodeWithContentDescription("Settings").performClick()
         composeRule.onNodeWithText("Settings").assertIsDisplayed()
 
-        composeRule.onNodeWithText("About and licences").performClick()
+        composeRule.onNodeWithText("About and licences").performScrollTo().performClick()
         composeRule.onNodeWithText("Open-source licences").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Back").performClick()
 
-        composeRule.onNodeWithText("Debug").performClick()
+        composeRule.onNodeWithText("Debug").performScrollTo().performClick()
         composeRule.onNodeWithText("Component gallery").assertIsDisplayed()
         composeRule.onNodeWithText("LoSlider").assertIsDisplayed()
         composeRule.onNodeWithContentDescription("Back").performClick()
