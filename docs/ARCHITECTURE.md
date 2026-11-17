@@ -84,6 +84,14 @@ preview and is never animated; the committed value becomes a new edit graph on r
 - **Delete with undo**: the row is removed at once and the files stay for 5 s; Undo
   re-inserts the row, otherwise the files are purged on the app scope.
 
+- **Device albums** (`gallery/DeviceGallery`): `MediaStoreGallery` queries
+  `MediaStore.Images` (id, bucket, name, date) off the main thread and re-emits on a
+  `ContentObserver`; `GalleryGrouping` turns rows into albums (newest first, blank bucket →
+  "Other"). Without `READ_MEDIA_IMAGES` / `READ_MEDIA_VISUAL_USER_SELECTED` it returns an
+  empty list; Home only collects it when access is granted. Thumbnails come from
+  `ContentResolver.loadThumbnail`. A photo opened from an album is imported through
+  `ProjectLibrary` (copy fallback, original untouched).
+
 ## Edit graph
 
 Defined in `:core:model`, serialised with kotlinx.serialization.

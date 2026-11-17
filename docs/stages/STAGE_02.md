@@ -89,7 +89,15 @@ All Apache-2.0, all checked to build against compileSdk 36.
 
 ## Golden images changed (R4)
 
-None changed. New screenshots under `feature/*/src/test/screenshots/`.
+Stage 2 itself: none changed. New screenshots under `feature/*/src/test/screenshots/`.
+
+Albums follow-up: `home_empty`, `home_filled` and `home_undo` (compact and expanded) were
+re-recorded because Home's bottom bar changed on purpose: the tab switch now has three tabs
+(Recent / Projects / Albums), and on compact widths it moved to its own full-width row above
+Open file and Import (three labels did not fit beside the buttons: "Projects" wrapped).
+The grid's bottom padding grew from 104 dp to 168 dp so the last row is not hidden by the
+taller bar. No other pixels change. New: `album`, `home_albums_no_access`,
+`home_albums_partial`.
 
 ## Troubleshooting log (R11)
 
@@ -130,6 +138,49 @@ POCO F7 Ultra, the app (`lineover-<sha>.apk`):
 
 ## Open questions (R12)
 
-1. **Default sort**: Projects tab sorted by last modified, newest first? Default: yes.
-2. **Device albums on Home** (needs `READ_MEDIA_IMAGES`)? Default: no; the photo picker
-   needs no permission.
+Answered by Mark:
+
+1. **Default sort**: Projects tab sorted by last modified, newest first. **Yes**, kept.
+2. **Device albums on Home** (needs `READ_MEDIA_IMAGES`). **Yes**, built as the
+   follow-up below.
+
+## Follow-up: device albums (0.2.1)
+
+**What.** A third Home tab, **Albums**, lists the device's photo albums from MediaStore
+(`DeviceGallery` in `:core:io`, see ARCHITECTURE). Tapping an album opens `AlbumRoute`, a
+grid of its photos; tapping a photo imports it as a project and opens the editor.
+
+**Permission (approved by Mark, answer 2).** `feature/home` declares `READ_MEDIA_IMAGES`
+and `READ_MEDIA_VISUAL_USER_SELECTED`. They are requested only when the user taps
+**Allow access** on the Albums tab, never at launch and never for Import or Open file
+(which keep using the photo picker and SAF). No broad storage permission
+(`READ_EXTERNAL_STORAGE`, `MANAGE_EXTERNAL_STORAGE`) is used. Access is re-read on every
+resume, so revoking it in system settings empties the tab immediately.
+
+- **Full**: every album.
+- **Partial** (Android 14+ "Select photos"): only the chosen photos; a banner says so and
+  **Change** re-opens the system selector.
+- **None**: an explanation and **Allow access**.
+
+**Originals (R7).** MediaStore URIs cannot be persisted, so opening a photo from an album
+uses the existing copy fallback: the original is copied into `projects/<id>/original` and
+only read. Album covers and photo tiles use `ContentResolver.loadThumbnail` (≤ 384 px), never
+a full-size decode, on `Dispatchers.IO`.
+
+**Tests.** `GalleryGroupingTest` (album order, counts, covers, photo order),
+`HomeViewModelTest.albumsAreOnlyReadWithMediaAccess` (nothing is queried without access;
+revoking clears the list), screenshots for the three access states and the album grid.
+
+**Phone checklist (follow-up).**
+
+- [ ] Home → **Albums** → "Your photo albums" with **Allow access**; no permission was asked
+      before this tap.
+- [ ] Tap **Allow access** → **Allow all** → your albums appear (Camera first if it has the
+      newest photo) with covers and counts.
+- [ ] Open an album → its photos, newest first → tap one → the Editor placeholder opens; the
+      project is in Recent.
+- [ ] System settings → LineOver → Photos → **Select photos** (pick 2) → back in the app the
+      banner "Showing only the photos you selected" shows and only those photos' albums
+      remain; **Change** lets you pick more.
+- [ ] Revoke the permission → the Albums tab returns to **Allow access**; Import and Open
+      file still work.

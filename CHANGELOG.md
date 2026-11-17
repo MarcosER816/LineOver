@@ -2,6 +2,27 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 2 follow-up — Device albums (0.2.1)
+
+### Added
+
+- Home → **Albums** tab: your phone's photo albums (Camera, Screenshots, …), newest first,
+  with cover and photo count. Tap an album to see its photos; tap a photo to open it in
+  the editor as a new project.
+- The photo permission is asked only when you tap **Allow access** on the Albums tab.
+  Android's "Select photos" (partial access) works: a banner shows that only the chosen
+  photos are visible, with **Change** to pick more. Import and Open file still need no
+  permission.
+
+### Changed
+
+- Home's bottom bar on phones: the Recent / Projects / Albums switch has its own row above
+  Open file and Import.
+
+### Fixed
+
+- The Stage 1 heading in this changelog was lost in the Stage 2 commit; restored.
+
 ## Stage 2 — App shell, home and settings (0.2.0)
 
 ### Added
@@ -22,7 +43,7 @@ All notable changes, newest first. One section per stage.
 
 - The component gallery moved from the floating debug button to Settings → Debug.
 
-
+## Stage 1 — Design system (0.1.0)
 
 ### Added
 
