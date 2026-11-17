@@ -2,6 +2,8 @@ package dev.mark.lineover.feature.home
 
 import android.net.Uri
 import androidx.lifecycle.viewModelScope
+import dev.mark.lineover.core.io.gallery.DeviceAlbum
+import dev.mark.lineover.core.io.gallery.DeviceGallery
 import dev.mark.lineover.core.io.project.ImportResult
 import dev.mark.lineover.core.io.project.ProjectLibrary
 import dev.mark.lineover.core.model.Project
@@ -12,7 +14,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
-enum class HomeTab { Recent, Projects }
+enum class HomeTab { Recent, Projects, Albums }
+
+/** How much of the device's photo library LineOver may read (Albums tab). */
+enum class MediaAccess {
+    /** Not granted: the Albums tab explains and offers "Allow access". */
+    None,
+
+    /** Android 14+ "select photos": only the photos the user chose. */
+    Partial,
+
+    Full,
+}
 
 data class HomeState(
     val tab: HomeTab = HomeTab.Recent,
@@ -24,6 +37,8 @@ data class HomeState(
     val renaming: Project? = null,
     /** Deleted project whose undo toast is showing. */
     val pendingDelete: Project? = null,
+    val mediaAccess: MediaAccess = MediaAccess.None,
+    val albums: List<DeviceAlbum> = emptyList(),
 ) {
     val visible: List<Project> get() = if (tab == HomeTab.Recent) recent else projects
 }
@@ -67,6 +82,11 @@ sealed interface HomeIntent {
     ) : HomeIntent
 
     data object UndoDelete : HomeIntent
+
+    /** The media permission state, re-read whenever Home resumes or a request returns. */
+    data class MediaAccessChanged(
+        val access: MediaAccess,
+    ) : HomeIntent
 }
 
 sealed interface HomeEffect {
@@ -85,10 +105,12 @@ sealed interface HomeEffect {
  */
 class HomeViewModel(
     private val library: ProjectLibrary,
+    private val gallery: DeviceGallery,
     private val cleanupScope: CoroutineScope,
     private val undoMillis: Long = UNDO_MILLIS,
 ) : MviViewModel<HomeState, HomeIntent, HomeEffect>(HomeState()) {
     private var undoJob: Job? = null
+    private var albumsJob: Job? = null
 
     init {
         viewModelScope.launch {
@@ -139,7 +161,23 @@ class HomeViewModel(
             is HomeIntent.UndoDelete -> {
                 undoDelete()
             }
+
+            is HomeIntent.MediaAccessChanged -> {
+                mediaAccessChanged(intent.access)
+            }
         }
+    }
+
+    private fun mediaAccessChanged(access: MediaAccess) {
+        if (access == state.value.mediaAccess && albumsJob != null) return
+        setState { copy(mediaAccess = access) }
+        albumsJob?.cancel()
+        albumsJob = null
+        if (access == MediaAccess.None) {
+            setState { copy(albums = emptyList()) }
+            return
+        }
+        albumsJob = viewModelScope.launch { gallery.observeAlbums().collect { setState { copy(albums = it) } } }
     }
 
     private fun importPicked(uris: List<Uri>) {

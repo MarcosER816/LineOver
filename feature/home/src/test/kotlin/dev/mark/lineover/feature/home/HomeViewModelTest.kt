@@ -2,6 +2,7 @@ package dev.mark.lineover.feature.home
 
 import android.net.Uri
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import dev.mark.lineover.core.io.gallery.DeviceAlbum
 import dev.mark.lineover.core.io.project.ImportResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -29,6 +30,7 @@ import org.robolectric.annotation.Config
 class HomeViewModelTest {
     private val dispatcher = StandardTestDispatcher()
     private val library = FakeProjectLibrary()
+    private val gallery = FakeDeviceGallery()
 
     @Before
     fun setUp() = Dispatchers.setMain(dispatcher)
@@ -36,7 +38,7 @@ class HomeViewModelTest {
     @After
     fun tearDown() = Dispatchers.resetMain()
 
-    private fun TestScope.viewModel() = HomeViewModel(library, cleanupScope = this, undoMillis = 1000)
+    private fun TestScope.viewModel() = HomeViewModel(library, gallery, cleanupScope = this, undoMillis = 1000)
 
     @Test
     fun listsFollowTheLibrary() =
@@ -160,6 +162,46 @@ class HomeViewModelTest {
                 vm.state.value.projects
                     .map { it.name }
                     .toSet(),
+            )
+        }
+
+    @Test
+    fun albumsAreOnlyReadWithMediaAccess() =
+        runTest(dispatcher) {
+            gallery.albums.value = listOf(DeviceAlbum(1, "Camera", 3, coverPhotoId = 9))
+            val vm = viewModel()
+            runCurrent()
+            assertTrue(
+                "no access: nothing read",
+                vm.state.value.albums
+                    .isEmpty(),
+            )
+
+            vm.onIntent(HomeIntent.MediaAccessChanged(MediaAccess.Partial))
+            runCurrent()
+            assertEquals(MediaAccess.Partial, vm.state.value.mediaAccess)
+            assertEquals(
+                "Camera",
+                vm.state.value.albums
+                    .single()
+                    .name,
+            )
+
+            gallery.albums.value = emptyList()
+            runCurrent()
+            assertTrue(
+                "the list follows the library",
+                vm.state.value.albums
+                    .isEmpty(),
+            )
+
+            vm.onIntent(HomeIntent.MediaAccessChanged(MediaAccess.None))
+            gallery.albums.value = listOf(DeviceAlbum(2, "Later", 1, 5))
+            runCurrent()
+            assertTrue(
+                "revoked: nothing read",
+                vm.state.value.albums
+                    .isEmpty(),
             )
         }
 }

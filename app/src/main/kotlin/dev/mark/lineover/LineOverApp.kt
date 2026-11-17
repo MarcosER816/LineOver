@@ -1,6 +1,8 @@
 package dev.mark.lineover
 
 import android.app.Application
+import dev.mark.lineover.core.io.gallery.DeviceGallery
+import dev.mark.lineover.core.io.gallery.MediaStoreGallery
 import dev.mark.lineover.core.io.project.ProjectLibraries
 import dev.mark.lineover.core.io.project.ProjectLibrary
 import kotlinx.coroutines.CoroutineScope
@@ -23,4 +25,7 @@ class AppContainer(
     val appScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val projects: ProjectLibrary by lazy { ProjectLibraries.create(app) }
+
+    /** The device's photo library (Home → Albums). */
+    val gallery: DeviceGallery by lazy { MediaStoreGallery(app.contentResolver) }
 }

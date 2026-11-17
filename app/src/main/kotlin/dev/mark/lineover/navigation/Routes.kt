@@ -7,6 +7,13 @@ import kotlinx.serialization.Serializable
 @Serializable
 data object HomeRoute : NavKey
 
+/** A device photo album (Home → Albums). */
+@Serializable
+data class AlbumRoute(
+    val albumId: Long,
+    val name: String,
+) : NavKey
+
 @Serializable
 data class EditorRoute(
     val projectId: Long,

@@ -11,6 +11,8 @@ import androidx.compose.ui.graphics.toArgb
 import com.github.takahirom.roborazzi.captureRoboImage
 import dev.mark.lineover.core.designsystem.LineOverTheme
 import dev.mark.lineover.core.designsystem.LoColors
+import dev.mark.lineover.core.io.gallery.DeviceAlbum
+import dev.mark.lineover.core.io.gallery.DevicePhoto
 import dev.mark.lineover.core.model.Project
 import dev.mark.lineover.core.ui.image.LocalThumbnailLoader
 import dev.mark.lineover.core.ui.image.ThumbnailLoader
@@ -34,7 +36,7 @@ abstract class HomeScreenshots(
 
     private val fakeThumbnails =
         ThumbnailLoader { path ->
-            val (from, to) = gradients[path.removePrefix("thumb-").toInt() % gradients.size]
+            val (from, to) = gradients[path.substringAfter('-').substringAfter(':').toInt() % gradients.size]
             val bitmap = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)
             val paint = Paint().apply { shader = LinearGradient(0f, 0f, 256f, 256f, from.toArgb(), to.toArgb(), Shader.TileMode.CLAMP) }
             Canvas(bitmap).drawRect(0f, 0f, 256f, 256f, paint)
@@ -65,6 +67,41 @@ abstract class HomeScreenshots(
 
     @Test
     fun filled() = snap("home_filled", HomeState(tab = HomeTab.Projects, projects = projects, recent = projects, loaded = true))
+
+    @Test
+    fun albumsWithoutAccess() = snap("home_albums_no_access", HomeState(tab = HomeTab.Albums, loaded = true))
+
+    @Test
+    fun albumsPartialAccess() =
+        snap(
+            "home_albums_partial",
+            HomeState(
+                tab = HomeTab.Albums,
+                loaded = true,
+                mediaAccess = MediaAccess.Partial,
+                albums =
+                    listOf(
+                        DeviceAlbum(1, "Camera", 214, coverPhotoId = 0),
+                        DeviceAlbum(2, "Screenshots", 37, coverPhotoId = 1),
+                        DeviceAlbum(3, "WhatsApp Images", 1, coverPhotoId = 2),
+                    ),
+            ),
+        )
+
+    @Test
+    fun album() {
+        captureRoboImage("home/$widthClass/album.png") {
+            CompositionLocalProvider(LocalThumbnailLoader provides fakeThumbnails) {
+                LineOverTheme {
+                    AlbumScreen(
+                        AlbumState("Camera", photos = List(14) { DevicePhoto(it.toLong(), "IMG_$it.jpg", 0) }, loaded = true),
+                        onIntent = {},
+                        onBack = {},
+                    )
+                }
+            }
+        }
+    }
 
     @Test
     fun undoAfterDelete() =

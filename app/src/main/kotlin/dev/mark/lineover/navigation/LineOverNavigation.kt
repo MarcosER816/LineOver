@@ -31,11 +31,13 @@ import dev.mark.lineover.feature.settings.SettingsSection
 import dev.mark.lineover.feature.settings.SettingsSectionScreen
 import dev.mark.lineover.feature.editor.EditorRoute as EditorScreenRoute
 import dev.mark.lineover.feature.export.ExportRoute as ExportScreenRoute
+import dev.mark.lineover.feature.home.AlbumRoute as AlbumScreenRoute
 import dev.mark.lineover.feature.home.HomeRoute as HomeScreenRoute
 import dev.mark.lineover.feature.settings.SettingsRoute as SettingsScreenRoute
 
 /**
- * The app's navigation: Home → Editor(projectId) → Export sheet, and Settings.
+ * The app's navigation: Home → Editor(projectId) → Export sheet, Home → Album → Editor,
+ * and Settings.
  * Navigation 3 keeps the back stack as a saveable list; Back (including the predictive
  * back gesture, with its preview animation) pops it. Each entry has its own ViewModelStore.
  */
@@ -68,9 +70,21 @@ fun LineOverNavigation(
                 entry<HomeRoute> {
                     HomeScreenRoute(
                         library = container.projects,
+                        gallery = container.gallery,
                         cleanupScope = container.appScope,
                         onOpenEditor = { id -> backStack.add(EditorRoute(id)) },
+                        onOpenAlbum = { album -> backStack.add(AlbumRoute(album.id, album.name)) },
                         onOpenSettings = { backStack.add(SettingsRoute) },
+                    )
+                }
+                entry<AlbumRoute> { key ->
+                    AlbumScreenRoute(
+                        albumId = key.albumId,
+                        name = key.name,
+                        gallery = container.gallery,
+                        library = container.projects,
+                        onBack = back,
+                        onOpenEditor = { id -> backStack.add(EditorRoute(id)) },
                     )
                 }
                 entry<EditorRoute> { key ->

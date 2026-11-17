@@ -7,6 +7,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -67,6 +68,7 @@ import dev.mark.lineover.core.designsystem.component.LoSegmented
 import dev.mark.lineover.core.designsystem.component.LoToast
 import dev.mark.lineover.core.designsystem.component.LoToastHost
 import dev.mark.lineover.core.designsystem.component.LoToastState
+import dev.mark.lineover.core.io.gallery.DeviceAlbum
 import dev.mark.lineover.core.model.Project
 import dev.mark.lineover.core.ui.adaptive.LoWidthClass
 import dev.mark.lineover.core.ui.adaptive.rememberLoWindowInfo
@@ -88,6 +90,8 @@ fun HomeScreen(
     onOpenFile: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
+    onRequestMediaAccess: () -> Unit = {},
+    onOpenAlbum: (DeviceAlbum) -> Unit = {},
     toast: LoToastState = remember { LoToastState() },
 ) {
     val window = rememberLoWindowInfo()
@@ -103,6 +107,10 @@ fun HomeScreen(
                 LoIconButton(LoIcons.Settings, "Settings", onClick = onOpenSettings)
             }
             when {
+                state.tab == HomeTab.Albums -> {
+                    AlbumsTab(state, onRequestMediaAccess, onOpenAlbum, window.widthClass, Modifier.weight(1f))
+                }
+
                 !state.loaded -> {
                     Box(Modifier.weight(1f))
                 }
@@ -126,7 +134,7 @@ fun HomeScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             StatusToasts(state, onIntent, toast)
-            BottomActions(state.tab, onIntent, onImport, onOpenFile)
+            BottomActions(state.tab, window.widthClass == LoWidthClass.Compact, onIntent, onImport, onOpenFile)
             // Opaque strip behind the gesture / 3-button navigation bar (edge-to-edge).
             Box(Modifier.fillMaxWidth().background(LoColors.Bg).windowInsetsBottomHeight(WindowInsets.navigationBars))
         }
@@ -262,44 +270,49 @@ private fun StatusToasts(
 @Composable
 private fun BottomActions(
     tab: HomeTab,
+    compact: Boolean,
     onIntent: (HomeIntent) -> Unit,
     onImport: () -> Unit,
     onOpenFile: () -> Unit,
 ) {
+    val tabs: @Composable (Modifier) -> Unit = { modifier ->
+        LoSegmented(
+            options = listOf("Recent", "Projects", "Albums"),
+            selectedIndex = tab.ordinal,
+            onSelect = { onIntent(HomeIntent.SelectTab(HomeTab.entries[it])) },
+            modifier = modifier,
+        )
+    }
     // Opaque, so grid cards scrolling underneath never show through the actions.
-    Row(
+    Column(
         Modifier
             .fillMaxWidth()
             .background(LoColors.Bg)
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
             .padding(horizontal = LoSpacing.M, vertical = LoSpacing.S),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(LoSpacing.Xs),
+        verticalArrangement = Arrangement.spacedBy(LoSpacing.Xs),
     ) {
-        Box(Modifier.weight(1f)) {
-            LoSegmented(
-                options = listOf("Recent", "Projects"),
-                selectedIndex = tab.ordinal,
-                onSelect = { onIntent(HomeIntent.SelectTab(HomeTab.entries[it])) },
-                modifier = Modifier.widthIn(max = 320.dp),
+        // Phones: the three tabs get their own row so their labels never wrap.
+        if (compact) tabs(Modifier.fillMaxWidth())
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(LoSpacing.Xs)) {
+            Box(Modifier.weight(1f)) { if (!compact) tabs(Modifier.widthIn(max = 360.dp)) }
+            LoIconButton(
+                LoIcons.FolderOpen,
+                "Open file",
+                onClick = onOpenFile,
+                modifier = Modifier.background(LoColors.Surface2, LoShapes.Large),
+            )
+            ExtendedFloatingActionButton(
+                onClick = onImport,
+                // The extended FAB does not merge its text into its semantics: name it explicitly.
+                modifier = Modifier.semantics { contentDescription = "Import photos" },
+                containerColor = LoColors.Accent,
+                contentColor = LoColors.OnAccent,
+                shape = LoShapes.Large,
+                icon = { Icon(painterResource(LoIcons.AddPhotoAlternate), contentDescription = null) },
+                text = { Text("Import", style = LoType.Title) },
             )
         }
-        LoIconButton(
-            LoIcons.FolderOpen,
-            "Open file",
-            onClick = onOpenFile,
-            modifier = Modifier.background(LoColors.Surface2, LoShapes.Large),
-        )
-        ExtendedFloatingActionButton(
-            onClick = onImport,
-            // The extended FAB does not merge its text into its semantics: name it explicitly.
-            modifier = Modifier.semantics { contentDescription = "Import photos" },
-            containerColor = LoColors.Accent,
-            contentColor = LoColors.OnAccent,
-            shape = LoShapes.Large,
-            icon = { Icon(painterResource(LoIcons.AddPhotoAlternate), contentDescription = null) },
-            text = { Text("Import", style = LoType.Title) },
-        )
     }
 }
 
@@ -343,8 +356,92 @@ private fun RenameDialog(
     )
 }
 
+/** Device albums: explains and asks for access first; partial access is labelled. */
+@Composable
+private fun AlbumsTab(
+    state: HomeState,
+    onRequestMediaAccess: () -> Unit,
+    onOpenAlbum: (DeviceAlbum) -> Unit,
+    widthClass: LoWidthClass,
+    modifier: Modifier,
+) {
+    if (state.mediaAccess == MediaAccess.None) {
+        Box(modifier.fillMaxWidth().padding(bottom = BOTTOM_BAR_SPACE), contentAlignment = Alignment.Center) {
+            LoEmptyState(
+                icon = LoIcons.Image,
+                title = "Your photo albums",
+                body =
+                    "To show your albums here, LineOver needs permission to read your photos. They are only " +
+                        "read, never changed. Import works without it.",
+                actionLabel = "Allow access",
+                onAction = onRequestMediaAccess,
+            )
+        }
+        return
+    }
+    Column(modifier.fillMaxWidth()) {
+        if (state.mediaAccess == MediaAccess.Partial) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(
+                        horizontal = LoSpacing.M,
+                    ).background(LoColors.Surface1, LoShapes.Medium)
+                    .padding(start = LoSpacing.M),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Showing only the photos you selected",
+                    style = LoType.Caption,
+                    color = LoColors.TextSecondary,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onRequestMediaAccess) { Text("Change", color = LoColors.Accent) }
+            }
+        }
+        if (state.albums.isEmpty()) {
+            Box(Modifier.fillMaxSize().padding(bottom = BOTTOM_BAR_SPACE), contentAlignment = Alignment.Center) {
+                LoEmptyState(LoIcons.Image, "No photos found", body = "Photos you take or download will appear here.")
+            }
+            return
+        }
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(if (widthClass == LoWidthClass.Compact) 150.dp else 190.dp),
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = LoSpacing.M, end = LoSpacing.M, top = LoSpacing.Xs, bottom = BOTTOM_BAR_SPACE),
+            horizontalArrangement = Arrangement.spacedBy(LoSpacing.S),
+            verticalArrangement = Arrangement.spacedBy(LoSpacing.M),
+        ) {
+            items(state.albums, key = { it.id }) { album ->
+                Column(
+                    Modifier
+                        .clip(LoShapes.Medium)
+                        .clickable(role = Role.Button, onClickLabel = "Open album") { onOpenAlbum(album) }
+                        .padding(bottom = LoSpacing.Xs),
+                ) {
+                    ProjectThumbnail(mediaThumbnailKey(album.coverPhotoId), Modifier.fillMaxWidth().aspectRatio(1f).clip(LoShapes.Medium))
+                    Text(
+                        album.name,
+                        style = LoType.Body,
+                        color = LoColors.TextPrimary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = LoSpacing.Xs, start = LoSpacing.Xxs, end = LoSpacing.Xxs),
+                    )
+                    Text(
+                        if (album.count == 1) "1 photo" else "${album.count} photos",
+                        style = LoType.Caption,
+                        color = LoColors.TextSecondary,
+                        modifier = Modifier.padding(horizontal = LoSpacing.Xxs),
+                    )
+                }
+            }
+        }
+    }
+}
+
 /** Room for the bottom actions, so the last grid row can scroll above them. */
-private val BOTTOM_BAR_SPACE = 104.dp
+private val BOTTOM_BAR_SPACE = 168.dp
 
 private val DATE_FORMAT: DateTimeFormatter =
     DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withZone(ZoneId.systemDefault())

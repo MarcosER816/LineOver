@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        Home → Albums shows the device's photo albums (Mark, Stage 2 follow-up). Asked only
+        when the user taps "Allow access" there; photos are only read. The second permission
+        lets Android 14+ offer "select photos" (partial access) instead of all-or-nothing.
+        Import (photo picker) and Open file (SAF) keep working without either.
+    -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+
+</manifest>
