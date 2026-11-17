@@ -145,6 +145,7 @@ No golden files. Screenshots changed on purpose:
 | Menu screenshots written to `src/test/screenshots/src/test/screenshots/…` | `captureScreenRoboImage` paths are relative to the Roborazzi output directory | Relative paths like the other captures |
 | A restored category (AI) off-screen in the category bar and rail | Visibility was checked before the first layout | Wait for the first layout (`snapshotFlow`), jump the first time, animate afterwards; screenshots captured through the compose rule so effects settle |
 | Layers sheet opened at 160 dp on phones | The panel state kept the tool panel's detent | One panel state per mode (sheet tall, tool low) |
+| Emulator API 34 `NavigationTest`: export sheet never opened | Export is disabled until the project has loaded; on a device that happens asynchronously, so the tap landed on a disabled button | The test waits until Export is enabled (no product change: a disabled Export before the project exists is correct) |
 | `NavigationRobolectricTest`: no scroll parent for the export caption | The caption fits on screen; there was nothing to scroll | Assert it exists |
 | detekt: magic numbers in ToolRegistry | Stage numbers in a data table | `@file:Suppress("MagicNumber")` with the reason; matrix indices likewise |
 
@@ -154,6 +155,9 @@ Plan B used: no.
 
 - CI run and APK artifact: see the Stage 3 report (PR and `main` run links)
 - Screenshot gallery: the `screenshot-gallery` artifact of the CI run
+- Emulator (API 34, SwiftShader) `CanvasFrameTimingTest`: 123 frames in a 2 s two-finger
+  pan, P95 frame interval 17.8 ms, P95 GL draw 0.08 ms — correctness only; the phone
+  measures performance
 
 ## Phone checklist
 
