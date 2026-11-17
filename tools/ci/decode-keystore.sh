@@ -66,7 +66,14 @@ if ! opens_with "$LINEOVER_KEYSTORE_PASS"; then
     if [ "$trimmed" != "$LINEOVER_KEYSTORE_PASS" ] && opens_with "$trimmed"; then
         fail "KEYSTORE_PASS has a space or line break before or after the password. The keystore opens once that is removed: re-enter KEYSTORE_PASS (and KEY_PASS) without it."
     fi
-    fail "KEYSTORE_B64 looks like a keystore file ($size bytes), but it does not open with KEYSTORE_PASS: the password is wrong. Check it on the phone with: keytool -list -keystore lineover-release.jks"
+    # Second opinion from OpenSSL, plus both tools' own error text (no secret values).
+    keytool_says="$(KEYSTORE_TRY_PASS="$LINEOVER_KEYSTORE_PASS" keytool -list -keystore "$out" -storepass:env KEYSTORE_TRY_PASS 2>&1 | grep -v '^Picked up' | head -n 1 | tr -d '\r' || true)"
+    if openssl pkcs12 -in "$out" -noout -passin env:LINEOVER_KEYSTORE_PASS >/dev/null 2>&1; then
+        structure="$(openssl pkcs12 -in "$out" -noout -info -passin env:LINEOVER_KEYSTORE_PASS 2>&1 | grep -E '^(MAC|PKCS7|Shrouded)' | tr '\n' ';' || true)"
+        fail "KEYSTORE_PASS is correct (OpenSSL opens the keystore), but this JDK's keytool cannot read the file [$keytool_says] [$structure]. This is a problem in the build setup, not in your secrets."
+    fi
+    openssl_says="$(openssl pkcs12 -in "$out" -noout -passin env:LINEOVER_KEYSTORE_PASS 2>&1 | head -n 1 | tr -d '\r' || true)"
+    fail "KEYSTORE_B64 looks like a keystore file ($size bytes), but neither keytool nor OpenSSL can open it with KEYSTORE_PASS: the password is wrong. [keytool: $keytool_says] [openssl: $openssl_says] Check it on the phone with: keytool -list -keystore lineover-release.jks"
 fi
 if ! keytool -list -keystore "$out" -storepass:env LINEOVER_KEYSTORE_PASS -alias "$LINEOVER_KEY_ALIAS" >/dev/null 2>&1; then
     trimmed_alias="$(printf '%s' "$LINEOVER_KEY_ALIAS" | tr -d '[:space:]')"
