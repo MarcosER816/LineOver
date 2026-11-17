@@ -67,7 +67,8 @@ class NavigationRobolectricTest {
         }
         // The coach-mark scrim swallows taps: make sure it is gone before tapping Export.
         composeRule.waitUntil(5_000) { composeRule.onAllNodesWithTag(EditorTags.COACH).fetchSemanticsNodes().isEmpty() }
-        composeRule.onNodeWithContentDescription("Layers").assertIsDisplayed()
+        // Export stays on screen at any width; Layers may sit in the scrolling actions (narrow windows).
+        composeRule.onNodeWithContentDescription("Export").assertIsDisplayed()
         composeRule.onNodeWithText("Exposure").assertIsDisplayed()
 
         // Export is enabled once the project has loaded (asynchronously on a device).
