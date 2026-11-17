@@ -3,9 +3,11 @@ package dev.mark.lineover
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.net.Uri
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.isEnabled
+import androidx.compose.ui.test.isRoot
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithTag
@@ -14,6 +16,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.printToLog
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.mark.lineover.core.io.project.ImportResult
@@ -72,7 +75,13 @@ class NavigationTest {
         composeRule.onNodeWithContentDescription("Export").performClick()
         // The export sheet is a dialog: its window attaches asynchronously on a device.
         val caption = "Exports are saved to Pictures/LineOver. The original photo is never changed."
-        composeRule.waitUntil(5_000) { composeRule.onAllNodesWithText(caption).fetchSemanticsNodes().isNotEmpty() }
+        try {
+            composeRule.waitUntil(5_000) { composeRule.onAllNodesWithText(caption).fetchSemanticsNodes().isNotEmpty() }
+        } catch (e: ComposeTimeoutException) {
+            // Diagnostics for the CI log: every compose root (the editor and any dialog) as seen now.
+            composeRule.onAllNodes(isRoot()).printToLog("LineOverNav", maxDepth = Int.MAX_VALUE)
+            throw e
+        }
         composeRule.onNodeWithContentDescription("Close").performClick()
 
         composeRule.onNodeWithContentDescription("Back").performClick()
