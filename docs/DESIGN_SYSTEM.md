@@ -2,8 +2,12 @@
 
 One dark theme, `LineOverTheme` (`:core:designsystem`). Components are prefixed `Lo`
 (`LoSlider`, `LoPanel`, …). Tokens live in code as `LoColors`, `LoSpacing`, `LoDimens`,
-`LoType`, `LoMotion`; this document and the code must always agree. The screenshot test
-`DesignTokensScreenshotTest` locks colours and type.
+`LoShapes`, `LoType`, `MotionTokens`; this document and the code must always agree. The
+screenshot test `DesignTokensScreenshotTest` locks colours and type, and
+`Compact/ExpandedComponentScreenshotTest` lock every component.
+
+**Never hard-code a colour outside `LoColors`** (components, gallery and tests included).
+There is no light theme.
 
 ## Colour
 
@@ -27,7 +31,19 @@ One dark theme, `LineOverTheme` (`:core:designsystem`). Components are prefixed 
 | `clipLo` | `#2D7BFF` | Shadow clipping warning |
 | `canvasSurround` | `#121212` / `#777777` | Area around the image: dark (default) or mid grey |
 
-The UI stays neutral grey so it never biases colour judgement; accent is used sparingly.
+Gradient and wheel tokens (only for tracks that show what a value does):
+
+| Token | Value | Use |
+| --- | --- | --- |
+| `trackTemperatureCool` → `trackTemperatureWarm` | `#3A7BFF` → `#FFB13B` | Temperature slider track |
+| `trackTintGreen` → `trackTintMagenta` | `#47C75A` → `#D94BD0` | Tint slider track |
+| `hueStops` | `#FF3B30` `#FFCC00` `#34C759` `#32D7E6` `#2D7BFF` `#E447FF` `#FF3B30` | Hue track, colour wheel |
+| `wheelCenter` | `#8E8E93` | Centre (zero saturation) of the colour wheel |
+| `thumb` | = `textPrimary` | Slider and wheel thumbs |
+
+The UI stays neutral grey so it never biases colour judgement. **Accent is only for the
+active or selected state** (selected tool, slider being dragged, slider fill, selected
+chip / segment / switch) and for primary actions.
 
 ## Spacing and size
 
@@ -40,6 +56,24 @@ The UI stays neutral grey so it never biases colour judgement; accent is used sp
 | Tool strip | 56 dp |
 | Bottom panel | 160–280 dp, never more than 40 % of the window height |
 | Side panel (wide screens) | 320 dp |
+
+## Shapes
+
+| Token | Radius | Use |
+| --- | --- | --- |
+| `LoShapes.ExtraSmall` | 4 dp | Indicators, handles, tags |
+| `LoShapes.Small` | 8 dp | Chips, segments, small cards |
+| `LoShapes.Medium` | 12 dp | Cards, toasts, segmented control |
+| `LoShapes.Large` | 16 dp | Panels (`PanelTop` rounds only the top corners) |
+
+## Icons
+
+Material Symbols **Rounded**, outlined (FILL 0, weight 400, grade 0), 24 dp, Apache-2.0.
+Each icon is a vector drawable converted from the official SVG
+(`core/designsystem/src/main/res/drawable/lo_ic_*.xml`) and exposed as `LoIcons.*`; no
+icon library is bundled. Components tint icons: `textPrimary` / `textSecondary`,
+`accent` when selected, `textDisabled` when disabled. Icon-only controls always have a
+content description.
 
 ## Type
 
@@ -64,10 +98,50 @@ Roboto Flex (bundled variable font, SIL OFL 1.1), **tabular numerals** everywher
 | Standard | cubic-bezier(0.2, 0, 0, 1) | 250 ms |
 | Panels | spring, damping ratio 0.85, stiffness 400 | — |
 
-- **Never animate a value while it is being dragged.** Sliders, curves and canvas gestures
-  follow the finger 1:1.
-- **Honour reduced motion.** When the system animator scale is 0 (`LocalReducedMotion`),
-  every `LoMotion` spec becomes a snap.
+- **Never animate a value while it is being dragged.** Sliders, wheels, curves and canvas
+  gestures follow the finger 1:1; a double-tap reset is also immediate.
+- **Honour reduced motion.** `rememberReducedMotion()` reads and keeps observing
+  `Settings.Global.ANIMATOR_DURATION_SCALE`; when it is 0, `LocalReducedMotion` is true and
+  every `MotionTokens` spec becomes a snap.
+
+## Haptics
+
+`rememberLoHaptics()`: `tick()` uses `HapticFeedbackConstants.CLOCK_TICK` (slider passing
+its default), `confirm()` uses `CONFIRM` (double-tap reset). If the view reports that no
+feedback was performed, it falls back to `VibrationEffect.EFFECT_TICK` / `EFFECT_CLICK`
+through the `Vibrator` (some OEM builds ignore the view constants).
+
+## Accessibility
+
+- Every control has a touch target of at least 48 dp (`minimumInteractiveComponentSize`
+  or an explicit minimum height), including when drawn smaller (chips are 32 dp tall).
+- Every control has a role and a content description; sliders expose their range and
+  value (`progressBarRangeInfo`, `setProgress`), so TalkBack can adjust them.
+- Values use tabular numerals. Layouts use minimum heights rather than fixed ones, and
+  tool buttons widen with the font scale, so nothing is cut off at font scale 2.0
+  (checked by the `fontScale 2.0` row of every component screenshot).
+
+## Components (`:core:designsystem`, package `…designsystem.component`)
+
+| Component | What it is |
+| --- | --- |
+| `LoSlider` | Value slider: centred-zero (`FromDefault`) or min-start (`FromStart`) fill; tabular value label; relative drag over the whole row; fine mode (finger ≥ 2 row heights below the slider → ¼ speed); tap left/right of the thumb = ±1 step; double tap resets (haptic confirm); haptic detent at the default; optional gradient track (`Temperature`, `Tint`, `Hue`); reports a second finger down (`onSecondaryPointerChange`) for the clipping preview. Math in `LoSliderModel` |
+| `LoToolButton` | 24 dp icon + 11 sp label; selected = accent tint + 2 dp indicator |
+| `LoCategoryBar` | Scrolling, snapping category bar (64 dp); scrolls the selected category into view |
+| `LoPanel` | Bottom panel with detents 160 / 280 dp (≤ 40 % of the window), spring settle, drag or tap the handle |
+| `LoIconButton` | 48 dp icon button, optional selected (toggle) state |
+| `LoChip` | Selectable chip, 32 dp drawn, 48 dp touch |
+| `LoSegmented` | Segmented control |
+| `LoSwitchRow` | Label (+ description) with a switch; the whole row toggles |
+| `LoColorWheel` | Hue (angle) / saturation (radius) wheel for colour grading; double tap resets |
+| `LoCurveEditorPlaceholder` | Reserves the curve editor (Stage 7) |
+| `LoToast` / `LoToastHost` / `LoToastState` | Toast and undo snackbar, one at a time |
+| `LoEmptyState` | Icon, title, body, optional action |
+| `LoPlaceholderTool` | "Coming in Stage N" for a reserved tool slot |
+
+The debug build has a **component gallery** (`ComponentGalleryScreen`, debug source set
+of `:core:designsystem`), opened from the debug menu (bug icon, top right). It is not
+part of release builds.
 
 ## Layout
 

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- LoHaptics falls back to the Vibrator when View haptics are ignored by the OEM build. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+</manifest>

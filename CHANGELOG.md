@@ -2,7 +2,25 @@
 
 All notable changes, newest first. One section per stage.
 
-## Stage 0 — Scaffolding (0.0.1)
+## Stage 1 — Design system (0.1.0)
+
+### Added
+
+- `LineOverTheme` completed: Material 3 dark colour scheme on the tokens, Roboto Flex type,
+  shapes 4/8/12/16 dp, `MotionTokens`, live reduced-motion detection.
+- Components: `LoSlider` (fine mode, tap steps, double-tap reset, haptic detent, gradient
+  tracks, second-finger signal), `LoToolButton`, `LoCategoryBar`, `LoPanel`,
+  `LoIconButton`, `LoChip`, `LoSegmented`, `LoSwitchRow`, `LoColorWheel`,
+  `LoCurveEditorPlaceholder`, `LoToast` with undo, `LoEmptyState`, `LoPlaceholderTool`.
+- Haptics (`CLOCK_TICK`, `CONFIRM`) with a vibrator fallback.
+- 33 Material Symbols Rounded icons as vector drawables.
+- Debug builds: a debug menu (bug icon, top right) opening the component gallery.
+
+### Changed
+
+- `LoMotion` is now `MotionTokens`.
+
+ — Scaffolding (0.0.1)
 
 ### Added
 

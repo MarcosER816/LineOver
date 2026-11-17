@@ -13,13 +13,15 @@ detekt {
     config.setFrom(rootProject.file("config/detekt/detekt.yml"))
     source.setFrom(
         "src/main/kotlin",
+        "src/debug/kotlin",
+        "src/nonDebug/kotlin",
         "src/test/kotlin",
         "src/androidTest/kotlin",
         "src/testFixtures/kotlin",
     )
 }
 
-val ktlint: Configuration by configurations.creating
+val ktlint: Configuration = configurations.create("ktlint")
 
 dependencies {
     ktlint(libs.lib("ktlint-cli")) {

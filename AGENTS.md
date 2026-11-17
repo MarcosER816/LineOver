@@ -123,5 +123,8 @@ python3 tools/golden/generate.py --check
 - **Screenshot tests:** Roborazzi, `@GraphicsMode(NATIVE)`, `@Config(sdk = [35])`, wrapped
   in `LineOverTheme`, recorded images committed under `src/test/screenshots`. Robolectric's
   SDK 36 runtime needs Java 21 and CI runs JDK 17, so screenshot tests use SDK 35. Verify
-  on JDK 17 before pushing.
+  on JDK 17 before pushing. Components are captured as state sheets (default, active,
+  disabled, fontScale 2.0) at compact and expanded widths (`ComponentScreenshots`).
+- **Debug-only code** goes in `src/debug`; `:app` gets a no-op stand-in from
+  `src/nonDebug` for every other build type, so release builds never contain it.
 - **Engine code** gets a host ctest and, when it touches GL, an instrumented test.

@@ -21,7 +21,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
         setContent {
-            LineOverTheme { Wordmark() }
+            LineOverTheme { DebugHost { Wordmark() } }
         }
     }
 }
