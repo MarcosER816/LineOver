@@ -17,7 +17,9 @@ style:
   MaxLineLength:
     maxLineLength: 140
   MagicNumber:
-    # Design tokens and constants are declared as properties; tests use literals freely.
+    # Design tokens and constants are declared as properties; tests use literals freely;
+    # enum entries carry data such as the stage that implements a settings row.
+    ignoreEnums: true
     ignorePropertyDeclaration: true
     ignoreCompanionObjectPropertyDeclaration: true
     ignoreAnnotated: ['Composable']
@@ -34,4 +36,9 @@ complexity:
   LongMethod:
     ignoreAnnotated: ['Composable']
   TooManyFunctions:
+    # Data-access APIs (DAO, repository, library) and Compose screen files, made of small
+    # private composables, legitimately exceed detekt's default of 11.
+    thresholdInFiles: 20
+    thresholdInClasses: 20
+    thresholdInInterfaces: 20
     excludes: ['**/test/**', '**/androidTest/**']

@@ -9,4 +9,11 @@
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:windowLightNavigationBar">false</item>
     </style>
+
+    <!-- Launch theme (SplashScreen API): icon on the background colour, then Theme.LineOver. -->
+    <style name="Theme.LineOver.Starting" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/lo_bg</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="postSplashScreenTheme">@style/Theme.LineOver</item>
+    </style>
 </resources>

@@ -49,6 +49,41 @@ Dependency rules:
 While a slider or a gesture is being dragged, the value goes straight to the engine
 preview and is never animated; the committed value becomes a new edit graph on release.
 
+## Navigation and app wiring
+
+- **Navigation 3** (`:app`, `navigation/`): type-safe `@Serializable` routes (`HomeRoute`,
+  `EditorRoute(projectId)`, `ExportRoute(projectId)`, `SettingsRoute`,
+  `SettingsSectionRoute(id)`, `GalleryRoute` in debug builds). The back stack is a saveable
+  list; `NavDisplay` handles Back and the predictive back gesture (preview animation;
+  `enableOnBackInvokedCallback` is on). Each entry has its own `ViewModelStore`. The export
+  sheet is a `DialogSceneStrategy` entry drawn as a bottom sheet over the editor.
+- **No DI framework**: `LineOverApp.container` (`AppContainer`) is created lazily on first
+  use; `Application.onCreate` does nothing, for a fast cold start. Feature routes receive
+  what they need as parameters and create their ViewModel with `viewModel { … }`.
+- **SplashScreen API**: `Theme.LineOver.Starting` (icon on `bg`) until the first frame.
+- **Edge-to-edge**: every screen pads itself with `WindowInsets.safeDrawing` (or parts of
+  it); bars that sit over scrolling content are opaque.
+- **Adaptive** (D4): `rememberLoWindowInfo()` (`:core:ui`) gives the Material width class
+  (600 / 840 dp breakpoints from `androidx.window`). Grids use adaptive cells; Settings
+  shows list and detail side by side on expanded windows.
+
+## Projects (`:core:io`)
+
+- `ProjectLibrary` is the only API screens use: import (photo picker or SAF), rename,
+  duplicate, delete / restore / purge, mark opened.
+- **Room** database `projects.db`, table `projects` (id, name, source_uri, thumb_path,
+  modified, opened). Schemas are exported to `core/io/schemas` and committed; every
+  version bump needs a migration and a test in `ProjectDatabaseMigrationTest` (never a
+  destructive fallback).
+- **Sources**: a persistable read permission is taken for picker and SAF URIs; if that is
+  refused, the original is copied to `files/projects/<id>/original`. Originals are only
+  ever read (R7). Persisted permissions are released when the last project using them is
+  purged (Android limits them per app).
+- **Thumbnails**: `ImageDecoder.setTargetSize` decodes straight to ≤ 512 px (never a
+  full-size bitmap), JPEG to `files/projects/<id>/thumb.jpg`, on `Dispatchers.IO`.
+- **Delete with undo**: the row is removed at once and the files stay for 5 s; Undo
+  re-inserts the row, otherwise the files are purged on the app scope.
+
 ## Edit graph
 
 Defined in `:core:model`, serialised with kotlinx.serialization.

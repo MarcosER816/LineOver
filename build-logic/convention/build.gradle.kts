@@ -15,4 +15,6 @@ dependencies {
     implementation(libs.detekt.gradlePlugin)
     implementation(libs.roborazzi.gradlePlugin)
     implementation(libs.androidx.baselineprofile.gradlePlugin)
+    implementation(libs.ksp.gradlePlugin)
+    implementation(libs.room.gradlePlugin)
 }

@@ -2,7 +2,27 @@
 
 All notable changes, newest first. One section per stage.
 
-## Stage 1 — Design system (0.1.0)
+## Stage 2 — App shell, home and settings (0.2.0)
+
+### Added
+
+- Navigation 3: Home → Editor → Export sheet, Settings; predictive back with its preview
+  animation; transitions turn off under reduced motion.
+- Home: Recent and Projects tabs, a large Import button (system photo picker, up to 50
+  photos, no storage permission), Open file (RAW, TIFF, .loproj via the document picker),
+  project grid with 512 px thumbnails, long press for rename / duplicate / delete with Undo.
+- Projects are stored in a Room database and survive restarts; originals are never changed.
+- Settings: reserved rows labelled with the stage that implements them; AI models slot
+  (download manager); About with the open-source licences; Debug → component gallery
+  (debug builds).
+- Editor and Export placeholders.
+- SplashScreen; adaptive layouts for phone, foldable, tablet and landscape.
+
+### Changed
+
+- The component gallery moved from the floating debug button to Settings → Debug.
+
+
 
 ### Added
 

@@ -4,39 +4,22 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import dev.mark.lineover.core.designsystem.LineOverTheme
-import dev.mark.lineover.core.designsystem.LoColors
-import dev.mark.lineover.core.designsystem.LoType
+import dev.mark.lineover.navigation.LineOverNavigation
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
+        // The splash shows the icon on the background colour until the first frame.
+        installSplashScreen()
         enableEdgeToEdge()
         super.onCreate(savedInstanceState)
+        val container = (application as LineOverApp).container
+        val versionName = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
         setContent {
-            LineOverTheme { DebugHost { Wordmark() } }
+            LineOverTheme {
+                LineOverNavigation(container, versionName, DebugTools.gallery)
+            }
         }
-    }
-}
-
-/** Stage 0 placeholder for the app shell that Stage 2 builds: the app name on the background colour. */
-@Composable
-private fun Wordmark() {
-    Box(
-        modifier = Modifier.fillMaxSize().background(LoColors.Bg),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = stringResource(R.string.app_name),
-            style = LoType.Display,
-            color = LoColors.TextPrimary,
-        )
     }
 }

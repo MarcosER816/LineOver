@@ -10,8 +10,8 @@ listed in `TOOL_CATALOG.md`; stages 1–4 build the foundation they plug into.
 | --- | --- | --- | --- |
 | 0 | Scaffolding | Modules, convention plugins, CI (lint, unit, native, build, emulator), release workflow, golden + screenshot test infrastructure, permanent docs, installable APK | ✅ |
 | 1 | Design system and components | The `Lo*` component library on the tokens (`LoSlider`, `LoPanel`, `LoToolButton`, `LoCategoryBar`, `LoColorWheel`, …), each screenshot-tested at compact and expanded widths; 48 dp targets; haptics; reduced-motion support; debug component gallery. No screens | ✅ |
-| 2 | App shell, home and settings | Navigation host; Home screen and Settings screen; phone, tablet, foldable and landscape layouts (D4) | 🔜 |
-| 3 | Editor shell | The full editor layout with a visible placeholder slot for **every** tool in `TOOL_CATALOG.md`; canvas view with zoom / pan / rotate gestures; side sheets; export sheet; tool search. **The layout is frozen after this stage (R9).** No engine yet | ⬜ |
+| 2 | App shell, home and settings | Navigation 3 host with predictive back; Home (import, projects in Room, thumbnails, rename / duplicate / delete with undo); Settings with reserved rows; editor and export placeholders; phone, tablet, foldable and landscape layouts (D4) | ✅ |
+| 3 | Editor shell | The full editor layout with a visible placeholder slot for **every** tool in `TOOL_CATALOG.md`; canvas view with zoom / pan / rotate gestures; side sheets; export sheet; tool search. **The layout is frozen after this stage (R9).** No engine yet | 🔜 |
 | 4 | Engine foundation, file loading and edit graph | GLES 3.2 engine foundation (render thread, RGBA16F 512×512 tiles, linear Rec.2020, CPU reference path, GPU-vs-CPU golden tests); file loading (original never modified, decode, colour management, 2048-px preview proxy, full-resolution background render); edit graph wired from UI to engine | ⬜ |
 | 5 | Light | Exposure, Contrast, Highlights, Shadows, Whites, Blacks, Brightness; Histogram; clipping warnings | ⬜ |
 | 6 | Color basics | White balance, Vibrance, Saturation, HSL / Color Mixer, Invert, Posterize, Threshold | ⬜ |

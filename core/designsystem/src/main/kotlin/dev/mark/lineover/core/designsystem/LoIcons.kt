@@ -75,4 +75,26 @@ object LoIcons {
     @DrawableRes val Visibility: Int = R.drawable.lo_ic_visibility
 
     @DrawableRes val ArrowBack: Int = R.drawable.lo_ic_arrow_back
+
+    @DrawableRes val Settings: Int = R.drawable.lo_ic_settings
+
+    @DrawableRes val FolderOpen: Int = R.drawable.lo_ic_folder_open
+
+    @DrawableRes val AddPhotoAlternate: Int = R.drawable.lo_ic_add_photo_alternate
+
+    @DrawableRes val Edit: Int = R.drawable.lo_ic_edit
+
+    @DrawableRes val ContentCopy: Int = R.drawable.lo_ic_content_copy
+
+    @DrawableRes val Delete: Int = R.drawable.lo_ic_delete
+
+    @DrawableRes val TouchApp: Int = R.drawable.lo_ic_touch_app
+
+    @DrawableRes val Vibration: Int = R.drawable.lo_ic_vibration
+
+    @DrawableRes val Animation: Int = R.drawable.lo_ic_animation
+
+    @DrawableRes val HighQuality: Int = R.drawable.lo_ic_high_quality
+
+    @DrawableRes val IosShare: Int = R.drawable.lo_ic_ios_share
 }
