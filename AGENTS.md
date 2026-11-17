@@ -102,6 +102,10 @@ python3 tools/golden/generate.py --check
 - **compileSdk 36 caps AndroidX.** Compose 1.12+, `androidx.core` 1.19+ and lifecycle
   2.11+ require compileSdk 37 and must not be adopted while D2 stands. Check a library's
   `minCompileSdk` (in its `aar-metadata.properties`) before bumping it.
+- Also capped by compileSdk 36: `material3-adaptive` 1.3 (needs 37; WindowSizeClass comes
+  from `androidx.window` instead) and lifecycle 2.11 (stay on 2.10).
+- **Room + KSP** work with AGP 9 built-in Kotlin (KSP 2.3.x). Apply `lineover.android.room`;
+  never edit a committed schema in `*/schemas/` and never use a destructive migration.
 - **material3** stays on the stable line (1.4.x); move to 1.5.0 only once it is stable.
 - **ABIs:** release is `arm64-v8a` only; debug also carries `x86_64` for the CI emulator.
 - **Module plugins:** a module applies only `lineover.*` plugins. Third-party Gradle

@@ -1,6 +1,7 @@
 plugins {
     id("lineover.android.application")
     id("lineover.android.compose")
+    id("lineover.kotlin.serialization")
     id("lineover.android.baselineprofile")
 }
 
@@ -15,8 +16,8 @@ android {
 
     defaultConfig {
         applicationId = "dev.mark.lineover"
-        versionCode = 2
-        versionName = "0.1.0"
+        versionCode = 3
+        versionName = "0.2.0"
     }
 
     signingConfigs {
@@ -44,8 +45,8 @@ android {
     }
 }
 
-// src/debug holds the debug menu and gallery entry; every other build type gets the
-// no-op DebugHost from src/nonDebug, so release builds never contain the gallery.
+// src/debug provides DebugTools (the component gallery); every other build type gets
+// the empty DebugTools from src/nonDebug, so release builds never contain the gallery.
 androidComponents {
     onVariants { variant ->
         if (variant.buildType != "debug") {
@@ -67,7 +68,12 @@ dependencies {
     implementation(project(":feature:settings"))
 
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.navigation3.runtime)
+    implementation(libs.androidx.navigation3.ui)
+    implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.profileinstaller)
     baselineProfile(project(":baselineprofile"))
 
