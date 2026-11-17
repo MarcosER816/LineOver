@@ -101,6 +101,7 @@ None changed. New screenshots under `feature/*/src/test/screenshots/`.
 | `FormatSizeTest`: 716 KB instead of 717 KB | Truncation | Round |
 | Emulator `NavigationTest`: "Export" not found in the merged tree | Material's extended FAB does not merge its text into its semantics, so TalkBack would only say "Button" (an accessibility bug) | Explicit content description on the Export and Import FABs |
 | Emulator `NavigationTest`: gallery not shown | The test tapped the Debug row while it was scrolled off-screen | `performScrollTo()` before tapping; the flow also runs on the JVM now (`NavigationRobolectricTest`), which reproduced both failures locally |
+| `main` run after the merge: `unit` job stuck 12+ min in "Install NDK and CMake" | `sdkmanager` can hang forever on a stalled download; the install script had no time limit per attempt | Each attempt is limited to 5 min (`timeout`) and retried; the step itself has `timeout-minutes: 25`. Tested with a simulated hanging sdkmanager: 4 timed-out attempts, then a clear failure |
 
 Plan B used: no.
 

@@ -21,6 +21,7 @@ jobs:
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v6
       - name: Install NDK and CMake
+        timeout-minutes: 25
         run: tools/ci/install-native-toolchain.sh
       - name: Decode release keystore
         env:

@@ -35,7 +35,10 @@ for attempt in 1 2 3 4; do
     echo "Installing NDK $ndk and CMake $cmake (attempt $attempt)..."
     # A failed attempt can leave a partial directory behind; start clean.
     rm -rf "$sdk/ndk/$ndk" "$sdk/cmake/$cmake"
-    yes 2>/dev/null | "$sdkmanager" --install "ndk;$ndk" "cmake;$cmake" >/dev/null || true
+    # sdkmanager can hang forever on a stalled download: give each attempt 5 minutes,
+    # so a stall becomes a retry instead of a job that sits until its timeout.
+    yes 2>/dev/null | timeout --kill-after=30 "${ATTEMPT_TIMEOUT_SECONDS:-300}" \
+        "$sdkmanager" --install "ndk;$ndk" "cmake;$cmake" >/dev/null || true
     installed || sleep $((attempt * 10))
 done
 
