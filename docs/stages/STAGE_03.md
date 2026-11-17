@@ -184,10 +184,12 @@ POCO F7 Ultra, `lineover-<sha>.apk`:
 
 ## Open questions (R12)
 
-Asked in the brief; defaults used:
+Answered by Mark ("1. Yes 2. Yes 3. Yes"):
 
-1. **Is anything in the layout uncomfortable for your thumb?** Default: the layout as
-   built (all actions in the bottom 40 % except the top bar).
-2. **Should Layers default to closed?** Default: **closed** (opens from the top bar).
-3. **Is the right-hand panel column preferred in landscape?** Default: **yes** (rail left,
-   320 dp column right), also on tablets and unfolded foldables.
+1. **Is anything in the layout uncomfortable for your thumb?** "Yes", with no detail
+   yet. Recorded as an open point: the layout is frozen (R9) in its slots, but sizes,
+   spacing and which edge a bar sits on can still be tuned before Stage 4 once Mark says
+   which part. Nothing changed until then.
+2. **Should Layers default to closed?** **Yes**: closed, opened from the top bar (as built).
+3. **Is the right-hand panel column preferred in landscape?** **Yes**: rail on the left,
+   320 dp column on the right, also on tablets and unfolded foldables (as built).
