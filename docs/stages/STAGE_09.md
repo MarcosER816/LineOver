@@ -102,7 +102,7 @@ Screenshots changed, and why:
 | Screenshot | Why |
 | --- | --- |
 | `editor/expanded/category_crop`, `category_optics` | The ten tools say "Ready" instead of "Arrives in Stage 9" |
-| `editor/*/crop_*`, `optics_*` | New: the Crop and Optics panels and the crop overlay |
+| `editor/*/crop_*`, `optics_*` | New: the Crop and Optics panels and the crop overlay (`crop_straighten` re-recorded after the edge margin: the constrained crop is 2 px smaller) |
 
 ## Troubleshooting log (R11)
 
@@ -112,6 +112,8 @@ Screenshots changed, and why:
 | A tile rendered from its footprint ≠ the full warp | The buffer offset changed float rounding | Positions in full-image coordinates, the integer offset subtracted after `floor` |
 | Segments split at every pixel stair | Raw gradients | LSD's Gaussian pre-smoothing, collinear merging; anti-aliased test bars |
 | Chromatic aberration estimate refused | The edge sample included near-zero gradients | Keep points ≥ 0.2 × the strongest edge |
+| CI emulator: a straightened 4:5 crop's edge blocks had alpha 1.0012 (`RealPhotoTest`) | Constrain let the crop touch the photo's edge; the bicubic taps of the edge pixels read the 0 border (an overshoot / faint dark edge in export) | `CropMath.edgeMargin`: the crop keeps 2 px (+ the CA offset) clear of the edge unless every pixel samples a pixel centre exactly (crop, quarter turns, flips) |
+| Constrain with strong barrel correction | The lens model folds back past a radius; the corners had no undistorted position and Newton diverged | `undistort` solves on the monotone part and clamps at the fold radius (`strongBarrelCorrectionStopsAtTheFold`) |
 | 4:5 came out landscape (5:4) | The ratio followed the landscape frame | A picked portrait label is portrait |
 | detekt (magic numbers, object size) | Matrix maths in one object | `Mat3`, `CropMath`, `GeometryLabels` split out; index arithmetic suppressed with reasons |
 

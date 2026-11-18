@@ -12,8 +12,29 @@ import kotlin.math.min
 @Suppress("MagicNumber") // rect (left, top, right, bottom) positions
 object CropMath {
     /**
-     * The edge of the valid image in frame pixels: the source border, undistorted (lens),
-     * through [toFrame]. Points behind the projection are dropped.
+     * Source pixels the crop keeps clear of the photo's edge: the bicubic sampler reads 2
+     * pixels around each position (outside the photo it reads 0, so an edge pixel would mix
+     * in black), and the red / blue channels sample up to |CA| × the half diagonal further
+     * out. Zero when every output pixel lands on a source pixel centre (crop, quarter turns
+     * and flips only): those sample exactly one pixel.
+     */
+    fun edgeMargin(
+        g: GeometryAdjustments,
+        sourceWidth: Int,
+        sourceHeight: Int,
+    ): Double {
+        val planar =
+            listOf(g.straighten + g.rotate, g.uprightPitch, g.uprightYaw, g.uprightRoll, g.vertical, g.horizontal, g.aspectAmount)
+        val lens = listOf(g.k1, g.k2, g.caRed, g.caBlue)
+        val exact = planar.all { it == 0f } && lens.all { it == 0.0 } && g.scale == 100f && g.offsetX == 0f && g.offsetY == 0f
+        if (exact) return 0.0
+        val halfDiagonal = 0.5 * hypot(sourceWidth.toDouble(), sourceHeight.toDouble())
+        return BICUBIC_REACH + max(kotlin.math.abs(g.caRed), kotlin.math.abs(g.caBlue)) * halfDiagonal
+    }
+
+    /**
+     * The edge of the valid image in frame pixels: the source border inset by [edgeMargin],
+     * undistorted (lens), through [toFrame]. Points behind the projection are dropped.
      */
     fun validPolygon(
         g: GeometryAdjustments,
@@ -22,12 +43,15 @@ object CropMath {
         toFrame: Mat3 = GeometryMath.sourceToFrame(g, sourceWidth, sourceHeight),
     ): List<Pair<Double, Double>> {
         val border = ArrayList<Pair<Double, Double>>(4 * BORDER_SAMPLES)
-        val w = sourceWidth.toDouble()
-        val h = sourceHeight.toDouble()
-        for (i in 0 until BORDER_SAMPLES) border += (w * i / BORDER_SAMPLES) to 0.0
-        for (i in 0 until BORDER_SAMPLES) border += w to (h * i / BORDER_SAMPLES)
-        for (i in 0 until BORDER_SAMPLES) border += (w - w * i / BORDER_SAMPLES) to h
-        for (i in 0 until BORDER_SAMPLES) border += 0.0 to (h - h * i / BORDER_SAMPLES)
+        val m = min(edgeMargin(g, sourceWidth, sourceHeight), min(sourceWidth, sourceHeight) / 4.0)
+        val x0 = m
+        val y0 = m
+        val w = sourceWidth - 2 * m
+        val h = sourceHeight - 2 * m
+        for (i in 0 until BORDER_SAMPLES) border += (x0 + w * i / BORDER_SAMPLES) to y0
+        for (i in 0 until BORDER_SAMPLES) border += (x0 + w) to (y0 + h * i / BORDER_SAMPLES)
+        for (i in 0 until BORDER_SAMPLES) border += (x0 + w - w * i / BORDER_SAMPLES) to (y0 + h)
+        for (i in 0 until BORDER_SAMPLES) border += x0 to (y0 + h - h * i / BORDER_SAMPLES)
         return border.mapNotNull { (x, y) ->
             val (ux, uy) = undistort(g, sourceWidth, sourceHeight, x, y)
             toFrame.apply(ux, uy)
@@ -48,16 +72,43 @@ object CropMath {
         val radius = 0.5 * hypot(sourceWidth.toDouble(), sourceHeight.toDouble())
         val rd = hypot(x - cx, y - cy) / radius
         if (rd == 0.0) return x to y
-        // Distorted radius rd = r (1 + k1 r^2 + k2 r^4): solve for r.
-        var r = rd
-        repeat(NEWTON_STEPS) {
-            val r2 = r * r
-            val f = r * (1 + g.k1 * r2 + g.k2 * r2 * r2) - rd
-            val df = 1 + 3 * g.k1 * r2 + 5 * g.k2 * r2 * r2
-            if (df > 0) r -= f / df
-        }
+        // Distorted radius rd = r (1 + k1 r^2 + k2 r^4): solve for r on the monotone part
+        // (up to the fold, where the model turns back). A radius past the fold has no
+        // undistorted position: the valid image ends at the fold.
+        val fold = foldRadius(g.k1, g.k2)
+        val reach = fold * (1 + g.k1 * fold * fold + g.k2 * fold * fold * fold * fold)
+        val r =
+            if (rd >= reach) {
+                fold
+            } else {
+                var lo = 0.0
+                var hi = fold.coerceAtMost(MAX_RADIUS)
+                repeat(BISECTION_STEPS) {
+                    val mid = (lo + hi) / 2
+                    val m2 = mid * mid
+                    if (mid * (1 + g.k1 * m2 + g.k2 * m2 * m2) < rd) lo = mid else hi = mid
+                }
+                (lo + hi) / 2
+            }
         val s = r / rd
         return cx + (x - cx) * s to cy + (y - cy) * s
+    }
+
+    /** The smallest radius where d/dr [r (1 + k1 r² + k2 r⁴)] = 0 (MAX_RADIUS when it never turns back). */
+    private fun foldRadius(
+        k1: Double,
+        k2: Double,
+    ): Double {
+        // 5 k2 x² + 3 k1 x + 1 = 0 with x = r².
+        val roots =
+            if (k2 == 0.0) {
+                listOf(-1.0 / (3 * k1))
+            } else {
+                val d = 9 * k1 * k1 - 20 * k2
+                if (d < 0) emptyList() else listOf((-3 * k1 - kotlin.math.sqrt(d)) / (10 * k2), (-3 * k1 + kotlin.math.sqrt(d)) / (10 * k2))
+            }
+        val x = roots.filter { it > 0 && it.isFinite() }.minOrNull() ?: return MAX_RADIUS
+        return min(kotlin.math.sqrt(x), MAX_RADIUS)
     }
 
     /**
@@ -158,9 +209,11 @@ object CropMath {
 
     /** Pixels: a crop edge this close to the image edge counts as inside (no visible wedge). */
     private const val EDGE = 1e-3
-    private const val BORDER_SAMPLES = 24
+    private const val BICUBIC_REACH = 2.0
+    private const val BORDER_SAMPLES = 96
     private const val SEARCH_STEPS = 30
-    private const val NEWTON_STEPS = 12
+    private const val BISECTION_STEPS = 60
+    private const val MAX_RADIUS = 4.0
     private const val MIN_RATIO = 0.01f
 
     /**

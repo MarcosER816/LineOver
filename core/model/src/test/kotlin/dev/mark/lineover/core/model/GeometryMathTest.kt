@@ -120,14 +120,45 @@ class GeometryMathTest {
         val h = 3000
         for (angle in listOf(-30f, -7.5f, 3f, 12f, 45f)) {
             val on = GeometryMath.compose(GeometryAdjustments(straighten = angle), w, h)
-            assertTrue("constrained at $angle", corners(on).all { inSource(it, w, h) })
+            // Constrained: the bicubic taps (2 px) of every edge pixel stay inside the photo.
+            assertTrue("constrained at $angle", corners(on).all { inSource(it, w, h, margin = 2.0 - FLOAT_CROP) })
             val off = GeometryMath.compose(GeometryAdjustments(straighten = angle, constrain = false), w, h)
             assertFalse("unconstrained at $angle shows wedges", corners(off).all { inSource(it, w, h) })
         }
         // Upright-style perspective and barrel correction too.
         val g = GeometryAdjustments(vertical = 60f, horizontal = -30f, distortion = 50f)
         val c = GeometryMath.compose(g, w, h)
-        assertTrue(edges(c).all { inSource(distort(g, w, h, it), w, h) })
+        // The lens curves the valid edge (the polygon's chords cut it by < 0.1 px): the output's
+        // outer edge keeps 1.5 px, so its pixel centres (0.5 px further in) keep the 2 px reach.
+        assertTrue(edges(c).all { inSource(distort(g, w, h, it), w, h, margin = 1.5) })
+    }
+
+    /** Past the lens model's fold the corners have no undistorted position: the crop stays inside it. */
+    @Test
+    fun strongBarrelCorrectionStopsAtTheFold() {
+        val w = 4000
+        val h = 3000
+        val g = GeometryAdjustments(distortion = 100f, distortionEdge = -40f)
+        val (x, y) = CropMath.undistort(g, w, h, 0.0, 0.0)
+        assertTrue(x.isFinite() && y.isFinite() && x > -w && y > -h)
+        val c = GeometryMath.compose(g, w, h)
+        assertTrue(c.outputWidth in 100..w && c.outputHeight in 100..h)
+        assertTrue(edges(c).all { inSource(distort(g, w, h, it), w, h, margin = 1.5) })
+    }
+
+    /** Chromatic aberration widens the margin: red and blue sample further out than green. */
+    @Test
+    fun constrainLeavesRoomForChromaticAberration() {
+        val w = 4000
+        val h = 3000
+        val g = GeometryAdjustments(straighten = 2f, chromaticRed = 100f)
+        val margin = CropMath.edgeMargin(g, w, h)
+        assertEquals(2.0 + 0.01 * 2500.0, margin, 1e-9)
+        val c = GeometryMath.compose(g, w, h)
+        assertTrue(corners(c).all { inSource(it, w, h, margin = margin - FLOAT_CROP) })
+        // A crop alone samples pixel centres exactly: no margin, the full frame stays.
+        assertEquals(0.0, CropMath.edgeMargin(GeometryAdjustments(quarterTurns = 1, flipVertical = true), w, h), 0.0)
+        assertEquals(3000, GeometryMath.compose(GeometryAdjustments(quarterTurns = 1), w, h).outputWidth)
     }
 
     @Test
@@ -334,7 +365,8 @@ class GeometryMathTest {
         p: Pair<Double, Double>,
         w: Int,
         h: Int,
-    ) = p.first >= -0.5 && p.second >= -0.5 && p.first <= w + 0.5 && p.second <= h + 0.5
+        margin: Double = -0.5,
+    ) = p.first >= margin && p.second >= margin && p.first <= w - margin && p.second <= h - margin
 
     private fun assertPoint(
         expected: Pair<Double, Double>,
@@ -345,4 +377,9 @@ class GeometryMathTest {
     }
 
     private fun round6(v: Double) = Math.round(v * 1e6) / 1e6
+
+    private companion object {
+        /** The crop is stored as floats: about 1e-3 px at 4000 px. */
+        const val FLOAT_CROP = 0.01
+    }
 }
