@@ -2,6 +2,7 @@ package dev.mark.lineover.feature.editor.canvas
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import android.view.Surface
 import dev.mark.lineover.core.engine.EngineSession
 import dev.mark.lineover.core.model.EditGraph
@@ -45,7 +46,13 @@ class EngineCanvasFactory(
     private val context: Context,
 ) : EditorCanvasFactory {
     override suspend fun open(project: Project): EditorCanvas? =
-        EngineSession.open(context.applicationContext, Uri.parse(project.sourceUri))?.let(::EngineCanvas)
+        try {
+            EngineSession.open(context.applicationContext, Uri.parse(project.sourceUri))?.let(::EngineCanvas)
+        } catch (e: UnsatisfiedLinkError) {
+            // No native engine for this ABI (e.g. the JVM test environment): no canvas.
+            Log.e("LineOverEngine", "native engine unavailable", e)
+            null
+        }
 }
 
 private class EngineCanvas(

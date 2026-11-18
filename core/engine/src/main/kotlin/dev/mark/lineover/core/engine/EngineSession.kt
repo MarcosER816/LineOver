@@ -151,16 +151,15 @@ class EngineSession private constructor(
                 Log.w(TAG, "no memory for a region decoder", e)
                 null
             }
-        val request = IntArray(3)
+        val request = IntArray(REQUEST_SIZE)
         try {
             while (!closed) {
-                if (!native.takeRequest(POLL_MILLIS, request)) continue
-                if (closed) break
-                if (decoder == null) {
-                    native.failTile(request[0], request[1], request[2])
-                    continue
+                val got = native.takeRequest(POLL_MILLIS, request)
+                when {
+                    !got || closed -> Unit
+                    decoder == null -> native.failTile(request[0], request[1], request[2])
+                    else -> decodeInto(decoder, request[0], request[1], request[2])
                 }
-                decodeInto(decoder, request[0], request[1], request[2])
             }
         } finally {
             decoder?.close()
@@ -236,6 +235,9 @@ class EngineSession private constructor(
                 EngineSession(native, reader, cacheDir, info, preview, budgets.decoderThreads)
             }
 
-        private fun mb(bytes: Long) = bytes / (1L shl 20)
+        private const val MB_SHIFT = 20
+        private const val REQUEST_SIZE = 3
+
+        private fun mb(bytes: Long) = bytes shr MB_SHIFT
     }
 }

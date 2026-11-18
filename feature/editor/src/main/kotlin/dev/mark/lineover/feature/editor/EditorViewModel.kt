@@ -17,6 +17,8 @@ import dev.mark.lineover.core.ui.tools.toolCategoryOf
 import dev.mark.lineover.feature.editor.canvas.EditorCanvas
 import dev.mark.lineover.feature.editor.canvas.EditorCanvasFactory
 import dev.mark.lineover.feature.editor.canvas.ImageSummary
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
@@ -156,6 +158,7 @@ class EditorViewModel(
     private val library: ProjectLibrary,
     private val preferences: AppPreferences,
     private val canvases: EditorCanvasFactory,
+    private val renderDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : MviViewModel<EditorState, EditorIntent, EditorEffect>(
         EditorState(
             category = toolCategoryOf(preferences.lastCategory.value) ?: EditorState.DEFAULT_CATEGORY,
@@ -184,7 +187,9 @@ class EditorViewModel(
         }
         setState { copy(canvas = canvas, image = canvas.summary, previewUnavailable = false) }
         // Edits reach the engine through the scheduler: the latest graph wins.
-        scheduler = RenderScheduler({ graph -> canvas.setGraph(graph) }, viewModelScope).also { it.submit(state.value.graph) }
+        val renderScheduler = RenderScheduler({ graph -> canvas.setGraph(graph) }, viewModelScope, renderDispatcher)
+        scheduler = renderScheduler
+        renderScheduler.submit(state.value.graph)
         canvas.loading.collectLatest { loading ->
             if (loading) {
                 delay(SPINNER_DELAY_MILLIS)

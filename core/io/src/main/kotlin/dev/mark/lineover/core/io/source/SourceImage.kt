@@ -88,6 +88,7 @@ class SourceReader(
     private val resolver: ContentResolver,
 ) {
     /** The header of [uri], or null when it cannot be read. */
+    @Suppress("ReturnCount") // one early return per way a file can be unreadable
     fun info(uri: Uri): SourceInfo? {
         var mime: String? = null
         var colorSpace: ColorSpace? = null
@@ -242,6 +243,7 @@ class TileDecoder internal constructor(
             ?: throw IOException("no region decoder for ${info.uri}")
 
     /** The raw region behind oriented tile ([level], [tx], [ty]), or null if it cannot be decoded. */
+    @Suppress("ReturnCount") // one early return per way a tile can be out of range or undecodable
     fun decode(
         level: Int,
         tx: Int,
@@ -299,6 +301,7 @@ class TileDecoder internal constructor(
 /** Kotlin twin of the native orientation maths (`tiling.h`), tested against the same cases. */
 object TileGeometry {
     /** The raw rect (left, top, right, bottom; exclusive) holding oriented rect (x, y, w, h). */
+    @Suppress("LongParameterList") // mirrors the native signature
     fun rawRectFor(
         x: Int,
         y: Int,

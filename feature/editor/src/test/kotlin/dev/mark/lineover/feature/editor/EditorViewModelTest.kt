@@ -30,7 +30,7 @@ class EditorViewModelTest {
     private fun viewModel(
         prefs: InMemoryAppPreferences = InMemoryAppPreferences(),
         canvases: FakeCanvasFactory = FakeCanvasFactory(),
-    ) = EditorViewModel(1, FakeEditorLibrary(), prefs, canvases)
+    ) = EditorViewModel(1, FakeEditorLibrary(), prefs, canvases, renderDispatcher = Dispatchers.Main)
 
     @Test
     fun opensWithTheLastUsedCategoryAndMarksTheProjectOpened() {

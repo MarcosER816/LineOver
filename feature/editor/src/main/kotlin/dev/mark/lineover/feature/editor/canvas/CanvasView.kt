@@ -278,6 +278,7 @@ class CanvasView(
         animating = false
     }
 
+    @Suppress("MagicNumber") // affine element indices
     private fun publish() {
         renderer?.let {
             transform.writeAffine(affine)

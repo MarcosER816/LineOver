@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.asStateFlow
  * The JNI face of one native engine (`lo_engine*`, C API in core/engine-native
  * android/lo_api.h). Thread-safe like the C API; closing joins the render thread.
  */
+@Suppress("TooManyFunctions") // one Kotlin method and one external per C API call
 internal class NativeEngine(
     cacheDir: String,
     cpuBudget: Long,

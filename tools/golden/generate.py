@@ -58,6 +58,10 @@ def build_outputs() -> dict[str, np.ndarray]:
         "color/rec2020_to_p3_f32.npy": reference.rgb_to_rgb(linear, "rec2020", "p3"),
         "color/working_to_srgb_display_f32.npy": reference.working_to_display(pattern_f32, "srgb"),
         "color/working_to_p3_display_f32.npy": reference.working_to_display(pattern_f32, "p3"),
+        # GPU-vs-reference test on the device: ExposureTest(-1) then the sRGB display transform.
+        "exposure_test/minus1_srgb_display_f32.npy": reference.working_to_display(
+            reference.exposure_test(pattern_f32, -1.0), "srgb"
+        ),
     }
 
 
