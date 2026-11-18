@@ -34,6 +34,8 @@ room = "2.8.5"
 ksp = "2.3.14"
 androidxSplashscreen = "1.2.0"
 androidxWindow = "1.5.1"
+# Stage 4. minCompileSdk 34 (checked in aar-metadata).
+androidxExifinterface = "1.4.2"
 
 junit = "4.13.2"
 robolectric = "4.18"
@@ -83,6 +85,7 @@ androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref =
 androidx-room-testing = { module = "androidx.room:room-testing", version.ref = "room" }
 androidx-core-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "androidxSplashscreen" }
 androidx-window-core = { module = "androidx.window:window-core", version.ref = "androidxWindow" }
+androidx-exifinterface = { module = "androidx.exifinterface:exifinterface", version.ref = "androidxExifinterface" }
 androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "androidxProfileinstaller" }
 androidx-benchmark-macro-junit4 = { module = "androidx.benchmark:benchmark-macro-junit4", version.ref = "androidxBenchmark" }
 androidx-uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "androidxUiautomator" }

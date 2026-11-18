@@ -133,6 +133,27 @@ Rect rawRectFor(const Rect& oriented, int rawWidth, int rawHeight, int orientati
 
 std::size_t bytesPerPixel(PixelFormat format) { return format == PixelFormat::RgbaF16LinearExtSrgb ? 8 : 4; }
 
+namespace {
+
+void unpremultiply(std::uint8_t* data, std::size_t pixels, PixelFormat format) {
+    if (format == PixelFormat::RgbaF16LinearExtSrgb) {
+        auto* h = reinterpret_cast<std::uint16_t*>(data);
+        for (std::size_t i = 0; i < pixels; ++i) {
+            const float a = color::halfToFloat(h[4 * i + 3]);
+            if (a <= 0.0f || a == 1.0f) continue;
+            for (int c = 0; c < 3; ++c) h[4 * i + c] = color::floatToHalf(color::halfToFloat(h[4 * i + c]) / a);
+        }
+        return;
+    }
+    for (std::size_t i = 0; i < pixels; ++i) {
+        const int a = data[4 * i + 3];
+        if (a == 0 || a == 255) continue;
+        for (int c = 0; c < 3; ++c) data[4 * i + c] = static_cast<std::uint8_t>(std::min(255, (data[4 * i + c] * 255 + a / 2) / a));
+    }
+}
+
+}  // namespace
+
 void regionToTile(const RegionSource& source, int tileX, int tileY, int tileW, int tileH, float* out) {
     const std::size_t bpp = bytesPerPixel(source.format);
     const std::size_t pixels = static_cast<std::size_t>(tileW) * tileH;
@@ -148,6 +169,7 @@ void regionToTile(const RegionSource& source, int tileX, int tileY, int tileW, i
                         source.pixels + static_cast<std::size_t>(ry) * source.stride + static_cast<std::size_t>(rx) * bpp, bpp);
         }
     }
+    if (source.premultiplied) unpremultiply(staging.data(), pixels, source.format);
     switch (source.format) {
         case PixelFormat::Rgba8Srgb: color::srgb8ToWorking(staging.data(), out, pixels); break;
         case PixelFormat::Rgba8DisplayP3: color::p38ToWorking(staging.data(), out, pixels); break;

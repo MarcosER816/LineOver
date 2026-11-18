@@ -117,4 +117,20 @@ LO_TEST(region_to_tile_orients_and_converts) {
     }
 }
 
+LO_TEST(premultiplied_pixels_are_unpremultiplied_before_conversion) {
+    // 50 % alpha, premultiplied encoded red 128 -> straight 255.
+    const std::uint8_t px[4] = {128, 0, 0, 128};
+    lo::RegionSource source;
+    source.pixels = px;
+    source.stride = 4;
+    source.regionW = source.regionH = source.rawLevelW = source.rawLevelH = 1;
+    source.premultiplied = true;
+    float out[4];
+    lo::regionToTile(source, 0, 0, 1, 1, out);
+    const std::uint8_t straight[4] = {255, 0, 0, 128};
+    float expected[4];
+    lo::color::srgb8ToWorking(straight, expected, 1);
+    for (int c = 0; c < 4; ++c) LO_CHECK(out[c] == expected[c]);
+}
+
 int main() { return lo::testing::runAllTests(); }

@@ -74,6 +74,7 @@ object EditorTags {
     const val PANEL = "panel"
     const val SELECTION_BAR = "selection-options"
     const val COACH = "coach-marks"
+    const val SPINNER = "tile-spinner"
     const val SEARCH_FIELD = "tool-search-field"
 }
 

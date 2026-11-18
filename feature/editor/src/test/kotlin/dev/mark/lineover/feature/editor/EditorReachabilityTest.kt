@@ -142,7 +142,7 @@ abstract class EditorReachability {
         compose.setContent {
             LineOverTheme {
                 key(generation) {
-                    val vm = remember { EditorViewModel(1, FakeEditorLibrary(), InMemoryAppPreferences()) }
+                    val vm = remember { EditorViewModel(1, FakeEditorLibrary(), InMemoryAppPreferences(), FakeCanvasFactory()) }
                     val state by vm.state.collectAsState()
                     EditorScreen(state, vm::onIntent, onBack = {}, onExport = {}, autoFocusSearch = false)
                 }
@@ -185,7 +185,7 @@ class CompactEditorReachabilityTest : EditorReachability() {
         var exported = false
         compose.setContent {
             LineOverTheme {
-                val vm = remember { EditorViewModel(1, FakeEditorLibrary(), InMemoryAppPreferences()) }
+                val vm = remember { EditorViewModel(1, FakeEditorLibrary(), InMemoryAppPreferences(), FakeCanvasFactory()) }
                 val state by vm.state.collectAsState()
                 EditorScreen(state, vm::onIntent, onBack = {}, onExport = { exported = true })
             }
@@ -206,7 +206,7 @@ class ExpandedEditorReachabilityTest : EditorReachability() {
     fun theRailAndTheSideColumnAreUsed() {
         compose.setContent {
             LineOverTheme {
-                val vm = remember { EditorViewModel(1, FakeEditorLibrary(), InMemoryAppPreferences()) }
+                val vm = remember { EditorViewModel(1, FakeEditorLibrary(), InMemoryAppPreferences(), FakeCanvasFactory()) }
                 val state by vm.state.collectAsState()
                 EditorScreen(state, vm::onIntent, onBack = {}, onExport = {})
             }

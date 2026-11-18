@@ -56,6 +56,10 @@ void onThreadExit(void* user) {
     delete callbacks;
 }
 
+int premultiplied(const AndroidBitmapInfo& info) {
+    return (info.flags & ANDROID_BITMAP_FLAGS_ALPHA_MASK) == ANDROID_BITMAP_FLAGS_ALPHA_PREMUL ? 1 : 0;
+}
+
 jstring errorOrNull(JNIEnv* env, int ok, const char* error) { return ok ? nullptr : env->NewStringUTF(error); }
 
 // Locks a Bitmap's pixels for the duration of `use`; false if it is not RGBA_8888 / RGBA_F16.
@@ -109,7 +113,7 @@ JNIEXPORT void LO_NATIVE(nativeOpenImage)(JNIEnv*, jobject, jlong engine, jint w
 JNIEXPORT jboolean LO_NATIVE(nativeSetPreview)(JNIEnv* env, jobject, jlong engine, jobject bitmap, jint format) {
     return withPixels(env, bitmap, format, [&](void* pixels, const AndroidBitmapInfo& info) {
         return lo_engine_set_preview(handle(engine), pixels, info.stride, static_cast<int>(info.width),
-                                     static_cast<int>(info.height), format) == 1;
+                                     static_cast<int>(info.height), format, premultiplied(info)) == 1;
     });
 }
 
@@ -119,7 +123,7 @@ JNIEXPORT jboolean LO_NATIVE(nativeSubmitRegion)(JNIEnv* env, jobject, jlong eng
     const bool ok = withPixels(env, bitmap, format, [&](void* pixels, const AndroidBitmapInfo& info) {
         return lo_engine_submit_region(handle(engine), level, tx, ty, pixels, info.stride, format, regionX, regionY,
                                        static_cast<int>(info.width), static_cast<int>(info.height), rawLevelW, rawLevelH,
-                                       orientation) == 1;
+                                       orientation, premultiplied(info)) == 1;
     });
     if (!ok) lo_engine_fail_tile(handle(engine), level, tx, ty);
     return ok;
@@ -172,13 +176,28 @@ JNIEXPORT void LO_NATIVE(nativeSetSurround)(JNIEnv*, jobject, jlong engine, jflo
 JNIEXPORT void LO_NATIVE(nativeStats)(JNIEnv* env, jobject, jlong engine, jlongArray out) {
     lo_engine_stats s;
     lo_engine_get_stats(handle(engine), &s);
-    const jlong values[12] = {static_cast<jlong>(s.cpu_tile_bytes), static_cast<jlong>(s.cpu_tiles),
+    const jlong values[14] = {static_cast<jlong>(s.cpu_tile_bytes), static_cast<jlong>(s.cpu_tiles),
                               static_cast<jlong>(s.spilled_tiles),  static_cast<jlong>(s.spill_bytes),
                               static_cast<jlong>(s.gpu_bytes),      static_cast<jlong>(s.gpu_tiles),
                               static_cast<jlong>(s.pending_tiles),  static_cast<jlong>(s.frames),
                               static_cast<jlong>(s.tiles_decoded),  s.half_float,
-                              s.display_p3,                         s.level};
-    env->SetLongArrayRegion(out, 0, 12, values);
+                              s.display_p3,                         s.level,
+                              static_cast<jlong>(s.p95_frame_interval_us), static_cast<jlong>(s.p95_draw_us)};
+    env->SetLongArrayRegion(out, 0, 14, values);
+}
+
+JNIEXPORT jintArray LO_NATIVE(nativeRenderTileCpu)(JNIEnv* env, jobject, jlong engine, jint level, jint tx, jint ty,
+                                                   jfloatArray out) {
+    const jsize capacity = env->GetArrayLength(out);
+    std::vector<float> pixels(static_cast<std::size_t>(capacity));
+    int width = 0, height = 0;
+    const int count = lo_engine_render_tile_cpu(handle(engine), level, tx, ty, pixels.data(), pixels.size(), &width, &height);
+    if (count == 0) return nullptr;
+    env->SetFloatArrayRegion(out, 0, count * 4, pixels.data());
+    const jint size[2] = {width, height};
+    jintArray result = env->NewIntArray(2);
+    if (result != nullptr) env->SetIntArrayRegion(result, 0, 2, size);
+    return result;
 }
 
 JNIEXPORT jstring LO_NATIVE(nativeGpuSelfTest)(JNIEnv* env, jobject, jlong engine, jfloatArray input, jint width, jint height,

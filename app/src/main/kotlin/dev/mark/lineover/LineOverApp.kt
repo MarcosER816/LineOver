@@ -7,6 +7,8 @@ import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.SharedAppPreferences
 import dev.mark.lineover.core.io.project.ProjectLibraries
 import dev.mark.lineover.core.io.project.ProjectLibrary
+import dev.mark.lineover.feature.editor.canvas.EditorCanvasFactory
+import dev.mark.lineover.feature.editor.canvas.EngineCanvasFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -33,4 +35,7 @@ class AppContainer(
 
     /** Editor and canvas preferences (last category, favourites, coach marks, surround). */
     val preferences: AppPreferences by lazy { SharedAppPreferences(app) }
+
+    /** Opens the image engine for the editor's canvas (one session per open project). */
+    val canvases: EditorCanvasFactory by lazy { EngineCanvasFactory(app) }
 }

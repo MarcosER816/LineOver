@@ -1,5 +1,6 @@
 #include "lo_api.h"
 
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -54,7 +55,8 @@ void lo_engine_open_image(lo_engine* engine, int width, int height) {
     engine->engine->openImage(width, height);
 }
 
-int lo_engine_set_preview(lo_engine* engine, const void* pixels, size_t stride, int width, int height, int format) {
+int lo_engine_set_preview(lo_engine* engine, const void* pixels, size_t stride, int width, int height, int format,
+                          int premultiplied) {
     if (pixels == nullptr || width <= 0 || height <= 0 || !validFormat(format)) return 0;
     lo::RegionSource source;
     source.pixels = static_cast<const std::uint8_t*>(pixels);
@@ -65,6 +67,7 @@ int lo_engine_set_preview(lo_engine* engine, const void* pixels, size_t stride, 
     source.rawLevelW = width;
     source.rawLevelH = height;
     source.orientation = 1;
+    source.premultiplied = premultiplied != 0;
     std::vector<float> working(static_cast<std::size_t>(width) * height * 4);
     lo::regionToTile(source, 0, 0, width, height, working.data());
     engine->engine->setPreview(std::move(working), width, height);
@@ -73,7 +76,7 @@ int lo_engine_set_preview(lo_engine* engine, const void* pixels, size_t stride, 
 
 int lo_engine_submit_region(lo_engine* engine, int level, int tx, int ty, const void* pixels, size_t stride, int format,
                             int region_x, int region_y, int region_w, int region_h, int raw_level_w, int raw_level_h,
-                            int orientation) {
+                            int orientation, int premultiplied) {
     const lo::TileKey key{level, tx, ty};
     int width, height;
     {
@@ -99,6 +102,7 @@ int lo_engine_submit_region(lo_engine* engine, int level, int tx, int ty, const 
     source.rawLevelW = raw_level_w;
     source.rawLevelH = raw_level_h;
     source.orientation = orientation;
+    source.premultiplied = premultiplied != 0;
     auto tile = std::make_shared<lo::Tile>();
     tile->width = rect.w;
     tile->height = rect.h;
@@ -168,6 +172,8 @@ void lo_engine_get_stats(lo_engine* engine, lo_engine_stats* out) {
     out->half_float = s.halfFloat ? 1 : 0;
     out->display_p3 = s.displayP3 ? 1 : 0;
     out->level = s.level;
+    out->p95_frame_interval_us = s.p95FrameIntervalUs;
+    out->p95_draw_us = s.p95DrawUs;
 }
 
 void lo_engine_set_callbacks(lo_engine* engine, void (*on_loading)(void*, int), void (*on_thread_exit)(void*), void* user) {
@@ -175,6 +181,14 @@ void lo_engine_set_callbacks(lo_engine* engine, void (*on_loading)(void*, int), 
         engine->engine->setLoadingListener([on_loading, user](bool loading) { on_loading(user, loading ? 1 : 0); });
     }
     if (on_thread_exit != nullptr) engine->engine->setThreadExitHook([on_thread_exit, user] { on_thread_exit(user); });
+}
+
+int lo_engine_render_tile_cpu(lo_engine* engine, int level, int tx, int ty, float* out, size_t capacity, int* width,
+                              int* height) {
+    std::vector<float> pixels;
+    if (!engine->engine->renderTileCpu({level, tx, ty}, &pixels, width, height) || pixels.size() > capacity) return 0;
+    std::copy(pixels.begin(), pixels.end(), out);
+    return static_cast<int>(pixels.size() / 4);
 }
 
 int lo_engine_gpu_self_test(lo_engine* engine, const float* in, int width, int height, const char* graph, uint8_t* out,

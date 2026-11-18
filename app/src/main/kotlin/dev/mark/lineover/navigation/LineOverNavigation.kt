@@ -92,6 +92,7 @@ fun LineOverNavigation(
                         projectId = key.projectId,
                         library = container.projects,
                         preferences = container.preferences,
+                        canvases = container.canvases,
                         onBack = back,
                         onExport = { backStack.add(ExportRoute(key.projectId)) },
                     )

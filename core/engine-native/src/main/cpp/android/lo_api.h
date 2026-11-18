@@ -34,6 +34,8 @@ typedef struct {
     int half_float;
     int display_p3;
     int level;
+    uint32_t p95_frame_interval_us;
+    uint32_t p95_draw_us;
 } lo_engine_stats;
 
 lo_engine* lo_engine_create(const char* cache_dir, size_t cpu_budget, size_t gpu_budget, char* error, size_t error_len);
@@ -41,11 +43,12 @@ void lo_engine_destroy(lo_engine* engine);
 
 void lo_engine_open_image(lo_engine* engine, int width, int height);
 /* The preview proxy, already oriented (ImageDecoder applies EXIF orientation). */
-int lo_engine_set_preview(lo_engine* engine, const void* pixels, size_t stride, int width, int height, int format);
+int lo_engine_set_preview(lo_engine* engine, const void* pixels, size_t stride, int width, int height, int format,
+                          int premultiplied);
 /* A decoded raw region for tile (level, tx, ty): see lo::RegionSource. */
 int lo_engine_submit_region(lo_engine* engine, int level, int tx, int ty, const void* pixels, size_t stride, int format,
                             int region_x, int region_y, int region_w, int region_h, int raw_level_w, int raw_level_h,
-                            int orientation);
+                            int orientation, int premultiplied);
 void lo_engine_fail_tile(lo_engine* engine, int level, int tx, int ty);
 int lo_engine_take_request(lo_engine* engine, int timeout_ms, int* level, int* tx, int* ty);
 int lo_engine_set_graph(lo_engine* engine, const char* json, char* error, size_t error_len);
@@ -61,6 +64,11 @@ void lo_engine_get_stats(lo_engine* engine, lo_engine_stats* out);
  * `on_thread_exit` runs once when the render thread ends. Set before any drawing. */
 void lo_engine_set_callbacks(lo_engine* engine, void (*on_loading)(void* user, int loading), void (*on_thread_exit)(void* user),
                              void* user);
+
+/* Full-resolution CPU render of a decoded tile (export path). Returns the pixel count
+ * written to `out` (RGBA float, capacity `capacity` floats) or 0 when the tile is not decoded. */
+int lo_engine_render_tile_cpu(lo_engine* engine, int level, int tx, int ty, float* out, size_t capacity, int* width,
+                              int* height);
 
 /* Test hook: graph on the GPU over `in` (width x height working RGBA float), sRGB display
  * transform into `out` (RGBA8, premultiplied). */

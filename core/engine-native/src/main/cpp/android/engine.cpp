@@ -314,6 +314,17 @@ EngineStats Engine::stats() {
     s.halfFloat = halfFloatSnapshot_;
     s.displayP3 = displayP3Snapshot_;
     s.level = level_;
+    {
+        std::lock_guard<std::mutex> lock(timingMutex_);
+        auto p95 = [](std::vector<std::uint32_t> v) -> std::uint32_t {
+            v.erase(std::remove(v.begin(), v.end(), 0u), v.end());
+            if (v.empty()) return 0;
+            std::sort(v.begin(), v.end());
+            return v[(v.size() - 1) * 95 / 100];
+        };
+        s.p95FrameIntervalUs = p95(intervalsUs_);
+        s.p95DrawUs = p95(drawsUs_);
+    }
     return s;
 }
 
@@ -404,6 +415,7 @@ void Engine::updateRequests(const std::vector<TileKey>& missing) {
 }
 
 void Engine::frame() {
+    const auto frameStart = std::chrono::steady_clock::now();
     int imageW, imageH, viewW, viewH;
     Affine transform;
     float surround[3];
@@ -568,9 +580,37 @@ void Engine::frame() {
             }
         }
         eglSwapBuffers(display_, window_);
+        const auto now = std::chrono::steady_clock::now();
+        std::lock_guard<std::mutex> lock(timingMutex_);
+        auto us = [](auto d) { return static_cast<std::uint32_t>(std::chrono::duration_cast<std::chrono::microseconds>(d).count()); };
+        const std::uint32_t interval = lastFrameStart_.time_since_epoch().count() == 0 ? 0 : us(frameStart - lastFrameStart_);
+        if (intervalsUs_.size() < kTimingCapacity) {
+            intervalsUs_.push_back(interval);
+            drawsUs_.push_back(us(now - frameStart));
+        } else {
+            intervalsUs_[timingNext_] = interval;
+            drawsUs_[timingNext_] = us(now - frameStart);
+        }
+        timingNext_ = (timingNext_ + 1) % kTimingCapacity;
+        lastFrameStart_ = frameStart;
     }
     ++frames_;
     if (more) requestRedraw();
+}
+
+bool Engine::renderTileCpu(const TileKey& key, std::vector<float>* out, int* width, int* height) {
+    const std::shared_ptr<const Tile> tile = store_.get(key);
+    if (!tile) return false;
+    std::shared_ptr<const OpList> ops;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        ops = ops_;
+    }
+    out->resize(tile->pixels.size());
+    ops->cpuRef(tile->pixels.data(), out->data(), tile->pixels.size() / 4);
+    *width = tile->width;
+    *height = tile->height;
+    return true;
 }
 
 bool Engine::gpuSelfTest(const float* in, int width, int height, const std::string& graph, std::uint8_t* out,

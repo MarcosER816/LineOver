@@ -100,6 +100,9 @@ struct RegionSource {
     int regionX = 0, regionY = 0, regionW = 0, regionH = 0;
     int rawLevelW = 0, rawLevelH = 0;
     int orientation = 1;
+    // Android premultiplied bitmaps (8-bit: premultiplied encoded values; F16: premultiplied
+    // linear values) are un-premultiplied before conversion: the working space is straight.
+    bool premultiplied = false;
 };
 void regionToTile(const RegionSource& source, int tileX, int tileY, int tileW, int tileH, float* out);
 

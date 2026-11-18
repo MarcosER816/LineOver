@@ -11,6 +11,7 @@
 #include <android/native_window.h>
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -51,6 +52,8 @@ struct EngineStats {
     bool halfFloat = true;
     bool displayP3 = false;
     int level = -1;  // level of the sharp tiles in view, -1 = preview only
+    std::uint32_t p95FrameIntervalUs = 0;  // over the last frames drawn to the window
+    std::uint32_t p95DrawUs = 0;
 };
 
 class Engine {
@@ -86,6 +89,10 @@ public:
     EngineStats stats();
     void setLoadingListener(std::function<void(bool)> listener);
     void setThreadExitHook(std::function<void()> hook);
+
+    // Full-resolution path (export): `key`'s stored tile through the ops' cpuRef. False
+    // when the tile has not been decoded into the store.
+    bool renderTileCpu(const TileKey& key, std::vector<float>* out, int* width, int* height);
 
     // Test hook: runs `graph` on the GPU over `in` (w x h working RGBA) and renders the
     // sRGB display transform into `out` (RGBA8). Same shaders as the canvas.
@@ -175,6 +182,14 @@ private:
     std::atomic<bool> displayP3Snapshot_{false};
     std::atomic<bool> loading_{false};
     std::function<void(bool)> loadingListener_;
+
+    // Frame timing ring (render thread writes, stats() reads under timingMutex_)
+    static constexpr std::size_t kTimingCapacity = 240;
+    std::mutex timingMutex_;
+    std::vector<std::uint32_t> intervalsUs_;
+    std::vector<std::uint32_t> drawsUs_;
+    std::size_t timingNext_ = 0;
+    std::chrono::steady_clock::time_point lastFrameStart_{};
 };
 
 }  // namespace lo::android

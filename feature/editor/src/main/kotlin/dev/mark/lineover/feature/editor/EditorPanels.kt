@@ -355,11 +355,13 @@ private fun InfoPanel(
     PanelHeader("Info", null, onClose)
     Column(Modifier.padding(horizontal = LoSpacing.M), verticalArrangement = Arrangement.spacedBy(LoSpacing.Xxs)) {
         InfoLine("Project", state.project?.name ?: "—")
-        val preview = state.preview
-        if (preview != null) {
-            val mp = preview.originalWidth.toLong() * preview.originalHeight / MEGA
-            InfoLine("Original", "${preview.originalWidth} × ${preview.originalHeight} px ($mp MP)")
-            InfoLine("Preview", "${preview.bitmap.width} × ${preview.bitmap.height} px")
+        val image = state.image
+        if (image != null) {
+            val mp = image.width.toLong() * image.height / MEGA
+            InfoLine("Original", "${image.width} × ${image.height} px ($mp MP)")
+            InfoLine("Colour", listOfNotNull(image.colorSpace, image.encoding).joinToString(" · "))
+            if (image.ultraHdr) InfoLine("HDR", "Ultra HDR gain map kept")
+            InfoLine("Preview", "${image.previewWidth} × ${image.previewHeight} px, sharp tiles when zoomed in")
         } else if (state.previewUnavailable) {
             InfoLine("Original", "This format is shown once its decoder arrives (TIFF: Stage 12, RAW: Stage 25)")
         }
