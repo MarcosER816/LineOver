@@ -2,6 +2,7 @@
 // the scalar functions they mirror.
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 
 namespace lo {

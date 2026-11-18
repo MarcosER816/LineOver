@@ -1,5 +1,6 @@
 // Curves and grading (Stage 7) against the Python reference in testdata/golden/grade,
 // spline monotonicity on random points, and the graph mapping of every op.
+#include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <random>
