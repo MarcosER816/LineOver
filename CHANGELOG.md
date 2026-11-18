@@ -2,6 +2,20 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 4 — Image engine (0.4.0)
+
+### Added
+
+- The image engine every tool will plug into: your photo is now drawn by LineOver's own
+  engine (OpenGL on a separate thread, 16-bit floating point, linear Rec.2020 colour).
+- Huge photos open without running out of memory: a low-resolution version appears at
+  once, and when you zoom in the sharp parts load piece by piece (a small spinner shows
+  only if that takes longer than 0.3 s).
+- Colours stay true: wide-gamut (Display P3) photos are shown on the POCO's P3 screen
+  without clipping; EXIF rotation is respected.
+- Ultra HDR photos keep their HDR information (gain map) for HDR display and export later.
+- More → Info shows the photo's size, colour space and whether it is Ultra HDR.
+
 ## Stage 3 — Editor shell (0.3.0)
 
 ### Added

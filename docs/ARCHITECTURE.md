@@ -140,34 +140,41 @@ as a **paint delta of compressed tiles** that the graph references.
 A `.loproj` project file holds the graph JSON, a reference to the original, and the paint
 deltas. Exports go to `Pictures/LineOver`.
 
-## Engine
+## Engine (Stage 4)
 
-Native **C++17, OpenGL ES 3.2**, in `:core:engine-native`; Kotlin reaches it through
-`LoEngine` in `:core:engine`.
+Native **C++17, OpenGL ES 3**, in `:core:engine-native`; Kotlin reaches it through
+`NativeEngine` / `EngineSession` in `:core:engine`. One engine per open image.
 
 | Aspect | Decision |
 | --- | --- |
 | Working space | Linear Rec.2020, D65, straight alpha; values above 1.0 allowed (HDR headroom) |
-| Pixel format | RGBA16F |
-| Tiles | 512 × 512, cached; only dirty tiles are re-rendered |
-| Preview | A proxy whose long edge is 2048 px drives interactive editing |
-| Full resolution | Rendered in the background per tile; used for export and 1:1 zoom |
-| Threads | A dedicated render thread owns the GL context; the UI thread never touches pixels |
-| CPU path | Every op also has a CPU implementation, the reference for GPU tests |
+| Sources | `SourceReader` (`:core:io`): ImageDecoder header + EXIF (androidx.exifinterface). 8-bit sRGB, 8-bit Display P3, or RGBA_F16 LINEAR_EXTENDED_SRGB for other wide-gamut / HDR sources. Ultra HDR: `bitmap.gainmap` is kept |
+| Preview | ImageDecoder straight to ≤ 2048 px (SOFTWARE allocator; HARDWARE only for UI thumbnails). Shown instantly |
+| Tiles | 512 × 512, mip level L = BitmapRegionDecoder inSampleSize 2^L, oriented natively (8 EXIF cases). Only the tiles in view, at the level matching the zoom, nearest the centre first |
+| CPU tile store | Float RGBA mirrors under a budget (LRU); evicted tiles spill to `cacheDir/engine/<id>` as zstd-compressed half floats and reload on demand |
+| GPU | Dedicated render thread with its own EGL context. RGBA16F textures (preview + tiles, GPU LRU under a budget); `SRGB8_ALPHA8` fallback when RGBA16F is not renderable (emulators) |
+| Ops | `lo::Op`: `gpu()` (GLSL body + uniforms, one shader pass each) and `cpuRef()` (plain C, float, NEON-free: the golden reference). Identity and ExposureTest so far |
+| Display | Rec.2020 → Display P3 (EGL `display_p3_passthrough`, or `display_p3` with GL encoding) or sRGB; premultiplied blend over the surround. The editor window asks for `COLOR_MODE_WIDE_COLOR_GAMUT` on P3 displays |
+| Edit graph | Kotlin `EditGraphJson` → native `parseGraph` (same JSON, round-trip checked on both sides with `testdata/graph/edit_graph_v1.json`) |
+| Scheduling | `RenderScheduler`: latest graph wins (conflated), preview renders on every change on `Dispatchers.Default` + the render thread; full resolution (`EngineSession.renderFullResolution`, CPU path) only on export |
+| Progressive display | Preview first, sharp tiles drawn over it as they arrive; the editor shows a subtle spinner only if they take > 300 ms |
+| Memory | Defaults: 192 MB CPU tiles + 192 MB GPU tiles. 50 MP stays far below 1.2 GB native + GPU (`EngineOpenTest` logs it, tag `LineOverMemory`) |
 | Deprecated APIs | None. RenderScript is forbidden (R8) |
 
 `core/engine-native/src/main/cpp`:
 
 ```
-include/lineover/   public C++ API (portable, no Android headers)
-src/                portable engine core            -> lo_engine (static)
-android/            JNI bridge, EGL / GLES backend  -> liblineover_engine.so
+include/lineover/   public C++ API (portable): color, ops, graph, tiling, tile_store
+src/                portable engine core                         -> lo_engine (static)
+third_party/zstd    zstd 1.5.7 sources (BSD), spilled tiles      -> lo_zstd (static)
+android/            render thread, EGL, GL pipeline, C API (lo_api.h), JNI -> liblineover_engine.so
 testing/            GoldenAssert, PNG / NPY readers (host only)
 tests/              ctest executables (host only)
 ```
 
-The same `CMakeLists.txt` builds the Android shared library (through Gradle) and, on
-Linux, the host static library plus the ctest tests.
+The JNI bridge only marshals Java values to the C API (`android/lo_api.h`). The same
+`CMakeLists.txt` builds the Android shared library (through Gradle) and, on Linux, the
+host static library plus the ctest tests.
 
 ## AI models
 
@@ -186,6 +193,7 @@ SHA-256 (`Sha256`) before loading, and Settings can delete it. The runtime is Li
 | UI | Roborazzi screenshots (Robolectric native graphics) | `src/test`, images in `src/test/screenshots` |
 | Slot reachability, recomposition | Compose UI tests on Robolectric | `*ReachabilityTest`, `CanvasRecompositionTest` |
 | Canvas frame timing | Instrumented (correctness on SwiftShader, timing logged) | `feature/editor/src/androidTest` |
+| Engine on device: GPU vs reference, 50 MP memory, Ultra HDR, full res | Instrumented | `core/engine/src/androidTest` |
 | Performance | Macrobenchmark on the phone | `:benchmark` |
 
 `GoldenAssert` tolerances: 8-bit max |diff| ≤ 2/255 and mean ≤ 0.5/255; float ops max
