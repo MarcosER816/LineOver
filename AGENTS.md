@@ -137,7 +137,9 @@ python3 tools/golden/generate.py --check
   Fritsch-Carlson LUTs (C++, Kotlin and Python share the algorithm); GLSL indexes uniform
   arrays with constants only. Never
   tone-map in 8 bit: all ops run on RGBA16F / float. Colour work (HSL, vibrance,
-  saturation) is done in OKLCh, never in sRGB gamma; nothing clips before the display.
+  saturation) is done in OKLCh, never in sRGB gamma; nothing clips before the display, and
+  the display gamut-maps (OKLab lightness and hue kept, chroma bisected; `color::gamutMap`,
+  the GPU display pass, `reference.gamut_map` and the UI's `DisplayGamut` change together).
 - Full-resolution bitmaps never exist on the Java heap: previews are ≤ 2048 px, tiles are
   512 px regions recycled after conversion.
 

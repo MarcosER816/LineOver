@@ -16,6 +16,8 @@ dependencies {
     implementation(libs.androidx.activity.compose)
 
     testImplementation(libs.kotlinx.coroutines.test)
+    // GoldenAssert / NpyIo: the UI display transform against the reference.
+    testImplementation(testFixtures(project(":core:engine")))
     // Reachability and recomposition tests drive the real editor on the JVM (Robolectric).
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)

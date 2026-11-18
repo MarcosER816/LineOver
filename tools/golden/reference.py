@@ -139,12 +139,63 @@ def rgb_to_rgb(rgba: np.ndarray, source: str, target: str) -> np.ndarray:
     return _with_alpha(rgb, rgba)
 
 
+# Display gamut mapping: colours outside the display's gamut keep their OKLab lightness
+# (clamped to 0..1) and hue and lose chroma until they fit: bisection with a fixed number of
+# steps (the GPU display pass and color.cpp run the same steps) along the OKLab line from
+# the colour to the grey RGB = L^3 of the same lightness (that grey, not a = b = 0, so that
+# white maps exactly to white whatever the OKLab matrices' rounding).
+GAMUT_STEPS = 16
+GAMUT_EPS = 5e-4
+
+
+def _display_matrix(display: str) -> np.ndarray:
+    target = {"srgb": _SRGB, "p3": _P3}[display]
+    return np.array(colour.matrix_RGB_to_RGB(_REC2020, target, chromatic_adaptation_transform=None))
+
+
+def gamut_map(rgb: np.ndarray, display: str) -> np.ndarray:
+    """Linear working RGB -> linear display RGB in 0..1: in-gamut colours unchanged (clipped
+    by at most GAMUT_EPS), out-of-gamut colours reduced in OKLab chroma at constant hue."""
+    m = _display_matrix(display)
+    rgb = rgb.astype(np.float64)
+    d = rgb @ m.T
+    inside = lambda x: np.all((x >= -GAMUT_EPS) & (x <= 1.0 + GAMUT_EPS), axis=-1)  # noqa: E731
+    out = np.clip(d, 0.0, 1.0)
+    bad = ~inside(d)
+    if np.any(bad):
+        lab = to_oklab(rgb[bad])
+        lab[:, 0] = np.clip(lab[:, 0], 0.0, 1.0)
+        grey = to_oklab(np.repeat(lab[:, :1] ** 3, 3, axis=1))
+        lo = np.zeros(len(lab))
+        hi = np.ones(len(lab))
+        for _ in range(GAMUT_STEPS):
+            mid = 0.5 * (lo + hi)
+            ok = inside(from_oklab(grey + mid[:, None] * (lab - grey)) @ m.T)
+            lo = np.where(ok, mid, lo)
+            hi = np.where(ok, hi, mid)
+        out[bad] = np.clip(from_oklab(grey + lo[:, None] * (lab - grey)) @ m.T, 0.0, 1.0)
+    return out
+
+
 def working_to_display(rgba_f32: np.ndarray, display: str) -> np.ndarray:
-    """Working space -> encoded display values (0..1), clipped to the display gamut."""
-    linear = rgb_to_rgb(rgba_f32, "rec2020", display).astype(np.float64)
-    encoded = colour.cctf_encoding(np.clip(linear[..., :3], 0.0, 1.0), function="sRGB")
+    """Working space -> encoded display values (0..1), gamut-mapped to the display."""
+    linear = gamut_map(rgba_f32[..., :3], display)
+    encoded = colour.cctf_encoding(linear, function="sRGB")
     alpha = np.clip(rgba_f32[..., 3:4].astype(np.float64), 0.0, 1.0)
     return np.concatenate([encoded, alpha], axis=-1).astype(np.float32)
+
+
+def f16(image: np.ndarray) -> np.ndarray:
+    """float32 values rounded to float16, as an RGBA16F texture holds them."""
+    return image.astype(np.float16).astype(np.float32)
+
+
+def gpu_display(fn, image: np.ndarray) -> np.ndarray:
+    """What the GPU path computes for one op: the input and the op's output pass through
+    RGBA16F textures before the display pass. The display gamut mapping is continuous but
+    can be steep where the line to grey grazes a gamut face (light yellows), so the GPU
+    goldens model the float16 steps instead of comparing with float32 values."""
+    return working_to_display(f16(fn(f16(image))), "srgb")
 
 
 EXPOSURE_TEST_STOPS = 1.5
@@ -895,6 +946,10 @@ def _tone_weights(ye, mid, width):
     return (1 - t) ** 2, 2 * t * (1 - t), t * t
 
 
+GRADE_HIGHLIGHT_TINT = 0.2
+GRADE_WHITE_FADE = (0.9, 1.05)
+
+
 def color_grading(image, shadows, midtones, highlights, global_, blending=50.0, balance=0.0):
     """Color Grading as CDL in encoded (log-like) space: shadows = offset, midtones = power,
     highlights = slope, global = offset everywhere. Each wheel is (hue deg, saturation 0..100,
@@ -907,7 +962,10 @@ def color_grading(image, shadows, midtones, highlights, global_, blending=50.0, 
     ws, wm, wh = _tone_weights(ye, 0.5 - 0.25 * balance / 100.0, width)
     sh, mi, hi, gl = (np.asarray(w, dtype=np.float64) for w in (shadows, midtones, highlights, global_))
     vs, vm, vh, vg = (tint_direction(w[0]) for w in (sh, mi, hi, gl))
-    slope = 1.0 + wh[..., None] * (0.6 * hi[1] / 100.0 * vh + 0.5 * hi[2] / 100.0)
+    # Highlights tint: as strong as the shadows' offset, faded out towards white so that
+    # white and HDR highlights stay neutral (encoded luminance 0.9 -> 1.05).
+    fade = 1.0 - _smoothstep(GRADE_WHITE_FADE[0], GRADE_WHITE_FADE[1], ye)
+    slope = 1.0 + wh[..., None] * (GRADE_HIGHLIGHT_TINT * hi[1] / 100.0 * vh * fade[..., None] + 0.5 * hi[2] / 100.0)
     offset = ws[..., None] * (0.08 * sh[1] / 100.0 * vs + 0.1 * sh[2] / 100.0) + (0.05 * gl[1] / 100.0 * vg + 0.1 * gl[2] / 100.0)
     power = 1.0 / np.maximum(1.0 + wm[..., None] * (0.6 * mi[1] / 100.0 * vm + 0.5 * mi[2] / 100.0), 0.05)
     out[..., :3] = decode(_spow(e * slope + offset, power))

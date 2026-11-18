@@ -382,39 +382,16 @@ internal fun TargetedHudOverlay(
     }
 }
 
-/** Working space (linear Rec.2020) -> an sRGB colour for UI drawing (clipped). */
-@Suppress("MagicNumber") // row-major 3 x 3 matrix indices
+/** Working space (linear Rec.2020) -> an sRGB colour for UI drawing, gamut-mapped like the canvas. */
 internal fun workingToSrgb(
     r: Float,
     g: Float,
     b: Float,
 ): Color {
-    fun enc(x: Float): Float {
-        val v = x.coerceIn(0f, 1f)
-        return if (v <= SRGB_LINEAR_LIMIT) v * SRGB_SLOPE else SRGB_A * Math.pow(v.toDouble(), 1.0 / SRGB_GAMMA).toFloat() - (SRGB_A - 1f)
-    }
-    val sr = REC2020_TO_SRGB[0] * r + REC2020_TO_SRGB[1] * g + REC2020_TO_SRGB[2] * b
-    val sg = REC2020_TO_SRGB[3] * r + REC2020_TO_SRGB[4] * g + REC2020_TO_SRGB[5] * b
-    val sb = REC2020_TO_SRGB[6] * r + REC2020_TO_SRGB[7] * g + REC2020_TO_SRGB[8] * b
-    return Color(enc(sr), enc(sg), enc(sb))
+    val e = DisplayGamut.workingToSrgb(r, g, b)
+    return Color(e[0], e[1], e[2])
 }
 
-private val REC2020_TO_SRGB =
-    floatArrayOf(
-        1.6603035f,
-        -0.5875701f,
-        -0.0728901f,
-        -0.1243756f,
-        1.1328345f,
-        -0.0083597f,
-        -0.0181123f,
-        -0.1005836f,
-        1.1187703f,
-    )
-private const val SRGB_LINEAR_LIMIT = 0.0031308f
-private const val SRGB_SLOPE = 12.92f
-private const val SRGB_A = 1.055f
-private const val SRGB_GAMMA = 2.4
 private const val LOUPE_PIXELS = 9
 private const val PATCH_PIXELS = 5
 private val LOUPE_SIZE = 108.dp

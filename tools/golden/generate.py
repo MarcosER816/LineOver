@@ -60,8 +60,8 @@ def build_outputs() -> dict[str, np.ndarray]:
         "color/working_to_srgb_display_f32.npy": reference.working_to_display(pattern_f32, "srgb"),
         "color/working_to_p3_display_f32.npy": reference.working_to_display(pattern_f32, "p3"),
         # GPU-vs-reference test on the device: ExposureTest(-1) then the sRGB display transform.
-        "exposure_test/minus1_srgb_display_f32.npy": reference.working_to_display(
-            reference.exposure_test(pattern_f32, -1.0), "srgb"
+        "exposure_test/minus1_srgb_display_f32.npy": reference.gpu_display(
+            lambda im: reference.exposure_test(im, -1.0), pattern_f32
         ),
     }
     outputs.update(light_outputs())
@@ -80,7 +80,9 @@ def light_outputs() -> dict[str, np.ndarray]:
         for index, params in enumerate(settings, start=1):
             outputs[f"light/{name}_{index}_f32.npy"] = op(scene, *params)
         # GPU vs reference on the device: the middle setting through the sRGB display transform.
-        outputs[f"light/{name}_2_srgb_display_f32.npy"] = reference.working_to_display(op(scene, *settings[1]), "srgb")
+        outputs[f"light/{name}_2_srgb_display_f32.npy"] = reference.gpu_display(
+            lambda im, op=op, params=settings[1]: op(im, *params), scene
+        )
     outputs["histogram/scene_srgb_hist_f32.npy"] = reference.histogram_srgb(scene)
     return outputs
 
@@ -104,14 +106,16 @@ def color_outputs() -> dict[str, np.ndarray]:
         if name in COLOR_GPU_DISCONTINUOUS:
             continue
         middle = settings[min(1, len(settings) - 1)]
-        outputs[f"colorops/{name}_gpu_srgb_display_f32.npy"] = reference.working_to_display(op(image, *middle), "srgb")
+        outputs[f"colorops/{name}_gpu_srgb_display_f32.npy"] = reference.gpu_display(
+            lambda im, op=op, params=middle: op(im, *params), image
+        )
     # Posterize and Threshold jump at step edges: their GPU goldens are computed from the
     # float16 values the GPU texture holds, on cases with every pixel well away from a step
     # (reference.discontinuity_margin), so float32 GPU arithmetic cannot flip a pixel.
     for name, (input_name, params) in COLOR_GPU_DISCONTINUOUS.items():
         image = (chart if input_name == "chart" else scene).astype(np.float16).astype(np.float32)
         out = reference.COLOR_OPS[name](image, *params)
-        outputs[f"colorops/{name}_gpu_srgb_display_f32.npy"] = reference.working_to_display(out, "srgb")
+        outputs[f"colorops/{name}_gpu_srgb_display_f32.npy"] = reference.working_to_display(reference.f16(out), "srgb")
     return outputs
 
 
@@ -131,7 +135,9 @@ def grade_outputs() -> dict[str, np.ndarray]:
         image = scene if name in GRADE_SCENE_OPS else chart
         for index, params in enumerate(settings, start=1):
             outputs[f"grade/{name}_{index}_f32.npy"] = op(image, params)
-        outputs[f"grade/{name}_gpu_srgb_display_f32.npy"] = reference.working_to_display(op(image, settings[1]), "srgb")
+        outputs[f"grade/{name}_gpu_srgb_display_f32.npy"] = reference.gpu_display(
+            lambda im, op=op, params=settings[1]: op(im, params), image
+        )
     return outputs
 
 
@@ -153,7 +159,7 @@ def photo_outputs() -> dict[str, np.ndarray]:
     for edit, (photo, fn) in {**reference.PHOTO_EDITS, **reference.PHOTO_REGION_EDITS}.items():
         out = fn(small[photo]).astype(np.float32)
         outputs[f"photos/{edit}_f32.npy"] = out
-        outputs[f"photos/{edit}_gpu_srgb_display_f32.npy"] = reference.working_to_display(out, "srgb")
+        outputs[f"photos/{edit}_gpu_srgb_display_f32.npy"] = reference.gpu_display(fn, small[photo])
     return outputs
 
 

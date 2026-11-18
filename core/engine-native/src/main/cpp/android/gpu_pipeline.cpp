@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "gl_util.h"
+#include "../src/op_util.h"
 
 namespace lo::android {
 namespace {
@@ -35,8 +36,9 @@ void main() {
 // values of the display's primaries): a channel that would show as 255 is a clipped highlight (linear >= 0.99621,
 // the value encoding to 254.5 / 255); all channels that would show as 0 are crushed
 // shadows (linear < 0.5 / 255 / 12.92).
-constexpr const char* kDisplayFragment = R"(#version 300 es
-precision highp float;
+// Gamut mapping (color::gamutMap, reference.gamut_map): out-of-gamut colours keep their
+// OKLab lightness (clamped) and hue; 16 bisection steps of chroma towards the grey L^3.
+constexpr const char* kDisplayFragment = "#version 300 es\nprecision highp float;\n" LO_GLSL_OKLAB R"(
 uniform sampler2D u_texture;
 uniform mat3 u_toDisplay;
 uniform int u_encode;
@@ -48,10 +50,26 @@ out vec4 o_color;
 float oetf(float x) {
     return x <= 0.0031308 ? x * 12.92 : 1.055 * pow(x, 1.0 / 2.4) - 0.055;
 }
+bool lo_inside(vec3 d) {
+    return all(greaterThanEqual(d, vec3(-5e-4))) && all(lessThanEqual(d, vec3(1.0005)));
+}
+vec3 lo_gamut(vec3 w, vec3 raw) {
+    if (lo_inside(raw)) return clamp(raw, 0.0, 1.0);
+    vec3 lab = lo_toLab(w);
+    lab.x = clamp(lab.x, 0.0, 1.0);
+    vec3 grey = lo_toLab(vec3(lab.x * lab.x * lab.x));
+    float lo = 0.0;
+    float hi = 1.0;
+    for (int i = 0; i < 16; ++i) {
+        float mid = 0.5 * (lo + hi);
+        if (lo_inside(u_toDisplay * lo_fromLab(mix(grey, lab, mid)))) lo = mid; else hi = mid;
+    }
+    return clamp(u_toDisplay * lo_fromLab(mix(grey, lab, lo)), 0.0, 1.0);
+}
 void main() {
     vec4 c = texture(u_texture, v_uv);
     vec3 raw = u_toDisplay * c.rgb;
-    vec3 d = clamp(raw, 0.0, 1.0);
+    vec3 d = lo_gamut(c.rgb, raw);
     if (u_clip == 1) {
         float m = max(raw.r, max(raw.g, raw.b));
         if (m >= 0.99621) d = u_clipHi;

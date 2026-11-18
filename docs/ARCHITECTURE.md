@@ -199,6 +199,12 @@ Native **C++17, OpenGL ES 3**, in `:core:engine-native`; Kotlin reaches it throu
   (a partition of unity) and every hue effect fades in from grey over chroma 0..0.03.
 - Invert / Posterize / Threshold on transfer-encoded values (sRGB curve extended by symmetry).
 - Nothing clips: out-of-gamut and HDR values pass through until the display transform.
+- The display transform gamut-maps: a colour outside the display's gamut keeps its OKLab
+  lightness (clamped to 0..1, so HDR highlights go to white) and hue, and its chroma is
+  bisected (16 steps) along the OKLab line to the grey RGB = L³ until it fits (tolerance
+  5e-4). Same steps in `color::gamutMap` (CPU), the GPU display pass, `reference.gamut_map`
+  and `DisplayGamut` (UI swatches). The histogram and the clipping warnings still read the
+  unmapped values: they report the image data, not what the screen can show.
 - Graph JSON: number arrays (the mixer's bands) are op fields written after the scalars.
 - Eyedropper / targeted adjustment: `Engine::samplePatch` averages 5 x 5 preview pixels at an
   image point and runs the ops that come before the tool (on the render thread, called off
@@ -218,7 +224,9 @@ Native **C++17, OpenGL ES 3**, in `:core:engine-native`; Kotlin reaches it throu
   entries, slope 1 outside 0..1). The parametric curve is 9 points of the same spline.
 - Tone ops work on transfer-encoded values; Color Grading is CDL there (shadows = offset,
   midtones = power, highlights = slope, global = offset) with tone weights from encoded
-  luminance set by Balance / Blending. Wheel hues are OKLCh hues; the UI shows HSV hues and
+  luminance set by Balance / Blending. The highlights tint (slope 0.2 per 100 % saturation,
+  matched to the shadows' offset) fades out over encoded luminance 0.9 → 1.05 so that white
+  and HDR highlights stay neutral. Wheel hues are OKLCh hues; the UI shows HSV hues and
   converts with `HueMap` (piecewise linear through the band centres).
 - GLSL indexes uniform arrays with constants only (generated unrolled code), after
   SwiftShader mishandled dynamic indexing in Stage 6.

@@ -53,7 +53,11 @@ enum class Display : int {
     DisplayP3 = 1,
 };
 
-// Working space -> encoded display values in 0..1 (clipped to the display gamut).
+// Working RGBA -> linear display RGBA in 0..1: out-of-gamut colours keep their OKLab
+// lightness and hue and lose chroma until they fit (reference.gamut_map). Alpha unchanged.
+void gamutMap(const float* in, float* out, std::size_t pixels, Display display);
+
+// Working space -> encoded display values in 0..1 (gamutMap, then the sRGB transfer).
 void workingToDisplay(const float* in, float* out, std::size_t pixels, Display display);
 
 // Working space -> 8-bit encoded RGBA for a display (rounded, alpha clipped to 0..255).
