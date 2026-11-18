@@ -185,6 +185,19 @@ def working_to_display(rgba_f32: np.ndarray, display: str) -> np.ndarray:
     return np.concatenate([encoded, alpha], axis=-1).astype(np.float32)
 
 
+def f16(image: np.ndarray) -> np.ndarray:
+    """float32 values rounded to float16, as an RGBA16F texture holds them."""
+    return image.astype(np.float16).astype(np.float32)
+
+
+def gpu_display(fn, image: np.ndarray) -> np.ndarray:
+    """What the GPU path computes for one op: the input and the op's output pass through
+    RGBA16F textures before the display pass. The display gamut mapping is continuous but
+    can be steep where the line to grey grazes a gamut face (light yellows), so the GPU
+    goldens model the float16 steps instead of comparing with float32 values."""
+    return working_to_display(f16(fn(f16(image))), "srgb")
+
+
 EXPOSURE_TEST_STOPS = 1.5
 
 

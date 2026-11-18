@@ -180,6 +180,16 @@ Mark answered questions 3 and 4 with yes (after the real-photo tests).
 | --- | --- |
 | `grade/color_grading_{1,2,3}_f32.npy`, `photos/bird_teal_orange_{,full_}f32.npy` | Highlights tint strength and white fade (1) |
 | Every `*_srgb_display_f32.npy` (light, colorops, grade, photos, `exposure_test/minus1`) and `color/working_to_{srgb,p3}_display_f32.npy` | Display gamut mapping (2): the GPU and CPU display references |
+| The GPU-only display goldens (`*_gpu_srgb_display_f32.npy`, `light/*_2_srgb_display_f32.npy`, `exposure_test/minus1_srgb_display_f32.npy`) | Now `reference.gpu_display`: input and op output rounded to float16 before the display transform, as the GPU's RGBA16F textures hold them (see below) |
+
+The first CI run failed `gpuChannelMixerMatchesTheReference` on the API 36 emulator
+(max 6/255, limit 3/255, a few pixels). Root cause: a very light yellow (OKLab L 0.96)
+whose line to grey grazes the G = 1 face of the sRGB gamut at a shallow angle, so the
+mapped point moves fast along the line when G changes: the float16 rounding of the GPU's
+intermediate texture alone moved it by 2.2/255 in Python. The mapping is continuous, but
+per-channel clipping had hidden this gain. Fix: the GPU goldens model the float16 steps
+the GPU takes (as Stage 6 did for Posterize), tolerance unchanged; `color/working_to_*`
+(ctest, CPU) stay float32.
 
 ## Open questions (R12)
 
