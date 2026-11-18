@@ -133,11 +133,11 @@ through the `Vibrator` (some OEM builds ignore the view constants).
 | `LoPanel` | Bottom panel with detents 160 / 280 dp (≤ 40 % of the window, or of `maxHeight`: the editor passes 40 % of the canvas), spring settle, drag or tap the handle |
 | `LoIconButton` | 48 dp icon button, optional selected (toggle) state |
 | `LoChip` | Selectable chip, 32 dp drawn, 48 dp touch |
-| `LoSegmented` | Segmented control |
+| `LoSegmented` | Segmented control; optional `descriptions` give short labels full spoken names |
 | `LoSwitchRow` | Label (+ description) with a switch; the whole row toggles |
 | `LoColorWheel` | Hue (angle) / saturation (radius) wheel for colour grading; double tap resets |
 | `LoCurveEditorPlaceholder` | Reserves the curve editor (Stage 7); kept for slots of later curve-like tools |
-| `LoCurveEditor` | Square, full-width curve editor: tap adds a point on the curve, drag moves, drag off the graph deletes (turns red first); 3× magnifier and "In · Out" (0–255) readout while dragging; optional histogram behind the curve. Geometry in `LoCurveEditorMath` |
+| `LoCurveEditor` | Full-width curve editor (`aspectRatio`: square on wide layouts, 2.9 : 1 on phones so the photo stays visible): tap adds a point on the curve, drag moves, drag off the graph deletes (turns red first); 3× magnifier (at most the graph's height) and "In · Out" (0–255) readout in the graph's lower right corner; optional histogram behind the curve. Geometry in `LoCurveEditorMath` |
 | `LoGradeWheel` | `LoColorWheel` inside a 270° luminance ring (open at the bottom): drag inside for hue / saturation, drag the ring for luminance; double tap the centre or the ring resets it. Geometry in `LoGradeWheelMath` |
 | `LoToast` / `LoToastHost` / `LoToastState` | Toast and undo snackbar, one at a time |
 | `LoEmptyState` | Icon, title, body, optional action |

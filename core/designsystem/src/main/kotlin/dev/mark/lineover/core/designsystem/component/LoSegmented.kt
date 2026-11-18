@@ -15,6 +15,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import dev.mark.lineover.core.designsystem.LineOverTheme
@@ -32,6 +34,7 @@ fun LoSegmented(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
+    descriptions: List<String>? = null,
 ) {
     Row(
         modifier =
@@ -57,6 +60,7 @@ fun LoSegmented(
             ) {
                 Text(
                     text = option,
+                    modifier = descriptions?.getOrNull(index)?.let { d -> Modifier.semantics { contentDescription = d } } ?: Modifier,
                     style = LoType.Body,
                     textAlign = TextAlign.Center,
                     color =

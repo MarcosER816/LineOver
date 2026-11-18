@@ -84,34 +84,58 @@ internal fun GradePanel(
     state: EditorState,
     onIntent: (EditorIntent) -> Unit,
     onClose: () -> Unit,
+    wide: Boolean = true,
 ) {
-    val grade = state.grade
     val edit: Edit = { f -> onIntent(EditorIntent.EditGrade(f)) }
     val title = requireNotNull(ToolRegistry[toolId]).name
+    // On phones the point curves panel is short (channels in the header row, short graph)
+    // so that it fits the panel's height and the photo stays visible.
+    val compactCurves = !wide && toolId == CURVES_POINT
     Column(Modifier.fillMaxWidth().testTag(EditorTags.GRADE_PANEL)) {
-        Row(Modifier.fillMaxWidth().padding(start = LoSpacing.M), verticalAlignment = Alignment.CenterVertically) {
-            Text(title, style = LoType.Title, color = LoColors.TextPrimary, modifier = Modifier.weight(1f))
-            if (toolId == "light.levels") {
-                LoChip("Auto", selected = false, onClick = { onIntent(EditorIntent.AutoLevels) }, leadingIcon = LoIcons.AutoFixHigh)
-            }
-            LoIconButton(LoIcons.Close, "Close $title", onClick = onClose)
-        }
+        if (!compactCurves) GradeHeader(toolId, title, onIntent, onClose)
         Column(Modifier.testTag(EditorTags.slot(toolId))) {
-            when (toolId) {
-                "light.curves_point" -> CurvesControls(state, edit)
-                "light.curves_parametric" -> ParametricControls(grade, edit)
-                "light.levels" -> LevelsControls(grade, edit)
-                "color.color_grading" -> GradingControls(grade, edit)
-                "color.split_toning" -> SplitToningControls(grade, edit)
-                "color.color_balance" -> ColorBalanceControls(grade, edit)
-                "color.selective_color" -> SelectiveColorControls(grade, edit)
-                "color.channel_mixer" -> ChannelMixerControls(grade, edit)
-                "color.black_and_white" -> BlackAndWhiteControls(grade, edit)
-                "color.photo_filter" -> PhotoFilterControls(grade, edit)
-                "color.gradient_map" -> GradientMapControls(grade, edit)
-                "color.calibration" -> CalibrationControls(grade, edit)
-            }
+            GradeControls(toolId, state, edit, if (compactCurves) ({ CloseButton(title, onClose) }) else null)
         }
+    }
+}
+
+@Composable
+private fun GradeHeader(
+    toolId: String,
+    title: String,
+    onIntent: (EditorIntent) -> Unit,
+    onClose: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth().padding(start = LoSpacing.M), verticalAlignment = Alignment.CenterVertically) {
+        Text(title, style = LoType.Title, color = LoColors.TextPrimary, modifier = Modifier.weight(1f))
+        if (toolId == "light.levels") {
+            LoChip("Auto", selected = false, onClick = { onIntent(EditorIntent.AutoLevels) }, leadingIcon = LoIcons.AutoFixHigh)
+        }
+        CloseButton(title, onClose)
+    }
+}
+
+@Composable
+private fun GradeControls(
+    toolId: String,
+    state: EditorState,
+    edit: Edit,
+    compactClose: (@Composable () -> Unit)?,
+) {
+    val grade = state.grade
+    when (toolId) {
+        CURVES_POINT -> CurvesControls(state, edit, compactClose)
+        "light.curves_parametric" -> ParametricControls(grade, edit)
+        "light.levels" -> LevelsControls(grade, edit)
+        "color.color_grading" -> GradingControls(grade, edit)
+        "color.split_toning" -> SplitToningControls(grade, edit)
+        "color.color_balance" -> ColorBalanceControls(grade, edit)
+        "color.selective_color" -> SelectiveColorControls(grade, edit)
+        "color.channel_mixer" -> ChannelMixerControls(grade, edit)
+        "color.black_and_white" -> BlackAndWhiteControls(grade, edit)
+        "color.photo_filter" -> PhotoFilterControls(grade, edit)
+        "color.gradient_map" -> GradientMapControls(grade, edit)
+        "color.calibration" -> CalibrationControls(grade, edit)
     }
 }
 
@@ -138,13 +162,37 @@ private fun Segments(
 // ---- Curves ----
 
 @Composable
+private fun CloseButton(
+    title: String,
+    onClose: () -> Unit,
+) = LoIconButton(LoIcons.Close, "Close $title", onClick = onClose)
+
+/** [compactClose] non-null: the short phone layout, with that close button in the channel row. */
+@Composable
 private fun CurvesControls(
     state: EditorState,
     edit: Edit,
+    compactClose: (@Composable () -> Unit)?,
 ) {
     val grade = state.grade
+    val compact = compactClose != null
     var channel by rememberSaveable { mutableStateOf(CurveChannel.Rgb) }
-    Segments(CurveChannel.entries.map { it.label }, channel.ordinal) { channel = CurveChannel.entries[it] }
+    val labels = CurveChannel.entries.map { it.label }
+    if (compactClose != null) {
+        Row(Modifier.fillMaxWidth().padding(start = LoSpacing.M), verticalAlignment = Alignment.CenterVertically) {
+            // Short labels so the row fits beside Close at any font size; TalkBack reads the full names.
+            LoSegmented(
+                CurveChannel.entries.map { it.label.take(if (it == CurveChannel.Rgb) RGB_LABEL else 1) },
+                channel.ordinal,
+                { channel = CurveChannel.entries[it] },
+                Modifier.weight(1f),
+                descriptions = labels,
+            )
+            compactClose()
+        }
+    } else {
+        Segments(labels, channel.ordinal) { channel = CurveChannel.entries[it] }
+    }
     val points = grade.curve(channel)
     val curve = remember(points) { MonotoneCurve(points) }
     val flow = remember(state.canvas) { state.canvas?.histogram ?: MutableStateFlow(null) }
@@ -164,7 +212,18 @@ private fun CurvesControls(
         curveColor = channel.color,
         histogram = histogram?.let(::lumaShape),
         label = "${channel.label} curve",
+        aspectRatio = if (compact) COMPACT_CURVE_ASPECT else 1f,
     )
+    if (compact) {
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = LoSpacing.M, vertical = LoSpacing.Xs),
+            horizontalArrangement = Arrangement.spacedBy(LoSpacing.S),
+        ) {
+            LoChip("Free curve", selected = grade.freeCurve, onClick = { edit { it.withFreeCurve(!grade.freeCurve) } })
+            LoChip("Reset ${channel.label}", selected = false, onClick = { edit { it.copy(curves = it.curves - channel) } })
+        }
+        return
+    }
     LoSwitchRow(
         "Free curve",
         grade.freeCurve,
@@ -541,3 +600,10 @@ private const val DEFAULT_DENSITY = 25f
 private val PARAMETRIC_PREVIEW = 140.dp
 private val WHEEL = 220.dp
 private val SMALL_WHEEL = 140.dp
+
+private const val CURVES_POINT = "light.curves_point"
+private const val RGB_LABEL = 3
+
+// Width / height of the phone curve graph: about 130 dp high at 411 dp wide, so the whole
+// panel fits the compact panel's height (40 % of the canvas) above the tool strip.
+private const val COMPACT_CURVE_ASPECT = 2.9f
