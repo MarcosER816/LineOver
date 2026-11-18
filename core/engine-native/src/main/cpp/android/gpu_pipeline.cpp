@@ -177,6 +177,7 @@ void GpuPipeline::release() {
     if (histogramProgram_ != 0) glDeleteProgram(histogramProgram_);
     if (histogramBuffer_ != 0) glDeleteBuffers(1, &histogramBuffer_);
     histogramProgram_ = histogramBuffer_ = 0;
+    releaseReadback();
     if (fbo_ != 0) glDeleteFramebuffers(1, &fbo_);
     if (vbo_ != 0) glDeleteBuffers(1, &vbo_);
     if (vao_ != 0) glDeleteVertexArrays(1, &vao_);
@@ -329,6 +330,58 @@ bool GpuPipeline::readHistogram(std::uint32_t out[kHistogramSize]) {
     glUnmapBuffer(GL_SHADER_STORAGE_BUFFER);
     glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
     return ok;
+}
+
+bool GpuPipeline::startReadback(GLuint texture, int width, int height) {
+    if (!halfFloat_ || texture == 0) return false;
+    const std::size_t bytes = static_cast<std::size_t>(width) * height * 4 * sizeof(float);
+    if (packBuffer_ == 0) glGenBuffers(1, &packBuffer_);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, packBuffer_);
+    if (bytes != packBytes_) {
+        glBufferData(GL_PIXEL_PACK_BUFFER, static_cast<GLsizeiptr>(bytes), nullptr, GL_STREAM_READ);
+        packBytes_ = bytes;
+    }
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_FLOAT, nullptr);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    packWidth_ = width;
+    packHeight_ = height;
+    return true;
+}
+
+bool GpuPipeline::finishReadback(std::vector<float>* out) {
+    if (packBuffer_ == 0 || packBytes_ == 0) return false;
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, packBuffer_);
+    const void* mapped = glMapBufferRange(GL_PIXEL_PACK_BUFFER, 0, static_cast<GLsizeiptr>(packBytes_), GL_MAP_READ_BIT);
+    const bool ok = mapped != nullptr;
+    if (ok) {
+        out->resize(packBytes_ / sizeof(float));
+        std::memcpy(out->data(), mapped, packBytes_);
+    }
+    glUnmapBuffer(GL_PIXEL_PACK_BUFFER);
+    glBindBuffer(GL_PIXEL_PACK_BUFFER, 0);
+    return ok;
+}
+
+void GpuPipeline::releaseReadback() {
+    if (packBuffer_ != 0) glDeleteBuffers(1, &packBuffer_);
+    packBuffer_ = 0;
+    packBytes_ = 0;
+}
+
+bool GpuPipeline::readFloat(GLuint texture, int width, int height, float* out) {
+    if (!halfFloat_) return false;
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+    glPixelStorei(GL_PACK_ALIGNMENT, 4);
+    glReadPixels(0, 0, width, height, GL_RGBA, GL_FLOAT, out);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return true;
 }
 
 }  // namespace lo::android

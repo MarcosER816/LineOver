@@ -1,5 +1,7 @@
 #include "lineover/light.h"
 
+#include "lineover/color.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -302,6 +304,23 @@ void luminancePercentiles(const float* rgba, std::size_t pixels, float low, floa
     };
     *lowValue = at(low);
     *highValue = at(high);
+}
+
+void histogramSrgb(const float* rgba, std::size_t pixels, std::uint32_t* out) {
+    std::fill(out, out + 1024, 0u);
+    auto bin = [](float v) {
+        const float encoded = color::srgbOetf(std::clamp(v, 0.f, 1.f));
+        return std::min(static_cast<int>(std::floor(encoded * 256.f)), 255);
+    };
+    float rgb[4];
+    for (std::size_t i = 0; i < pixels; ++i) {
+        const float* p = rgba + 4 * i;
+        color::applyMatrix(color::kRec2020ToSrgb, p, rgb, 1);
+        ++out[bin(rgb[0])];
+        ++out[256 + bin(rgb[1])];
+        ++out[512 + bin(rgb[2])];
+        ++out[768 + bin(luminance(p))];
+    }
 }
 
 AutoLight autoLight(float lowValue, float highValue) {

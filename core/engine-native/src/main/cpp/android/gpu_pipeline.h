@@ -7,6 +7,7 @@
 #include <map>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "lineover/color.h"
 #include "lineover/ops.h"
@@ -58,6 +59,15 @@ public:
     // the GPU: call once its fence has signalled.
     bool readHistogram(std::uint32_t out[kHistogramSize]);
 
+    // GLES 3.0 path (no compute): asynchronous float readback of `texture` into a pixel
+    // pack buffer; finishReadback() copies it out once its fence has signalled. Needs a
+    // float colour buffer (halfFloat()).
+    bool startReadback(GLuint texture, int width, int height);
+    bool finishReadback(std::vector<float>* out);
+    void releaseReadback();
+    // Synchronous float readback (test hook).
+    bool readFloat(GLuint texture, int width, int height, float* out);
+
 private:
     GLuint programFor(const std::string& declarations, const std::string& body, std::string* error);
     GLuint scratch(int width, int height);
@@ -72,6 +82,9 @@ private:
     GLuint histogramProgram_ = 0;
     GLuint histogramBuffer_ = 0;
     GLint histogramToSrgb_ = -1, histogramSize_ = -1;
+    GLuint packBuffer_ = 0;
+    std::size_t packBytes_ = 0;
+    int packWidth_ = 0, packHeight_ = 0;
     std::map<std::string, GLuint> opPrograms_;
     std::map<std::pair<int, int>, GLuint> scratch_;
 };

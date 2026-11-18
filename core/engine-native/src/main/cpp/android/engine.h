@@ -59,7 +59,7 @@ struct EngineStats {
     std::uint32_t p95UpdateUs = 0;
     std::uint32_t lastUpdateUs = 0;
     std::uint64_t updates = 0;
-    bool histogram = false;  // GLES 3.1 compute available
+    bool histogram = false;  // GLES 3.1 compute (else float readback + CPU binning)
 };
 
 // How the canvas compares the edit with the original.
@@ -144,6 +144,7 @@ private:
     bool ensureResult(GLuint source, GLuint* result, int width, int height, std::uint64_t* version, const float rect[4]);
     void tileRectNormalised(const TileKey& key, float rect[4]) const;
     void serviceHistogram();
+    bool histogramAvailable() const;
     void drawScene(bool original, const float ndc[9], int imageW, int imageH, int level, const std::vector<TileKey>& drawable,
                    bool clipping);
     void evictGpu(const std::unordered_set<TileKey, TileKeyHash>& keep);

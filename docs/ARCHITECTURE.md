@@ -176,7 +176,7 @@ Native **C++17, OpenGL ES 3**, in `:core:engine-native`; Kotlin reaches it throu
   Running first, its input is always the source the coefficients describe.
 - Histogram: GLES 3.1 compute shader on the edited preview, 256 bins × R, G, B (sRGB display
   values) + L; dispatched at most every 33 ms while shown, read back after a fence (the
-  render thread never waits). No compute (GLES 3.0): no histogram.
+  render thread never waits). GLES 3.0 contexts read the preview back asynchronously (pixel pack buffer) and bin it with `lo::histogramSrgb`, the shader's C++ reference.
 - Clipping, compare (original / split / side by side) are display-pass options; the
   original is the source texture, no extra pass.
 - Preview update latency (setGraph → frame presented) is measured on the render thread:

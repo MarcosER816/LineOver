@@ -1,12 +1,15 @@
 // The Light ops (Stage 5) against the Python reference in testdata/golden/light, at three
 // settings each, plus the guided-filter tiling, the graph mapping and Auto.
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <string>
 #include <vector>
 
 #include "golden_assert.h"
+#include "lineover/color.h"
 #include "lineover/graph.h"
 #include "lineover/light.h"
 #include "lo_test.h"
@@ -203,6 +206,29 @@ LO_TEST(percentiles_and_auto_stretch) {
     LO_CHECK(std::fabs(none.exposure) < 1e-6f && std::fabs(none.blacks) < 1e-3f);
     // Exposure is clamped to +-5.
     LO_CHECK(lo::autoLight(0.f, 1e-5f).exposure == 5.f);
+}
+
+// The CPU histogram (reference of the compute shader, and its fallback) against numpy, on
+// the scene rounded to half floats as the preview texture holds it.
+LO_TEST(histogram_matches_numpy_within_one_count_per_bin) {
+    ImageF32 input = scene();
+    for (float& v : input.data) v = lo::color::halfToFloat(lo::color::floatToHalf(v));
+    std::vector<std::uint32_t> bins(1024);
+    lo::histogramSrgb(input.data.data(), input.data.size() / 4, bins.data());
+    const ImageF32 expected = readNpyF32(goldenPath("histogram/scene_srgb_hist_f32.npy"));  // (1, 256, 4)
+    LO_CHECK(expected.width == 256 && expected.channels == 4);
+    long worst = 0;
+    for (int c = 0; c < 4; ++c) {
+        long total = 0;
+        for (int i = 0; i < 256; ++i) {
+            const long want = std::lround(expected.data[static_cast<std::size_t>(i) * 4 + c]);
+            worst = std::max(worst, std::labs(static_cast<long>(bins[c * 256 + i]) - want));
+            total += bins[c * 256 + i];
+        }
+        LO_CHECK(total == static_cast<long>(input.width) * input.height);
+    }
+    std::printf("histogram vs numpy: max |diff| %ld counts\n", worst);
+    LO_CHECK(worst <= 1);
 }
 
 int main() { return runAllTests(); }

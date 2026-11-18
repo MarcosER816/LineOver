@@ -120,7 +120,8 @@ class EngineGpuTest {
             }
             assertEquals("channel $c counts every pixel", (input.width * input.height).toLong(), total)
         }
-        Log.i("LineOverEngineTest", "histogram vs numpy: max |diff| $worst count, $differing of 1024 bins differ")
+        val path = if (engine.stats().histogramSupported) "GLES 3.1 compute" else "GLES 3.0 float readback + CPU"
+        Log.i("LineOverEngineTest", "histogram ($path) vs numpy: max |diff| $worst count, $differing of 1024 bins differ")
         assertTrue("max |diff| per bin $worst > 1", worst <= 1)
     }
 

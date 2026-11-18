@@ -87,7 +87,9 @@ bool Engine::start(std::string* error) {
         if (failure.empty()) {
             halfFloatSnapshot_ = gpu_.halfFloat();
             computeSnapshot_ = gpu_.computeSupported();
-            if (!gpu_.computeSupported()) LOGW("no GLES 3.1 compute: histogram off (%s)", gpu_.computeError().c_str());
+            if (!gpu_.computeSupported()) {
+                LOGW("no GLES 3.1 compute: histogram %s", gpu_.halfFloat() ? "by float readback + CPU" : "off");
+            }
             guidedTexture_ = createGuidedTexture(nullptr);
             if (!gpu_.halfFloat()) LOGW("RGBA16F is not colour-renderable: using the SRGB8_ALPHA8 fallback");
             LOGI("render thread up: %s", reinterpret_cast<const char*>(glGetString(GL_RENDERER)));
@@ -126,7 +128,7 @@ void Engine::loop() {
             auto ready = [this] { return quit_ || redraw_ || !tasks_.empty(); };
             if (histogramFence_ != nullptr) {
                 wake_.wait_for(lock, kFencePoll, ready);
-            } else if (histogramDirty_ && histogramEnabled_ && previewSource_ != 0 && gpu_.computeSupported()) {
+            } else if (histogramDirty_ && histogramEnabled_ && previewSource_ != 0 && histogramAvailable()) {
                 wake_.wait_until(lock, lastHistogram_ + kHistogramInterval, ready);
             } else {
                 wake_.wait(lock, ready);
@@ -801,8 +803,14 @@ void Engine::drawScene(bool original, const float ndc[9], int imageW, int imageH
     }
 }
 
+bool Engine::histogramAvailable() const { return gpu_.computeSupported() || gpu_.halfFloat(); }
+
 void Engine::serviceHistogram() {
-    if (!gpu_.computeSupported()) return;
+    if (!histogramAvailable()) return;
+    if (!histogramEnabled_ && histogramFence_ == nullptr) {
+        gpu_.releaseReadback();  // the fallback's pixel buffer is only kept while shown
+        return;
+    }
     if (histogramFence_ != nullptr) {
         // Read back only once the GPU is done: the render thread never waits for it.
         const GLenum status = glClientWaitSync(histogramFence_, 0, 0);
@@ -810,7 +818,14 @@ void Engine::serviceHistogram() {
         glDeleteSync(histogramFence_);
         histogramFence_ = nullptr;
         std::uint32_t bins[GpuPipeline::kHistogramSize];
-        if (!gpu_.readHistogram(bins)) return;
+        if (gpu_.computeSupported()) {
+            if (!gpu_.readHistogram(bins)) return;
+        } else {
+            // GLES 3.0: the preview's float pixels, binned on the CPU (histogramSrgb).
+            std::vector<float> pixels;
+            if (!gpu_.finishReadback(&pixels)) return;
+            histogramSrgb(pixels.data(), pixels.size() / 4, bins);
+        }
         std::function<void(const std::uint32_t*)> listener;
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -823,7 +838,9 @@ void Engine::serviceHistogram() {
     const auto now = std::chrono::steady_clock::now();
     if (now < lastHistogram_ + kHistogramInterval) return;
     const GLuint texture = previewResult_ != 0 ? previewResult_ : previewSource_;
-    if (!gpu_.dispatchHistogram(texture, previewW_, previewH_)) return;
+    const bool started = gpu_.computeSupported() ? gpu_.dispatchHistogram(texture, previewW_, previewH_)
+                                                 : gpu_.startReadback(texture, previewW_, previewH_);
+    if (!started) return;
     histogramFence_ = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
     glFlush();
     histogramDirty_ = false;
@@ -831,17 +848,24 @@ void Engine::serviceHistogram() {
 }
 
 bool Engine::gpuHistogramSelfTest(const float* in, int width, int height, std::uint32_t* out, std::string* error) {
-    if (!gpu_.computeSupported()) {
-        *error = "no GLES 3.1 compute: " + gpu_.computeError();
+    if (!histogramAvailable()) {
+        *error = "no histogram: neither GLES 3.1 compute nor float readback";
         return false;
     }
     std::string failure;
     const bool ok = runSync([&] {
         eglMakeCurrent(display_, pbuffer_, pbuffer_, context_);
         const GLuint source = createTexture(width, height, gpu_.halfFloat(), in);
-        bool passed = gpu_.dispatchHistogram(source, width, height);
-        glFinish();
-        passed = passed && gpu_.readHistogram(out);
+        bool passed;
+        if (gpu_.computeSupported()) {
+            passed = gpu_.dispatchHistogram(source, width, height);
+            glFinish();
+            passed = passed && gpu_.readHistogram(out);
+        } else {
+            std::vector<float> pixels(static_cast<std::size_t>(width) * height * 4);
+            passed = gpu_.readFloat(source, width, height, pixels.data());
+            if (passed) histogramSrgb(pixels.data(), pixels.size() / 4, out);
+        }
         const std::string glError = glErrorString();
         if (!glError.empty()) {
             failure = "GL error " + glError;

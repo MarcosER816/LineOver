@@ -34,7 +34,7 @@ warnings and before / after, so the Light category is fully usable.
 | `:core:ui` | 10 tools `done`; `history.before_after` moved from Stage 8 to 5 |
 | `:feature:editor` | `LightPanel`; histogram, clipping badge, Before label, split divider, side-by-side labels, swipe HUD, render-stats overlay; `CanvasView` hold-to-compare and swipe mode; ViewModel Light state and engine sync |
 
-Tests added: ctest `light_test` (13); JVM `LightAdjustmentsTest` (6), `LightEditingTest`
+Tests added: ctest `light_test` (14); JVM `LightAdjustmentsTest` (6), `LightEditingTest`
 (9), `CanvasGestureTest` (4), `LightPanelScreenshots` (2), editor screenshots +7 per width;
 instrumented `EngineGpuTest` +7, `CanvasFrameTimingTest` +1.
 
@@ -64,8 +64,11 @@ instrumented `EngineGpuTest` +7, `CanvasFrameTimingTest` +1.
 3. **Before / after moved from Stage 8 to 5** (the brief asks for it now): hold the photo
    (250 ms, one finger, no movement) = original + "Before"; the Compare button cycles split
    (draggable divider) → side by side → off. The catalog and registry say Stage 5.
-4. **Histogram needs GLES 3.1** (compute). Without it (no current Android 14+ phone) the
-   histogram is simply not offered; the POCO has GLES 3.2.
+4. **Histogram paths**: GLES 3.1 compute shader (the POCO: GLES 3.2). Where a context is
+   only GLES 3.0 (the CI's API 34 emulator) the preview is read back asynchronously as
+   floats (pixel pack buffer + fence, buffer freed when the histogram is hidden) and binned
+   by `lo::histogramSrgb`, the C++ reference of the shader, which ctest checks against numpy
+   (0 counts off). `EngineGpuTest` logs which path ran.
 5. **Half-float rounding**: textures now receive half floats converted by the engine (round
    to nearest even, like numpy) instead of letting the driver convert; it also halves the
    upload bandwidth.
@@ -109,6 +112,7 @@ Screenshots changed, and why:
 | Symptom | Root cause | Fix |
 | --- | --- | --- |
 | Histogram golden self-check failed (repeated values on bin edges) | float16 rounding makes flat patches and some sky rows share values; one patch sat 0.001 bins from an edge | Per-edge crowding check; sky texture and one patch value adjusted |
+| CI API 34: `no GLES 3.1 compute`, histogram tests failed | The API 34 emulator's GL context is GLES 3.0 | Float-readback fallback (decision 4) and a ctest of the CPU histogram |
 | Hold-to-compare never fired in the JVM test | `View.postDelayed` waits for the view to be attached | Main-looper `Handler` |
 | First vertical swipe step was lost | The move that locked the axis was not counted | Re-dispatch it once the axis is locked |
 

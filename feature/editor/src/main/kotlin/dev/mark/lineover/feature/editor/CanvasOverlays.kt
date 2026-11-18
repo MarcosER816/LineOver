@@ -273,7 +273,7 @@ internal fun RenderStatsOverlay(
             "update ${ms(s.lastUpdateUs)} ms · P95 ${ms(s.p95UpdateUs)} ms (target 16) · n ${s.updates}\n" +
                 "frame P95 ${ms(s.p95FrameIntervalUs)} ms · draw P95 ${ms(s.p95DrawUs)} ms\n" +
                 "GPU ${s.gpuBytes shr MB} MB · ${if (s.halfFloat) "RGBA16F" else "SRGB8 fallback"} · " +
-                "${if (s.displayP3) "P3" else "sRGB"} · histogram ${if (s.histogramSupported) "GPU" else "off"}"
+                "${if (s.displayP3) "P3" else "sRGB"} · histogram ${if (s.histogramSupported) "GPU compute" else "readback"}"
         }
     Text(
         text,

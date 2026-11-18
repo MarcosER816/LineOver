@@ -8,6 +8,8 @@
 // pixels with Y <= 1e-6 are unchanged. Values are never clipped (HDR stays HDR).
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 
 #include "lineover/ops.h"
@@ -64,5 +66,11 @@ struct AutoLight {
     float blacks = 0.f;
 };
 AutoLight autoLight(float lowValue, float highValue);
+
+// 256-bin histograms of the sRGB display values of `rgba` (working space) and of luminance:
+// clip(Rec.2020 -> sRGB) then the sRGB transfer; L = transfer(clip(Y)); bin =
+// min(floor(v * 256), 255). `out` gets 1024 counts, channel-major (R, G, B, L).
+// The reference of the GPU compute shader (and the path on GPUs without compute).
+void histogramSrgb(const float* rgba, std::size_t pixels, std::uint32_t* out);
 
 }  // namespace lo
