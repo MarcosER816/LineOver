@@ -16,37 +16,12 @@ using opsutil::decode1;
 using opsutil::encode1;
 using opsutil::smoothstepf;
 using opsutil::spow;
+using opsutil::fromLab;
+using opsutil::toLab;
+using opsutil::mul;
 
 constexpr double kPi = 3.14159265358979323846;
 constexpr float kLumaEps = 1e-6f;
-
-// OKLab in double (the reference computes in float64).
-constexpr double kRgbToLms[9] = {0.616688441751, 0.36015907047,  0.023043293521, 0.265140196183, 0.635856484699,
-                                 0.099030233566, 0.100150645103, 0.204004323432, 0.696324677437};
-constexpr double kLmsToRgb[9] = {2.140140411041,  -1.246355950476, 0.106431725912,  -0.884832452797, 2.163172720721,
-                                 -0.27836159213,  -0.048579058003, -0.454490907968, 1.502356294642};
-constexpr double kLmsToLab[9] = {0.2104542553, 0.793617785,  -0.0040720468, 1.9779984951, -2.428592205,
-                                 0.4505937099, 0.0259040371, 0.7827717662,  -0.808675766};
-constexpr double kLabToLms[9] = {0.999999998451, 0.396337792174,  0.215803758061,  1.000000008882, -0.105561342324,
-                                 -0.063854174772, 1.000000054672, -0.089484182095, -1.291485537864};
-
-void mul(const double* m, const double* v, double* out) {
-    for (int r = 0; r < 3; ++r) out[r] = m[3 * r] * v[0] + m[3 * r + 1] * v[1] + m[3 * r + 2] * v[2];
-}
-
-void fromLab(const double lab[3], double rgb[3]) {
-    double l[3];
-    mul(kLabToLms, lab, l);
-    for (double& x : l) x = x * x * x;
-    mul(kLmsToRgb, l, rgb);
-}
-
-void toLab(const double rgb[3], double lab[3]) {
-    double l[3];
-    mul(kRgbToLms, rgb, l);
-    for (double& x : l) x = std::cbrt(x);
-    mul(kLmsToLab, l, lab);
-}
 
 // reference.tint_direction
 void tintDirection(double hue, float out[3]) {
@@ -231,31 +206,36 @@ public:
         u_[0] = 0.5f - 0.25f * balance / 100.f;   // mid
         u_[1] = 0.15f + 0.35f * blending / 100.f;  // width
         for (int c = 0; c < 3; ++c) {
-            u_[2 + c] = 0.6f * h.saturation / 100.f * vh[c] + 0.5f * h.luminance / 100.f;   // slope
+            u_[2 + c] = kHighlightTint * h.saturation / 100.f * vh[c];                    // slope tint
             u_[5 + c] = 0.08f * s.saturation / 100.f * vs[c] + 0.1f * s.luminance / 100.f;  // shadow offset
             u_[8 + c] = 0.6f * m.saturation / 100.f * vm[c] + 0.5f * m.luminance / 100.f;   // power
             u_[11 + c] = 0.05f * g.saturation / 100.f * vg[c] + 0.1f * g.luminance / 100.f; // global offset
         }
+        u_[14] = 0.5f * h.luminance / 100.f;  // slope luminance
     }
     OpType type() const override { return OpType::ColorGrading; }
     bool isIdentity() const override { return identity_; }
     void gpu(GpuOpContext& context) const override {
-        context.setShader(LO_GLSL_ENCODE LO_GLSL_TONE LO_GLSL_SPOW "uniform float u_g[14];",
+        context.setShader(LO_GLSL_ENCODE LO_GLSL_TONE LO_GLSL_SPOW "uniform float u_g[15];",
                           "vec3 e = lo_enc(c.rgb);\n"
-                          "vec3 w = lo_tone(lo_enc1(dot(c.rgb, " LO_LUMA ")), u_g[0], u_g[1]);\n"
-                          "vec3 slope = 1.0 + w.z * vec3(u_g[2], u_g[3], u_g[4]);\n"
+                          "float ye = lo_enc1(dot(c.rgb, " LO_LUMA "));\n"
+                          "vec3 w = lo_tone(ye, u_g[0], u_g[1]);\n"
+                          "float fade = 1.0 - smoothstep(0.9, 1.05, ye);\n"
+                          "vec3 slope = 1.0 + w.z * (fade * vec3(u_g[2], u_g[3], u_g[4]) + u_g[14]);\n"
                           "vec3 offset = w.x * vec3(u_g[5], u_g[6], u_g[7]) + vec3(u_g[11], u_g[12], u_g[13]);\n"
                           "vec3 power = 1.0 / max(1.0 + w.y * vec3(u_g[8], u_g[9], u_g[10]), vec3(0.05));\n"
                           "return vec4(lo_dec(lo_spow(e * slope + offset, power)), c.a);");
-        context.setUniform1fv("u_g", u_, 14);
+        context.setUniform1fv("u_g", u_, 15);
     }
     void cpuRef(const float* in, float* out, std::size_t pixels) const override {
         for (std::size_t i = 0; i < pixels; ++i) {
             const float* p = in + 4 * i;
             float w[3];
-            toneWeights(encode1(luma(p)), u_[0], u_[1], w);
+            const float ye = encode1(luma(p));
+            toneWeights(ye, u_[0], u_[1], w);
+            const float fade = 1.f - smoothstepf(kWhiteFadeFrom, kWhiteFadeTo, ye);
             for (int c = 0; c < 3; ++c) {
-                const float slope = 1.f + w[2] * u_[2 + c];
+                const float slope = 1.f + w[2] * (fade * u_[2 + c] + u_[14]);
                 const float offset = w[0] * u_[5 + c] + u_[11 + c];
                 const float power = 1.f / std::max(1.f + w[1] * u_[8 + c], 0.05f);
                 out[4 * i + c] = decode1(spow(encode1(p[c]) * slope + offset, power));
@@ -265,7 +245,12 @@ public:
     }
 
 private:
-    float u_[14]{};
+    // Highlights tint strength (slope per 100 % saturation), and the encoded-luminance range
+    // over which it fades out so that white and HDR highlights stay neutral (as reference.py).
+    static constexpr float kHighlightTint = 0.2f;
+    static constexpr float kWhiteFadeFrom = 0.9f;
+    static constexpr float kWhiteFadeTo = 1.05f;
+    float u_[15]{};
     bool identity_ = true;
 };
 

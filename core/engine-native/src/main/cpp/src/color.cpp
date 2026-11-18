@@ -4,6 +4,8 @@
 #include <cmath>
 #include <cstring>
 
+#include "op_util.h"
+
 namespace lo::color {
 
 // colour.matrix_RGB_to_RGB(a, b, chromatic_adaptation_transform=None), colour-science 0.4.7.
@@ -92,11 +94,62 @@ void linearExtendedSrgbHalfToWorking(const std::uint16_t* rgba16, float* out, st
     applyMatrix(kSrgbToRec2020, out, out, pixels);
 }
 
-void workingToDisplay(const float* in, float* out, std::size_t pixels, Display display) {
+namespace {
+
+// reference.GAMUT_STEPS / GAMUT_EPS, and the GPU display pass (gpu_pipeline.cpp).
+constexpr int kGamutSteps = 16;
+constexpr double kGamutEps = 5e-4;
+
+void toDisplayLinear(const Mat3& matrix, const double rgb[3], double out[3]) {
+    const float* m = matrix.m;
+    for (int r = 0; r < 3; ++r) out[r] = m[3 * r] * rgb[0] + m[3 * r + 1] * rgb[1] + m[3 * r + 2] * rgb[2];
+}
+
+bool insideGamut(const double d[3]) {
+    for (int c = 0; c < 3; ++c) {
+        if (!(d[c] >= -kGamutEps && d[c] <= 1.0 + kGamutEps)) return false;
+    }
+    return true;
+}
+
+}  // namespace
+
+void gamutMap(const float* in, float* out, std::size_t pixels, Display display) {
     const Mat3& matrix = display == Display::DisplayP3 ? kRec2020ToP3 : kRec2020ToSrgb;
-    applyMatrix(matrix, in, out, pixels);
     for (std::size_t i = 0; i < pixels; ++i) {
-        for (int c = 0; c < 3; ++c) out[4 * i + c] = srgbOetf(clamp01(out[4 * i + c]));
+        const double rgb[3] = {in[4 * i], in[4 * i + 1], in[4 * i + 2]};
+        double d[3];
+        toDisplayLinear(matrix, rgb, d);
+        if (!insideGamut(d)) {
+            // Keep OKLab lightness (clamped to 0..1) and hue; bisect the chroma along the
+            // line to the grey RGB = L^3 of the same lightness (white stays white).
+            double lab[3], grey[3], trial[3], linear[3];
+            opsutil::toLab(rgb, lab);
+            lab[0] = std::min(std::max(lab[0], 0.0), 1.0);
+            const double g = lab[0] * lab[0] * lab[0];
+            const double greyRgb[3] = {g, g, g};
+            opsutil::toLab(greyRgb, grey);
+            double lo = 0.0, hi = 1.0;
+            for (int step = 0; step < kGamutSteps; ++step) {
+                const double mid = 0.5 * (lo + hi);
+                for (int c = 0; c < 3; ++c) trial[c] = grey[c] + mid * (lab[c] - grey[c]);
+                opsutil::fromLab(trial, linear);
+                toDisplayLinear(matrix, linear, d);
+                (insideGamut(d) ? lo : hi) = mid;
+            }
+            for (int c = 0; c < 3; ++c) trial[c] = grey[c] + lo * (lab[c] - grey[c]);
+            opsutil::fromLab(trial, linear);
+            toDisplayLinear(matrix, linear, d);
+        }
+        for (int c = 0; c < 3; ++c) out[4 * i + c] = clamp01(static_cast<float>(d[c]));
+        out[4 * i + 3] = in[4 * i + 3];
+    }
+}
+
+void workingToDisplay(const float* in, float* out, std::size_t pixels, Display display) {
+    gamutMap(in, out, pixels, display);
+    for (std::size_t i = 0; i < pixels; ++i) {
+        for (int c = 0; c < 3; ++c) out[4 * i + c] = srgbOetf(out[4 * i + c]);
         out[4 * i + 3] = clamp01(out[4 * i + 3]);
     }
 }

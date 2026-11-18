@@ -51,6 +51,34 @@ inline float smoothstepf(float e0, float e1, float x) {
     return t * t * (3.f - 2.f * t);
 }
 
+// OKLab of linear Rec.2020 in double (the reference computes in float64).
+inline constexpr double kRgbToLms[9] = {0.616688441751, 0.36015907047,  0.023043293521, 0.265140196183, 0.635856484699,
+                                 0.099030233566, 0.100150645103, 0.204004323432, 0.696324677437};
+inline constexpr double kLmsToRgb[9] = {2.140140411041,  -1.246355950476, 0.106431725912,  -0.884832452797, 2.163172720721,
+                                 -0.27836159213,  -0.048579058003, -0.454490907968, 1.502356294642};
+inline constexpr double kLmsToLab[9] = {0.2104542553, 0.793617785,  -0.0040720468, 1.9779984951, -2.428592205,
+                                 0.4505937099, 0.0259040371, 0.7827717662,  -0.808675766};
+inline constexpr double kLabToLms[9] = {0.999999998451, 0.396337792174,  0.215803758061,  1.000000008882, -0.105561342324,
+                                 -0.063854174772, 1.000000054672, -0.089484182095, -1.291485537864};
+
+inline void mul(const double* m, const double* v, double* out) {
+    for (int r = 0; r < 3; ++r) out[r] = m[3 * r] * v[0] + m[3 * r + 1] * v[1] + m[3 * r + 2] * v[2];
+}
+
+inline void fromLab(const double lab[3], double rgb[3]) {
+    double l[3];
+    mul(kLabToLms, lab, l);
+    for (double& x : l) x = x * x * x;
+    mul(kLmsToRgb, l, rgb);
+}
+
+inline void toLab(const double rgb[3], double lab[3]) {
+    double l[3];
+    mul(kRgbToLms, rgb, l);
+    for (double& x : l) x = std::cbrt(x);
+    mul(kLmsToLab, l, lab);
+}
+
 inline float spow(float v, float p) { return std::copysign(std::pow(std::fabs(v), p), v) * (v == 0.f ? 0.f : 1.f); }
 
 }  // namespace opsutil

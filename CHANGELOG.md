@@ -4,6 +4,15 @@ All notable changes, newest first. One section per stage.
 
 ## Stage 7 — Curves and grading (0.7.0)
 
+### Changed (after testing on real photos)
+
+- Color Grading: the Highlights wheel is gentler (as strong as the Shadows wheel) and leaves
+  white and very bright areas neutral, so a warm highlight tint no longer turns a white sky
+  peach.
+- Colours the screen can't show are now brought into range keeping their hue and brightness
+  (less saturated) instead of being cut per channel, which shifted strong oranges towards
+  red.
+
 ### Added
 
 - Curves (Light → Curves (point)): RGB, Red, Green, Blue and Luma curves. Tap the graph to
