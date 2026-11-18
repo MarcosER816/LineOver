@@ -11,6 +11,7 @@ Conventions
 from __future__ import annotations
 
 import colour
+import cv2
 import numpy as np
 
 PATTERN_WIDTH = 64
@@ -1155,3 +1156,69 @@ def grade_self_check() -> None:
     assert np.allclose(levels(scene, LEVELS_IDENTITY * 4), scene, atol=1e-5)
     assert np.allclose(curves(scene, rgb=IDENTITY_CURVE), scene, atol=1e-5)
     assert np.allclose(color_grading(scene, (0, 0, 0), (0, 0, 0), (0, 0, 0), (0, 0, 0)), scene, atol=1e-5)
+
+
+# ---------------------------------------------------------------------------------------
+# Real photos (testdata/photos): the owner's POCO F7 Ultra Ultra HDR JPEGs, Display P3
+# (the ICC colourants are exactly Display P3), 3072 x 4096, EXIF orientation 0 (as stored).
+# ---------------------------------------------------------------------------------------
+
+PHOTO_BLOCK = 32  # block size of the photo goldens: 3072 x 4096 -> 96 x 128
+PHOTO_ROWS = 512  # rows per chunk when a pointwise op runs over a full-resolution photo
+
+# name -> file in testdata/photos
+PHOTOS = {
+    "drop": "IMG_20261002_132928.jpg",  # conifer twig with a water drop, greens, soft background
+    "bird": "IMG_20261028_114803.jpg",  # red bird, leaves, bright overcast sky
+    "marigold": "IMG_20261031_165350.jpg",  # saturated orange marigolds (P3 gamut)
+}
+
+
+def _orange_saturation(image: np.ndarray, amount: float = 60.0) -> np.ndarray:
+    sat = [0.0] * 8
+    sat[1] = amount  # band 1 = orange
+    return hsl_mixer(image, [0.0] * 8, sat, [0.0] * 8)
+
+
+# The phone-checklist edits of Stages 6 and 7, as (photo, reference fn, graph op JSON).
+# Pointwise, so they also run on the full-resolution photo (end-to-end goldens).
+S_CURVE = [(0.0, 0.0), (0.25, 0.18), (0.75, 0.82), (1.0, 1.0)]
+TEAL_ORANGE = ((200.0, 60.0, 0.0), (0.0, 0.0, 0.0), (55.0, 50.0, 0.0), (0.0, 0.0, 0.0), 50.0, 0.0)
+PHOTO_EDITS = {
+    "drop_s_curve": ("drop", lambda im: curves(im, rgb=S_CURVE)),
+    "bird_teal_orange": ("bird", lambda im: color_grading(im, *TEAL_ORANGE)),
+    "marigold_orange_saturation": ("marigold", _orange_saturation),
+}
+# Image-wide (not pointwise) cases, on the 96 x 128 photo only.
+PHOTO_REGION_EDITS = {
+    "bird_highlights_shadows": ("bird", lambda im: highlights_shadows(im, -80.0, 60.0)),
+}
+
+
+def photo_rec2020(path) -> np.ndarray:
+    """A Display P3 JPEG -> linear Rec.2020 RGBA float32 (opaque), full resolution."""
+    bgr = cv2.imread(str(path), cv2.IMREAD_COLOR | cv2.IMREAD_IGNORE_ORIENTATION)
+    if bgr is None:
+        raise FileNotFoundError(path)
+    rgb = bgr[..., ::-1]
+    out = np.empty(rgb.shape[:2] + (4,), dtype=np.float32)
+    for y in range(0, rgb.shape[0], PHOTO_ROWS):
+        rows = rgb[y : y + PHOTO_ROWS].astype(np.float64) / 255.0
+        rgba = np.concatenate([rows, np.ones(rows.shape[:2] + (1,))], axis=-1)
+        out[y : y + PHOTO_ROWS] = rgb_to_rgb(srgb_eotf(rgba), "p3", "rec2020")
+    return out
+
+
+def pointwise_chunked(fn, image: np.ndarray) -> np.ndarray:
+    """A pointwise op over a large image, PHOTO_ROWS rows at a time (exact: no neighbours)."""
+    out = np.empty_like(image, dtype=np.float32)
+    for y in range(0, image.shape[0], PHOTO_ROWS):
+        out[y : y + PHOTO_ROWS] = fn(image[y : y + PHOTO_ROWS])
+    return out
+
+
+def block_mean(image: np.ndarray, block: int = PHOTO_BLOCK) -> np.ndarray:
+    """Mean of each block x block square (in float64), as the device test sums tiles."""
+    h, w, c = image.shape
+    blocks = image.reshape(h // block, block, w // block, block, c).astype(np.float64)
+    return blocks.mean(axis=(1, 3)).astype(np.float32)

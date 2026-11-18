@@ -71,7 +71,7 @@ else()
         target_link_libraries(lo_testing PUBLIC lo_engine ZLIB::ZLIB)
 
         foreach(test_name sample_test golden_assert_test golden_identity_test
-                color_test ops_test graph_test tiling_test tile_store_test light_test color_ops_test grade_ops_test)
+                color_test ops_test graph_test tiling_test tile_store_test light_test color_ops_test grade_ops_test photo_test)
             add_executable(${test_name} tests/${test_name}.cpp)
             target_compile_options(${test_name} PRIVATE ${LO_WARNINGS})
             target_link_libraries(${test_name} PRIVATE lo_testing)
