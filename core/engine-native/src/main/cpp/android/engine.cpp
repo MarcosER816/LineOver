@@ -39,6 +39,7 @@ constexpr auto kHistogramInterval = std::chrono::milliseconds(33);
 // While a histogram readback is in flight the loop polls its fence this often.
 constexpr auto kFencePoll = std::chrono::milliseconds(2);
 constexpr std::size_t kUpdateCapacity = 120;
+constexpr std::size_t kGraphTimes = 64;
 
 std::uint32_t p95Of(std::vector<std::uint32_t> v) {
     v.erase(std::remove(v.begin(), v.end(), 0u), v.end());
@@ -303,8 +304,8 @@ bool Engine::setGraph(const std::string& json, std::string* error) {
         std::lock_guard<std::mutex> lock(mutex_);
         ops_ = std::move(ops);
         ++graphVersion_;
-        graphSetAt_ = std::chrono::steady_clock::now();
-        graphSetVersion_ = graphVersion_;
+        graphTimes_.emplace_back(graphVersion_, std::chrono::steady_clock::now());
+        if (graphTimes_.size() > kGraphTimes) graphTimes_.pop_front();
     }
     requestRedraw();
     return true;
@@ -533,8 +534,6 @@ void Engine::frame() {
     bool showOriginal, clipping;
     CompareMode compare;
     float split;
-    std::chrono::steady_clock::time_point graphSetAt;
-    std::uint64_t graphSetVersion;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         imageW = imageWidth_;
@@ -559,8 +558,6 @@ void Engine::frame() {
         clipping = clipping_;
         compare = compareMode_;
         split = split_;
-        graphSetAt = graphSetAt_;
-        graphSetVersion = graphSetVersion_;
     }
     if (guided) {
         // New coefficients: every result depending on them is recomputed.
@@ -759,10 +756,24 @@ void Engine::frame() {
         }
         timingNext_ = (timingNext_ + 1) % kTimingCapacity;
         lastFrameStart_ = frameStart;
-        // Preview update latency: the first frame presenting the preview of the graph set.
-        if (graphSetVersion > measuredVersion_ && previewSource_ != 0 && previewVersion_ >= graphSetVersion) {
-            measuredVersion_ = graphSetVersion;
-            const std::uint32_t latency = us(now - graphSetAt);
+        // Preview update latency: the first frame presenting each graph version's preview,
+        // from when that version arrived. While a slider moves faster than the renderer,
+        // skipped versions are not counted; the ones shown carry their full delay.
+        std::chrono::steady_clock::time_point setAt{};
+        bool found = false;
+        if (previewSource_ != 0 && previewVersion_ > measuredVersion_) {
+            measuredVersion_ = previewVersion_;
+            std::lock_guard<std::mutex> graphLock(mutex_);
+            while (!graphTimes_.empty() && graphTimes_.front().first <= previewVersion_) {
+                if (graphTimes_.front().first == previewVersion_) {
+                    setAt = graphTimes_.front().second;
+                    found = true;
+                }
+                graphTimes_.pop_front();
+            }
+        }
+        if (found) {
+            const std::uint32_t latency = us(now - setAt);
             if (updatesUs_.size() < kUpdateCapacity) {
                 updatesUs_.push_back(latency);
             } else {

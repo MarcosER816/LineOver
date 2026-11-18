@@ -190,8 +190,8 @@ private:
     float split_ = 0.5f;
     bool clipping_ = false;
     std::function<void(const std::uint32_t*)> histogramListener_;
-    std::chrono::steady_clock::time_point graphSetAt_{};
-    std::uint64_t graphSetVersion_ = 0;
+    // When each recent graph version arrived (setGraph), for the preview update latency.
+    std::deque<std::pair<std::uint64_t, std::chrono::steady_clock::time_point>> graphTimes_;
     int pendingPreviewW_ = 0, pendingPreviewH_ = 0;
     bool previewChanged_ = false;
     std::shared_ptr<const OpList> ops_ = std::make_shared<OpList>();
@@ -215,7 +215,7 @@ private:
     std::atomic<bool> histogramDirty_{false};
     GLsync histogramFence_ = nullptr;
     std::chrono::steady_clock::time_point lastHistogram_{};
-    std::uint64_t measuredVersion_ = 0;
+    std::uint64_t measuredVersion_ = 1;  // version 1 = the empty graph of a new engine
     std::uint64_t gpuGeneration_ = 0;
     std::unordered_map<TileKey, GpuTile, TileKeyHash> gpuTiles_;
     std::list<TileKey> gpuLru_;

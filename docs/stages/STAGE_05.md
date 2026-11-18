@@ -113,6 +113,7 @@ Screenshots changed, and why:
 | --- | --- | --- |
 | Histogram golden self-check failed (repeated values on bin edges) | float16 rounding makes flat patches and some sky rows share values; one patch sat 0.001 bins from an edge | Per-edge crowding check; sky texture and one patch value adjusted |
 | CI API 34: `no GLES 3.1 compute`, histogram tests failed | The API 34 emulator's GL context is GLES 3.0 | Float-readback fallback (decision 4) and a ctest of the CPU histogram |
+| CI log: 1 preview update measured for 120 graphs | Only frames showing the *newest* graph were timed; a lagging renderer never caught up while dragging | Each presented frame times the graph version it actually shows |
 | Hold-to-compare never fired in the JVM test | `View.postDelayed` waits for the view to be attached | Main-looper `Handler` |
 | First vertical swipe step was lost | The move that locked the axis was not counted | Re-dispatch it once the axis is locked |
 
