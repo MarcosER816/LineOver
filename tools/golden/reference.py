@@ -712,6 +712,16 @@ COLOR_OPS = {
 }
 
 
+def discontinuity_margin(image: np.ndarray, name: str, param: float) -> float:
+    """How far (in encoded units) the float16-rounded image stays from Posterize's or
+    Threshold's step edges."""
+    rgb = image[..., :3].astype(np.float16).astype(np.float64)
+    if name == "posterize":
+        x = encode(rgb) * (param - 1.0) + 0.5
+        return float(np.min(np.abs(x - np.round(x))) / (param - 1.0))
+    return float(np.min(np.abs(encode(luminance(rgb)) - param)))
+
+
 def color_self_check() -> None:
     # Band centres are the OKLCh hues of the classic HSV band hues.
     for hsv, centre in zip([0, 30, 60, 120, 180, 240, 270, 300], HSL_CENTRES):
@@ -734,3 +744,6 @@ def color_self_check() -> None:
     chart = colors_rec2020()
     assert chart[..., :3].min() < 0.0 and chart[..., :3].max() > 1.0
     assert np.allclose(invert(invert(chart)), chart, atol=1e-4)
+    # The GPU cases of the step ops keep every pixel away from a step (see generate.py).
+    assert discontinuity_margin(chart, "posterize", 12.0) > 1e-5
+    assert discontinuity_margin(scene_rec2020(), "threshold", 0.5) > 1e-3

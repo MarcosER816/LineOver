@@ -2,6 +2,8 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <string>
 
 #include "lineover/color.h"
 #include "lineover/light.h"
@@ -377,6 +379,31 @@ private:
     float amount_;
 };
 
+// The mixer's GLSL: the band segment is found with constant indices only (unrolled; no
+// dynamic indexing of uniform arrays, which SwiftShader mishandled inside a loop).
+std::string hslBody() {
+    std::string body = LO_GLSL_LCH_HEAD "float dh = 0.0; float ds = 0.0; float dl = 0.0; float d; float a;\n";
+    char line[512];
+    for (int i = 0; i < kHslBands; ++i) {
+        const int j = (i + 1) % kHslBands;
+        const float c0 = kHslCentres[i];
+        const float width = kHslCentres[j] + (j == 0 ? 360.f : 0.f) - c0;
+        std::snprintf(line, sizeof(line),
+                      "d = mod(h - %.4f, 360.0);\n"
+                      "if (d < %.4f) { a = 0.5 * (1.0 + cos(3.14159265358979 * d / %.4f));\n"
+                      "    dh = a * u_hue[%d] + (1.0 - a) * u_hue[%d]; ds = a * u_sat[%d] + (1.0 - a) * u_sat[%d];\n"
+                      "    dl = a * u_lum[%d] + (1.0 - a) * u_lum[%d]; }\n",
+                      c0, width, width, i, j, i, j, i, j);
+        body += line;
+    }
+    body +=
+        "float fade = smoothstep(0.0, 0.03, C);\n"
+        "L *= 1.0 + fade * 0.4 * dl;\n"
+        "C *= max(1.0 + fade * ds, 0.0);\n"
+        "h += fade * dh * 30.0;\n" LO_GLSL_LCH_TAIL;
+    return body;
+}
+
 class HslMixerOp final : public LchOp {
 public:
     HslMixerOp(const HslBands& hue, const HslBands& sat, const HslBands& lum) {
@@ -390,27 +417,9 @@ public:
     OpType type() const override { return OpType::HslMixer; }
     bool isIdentity() const override { return identity_; }
     void gpu(GpuOpContext& context) const override {
-        context.setShader(LO_GLSL_OKLAB
-                          "uniform float u_hue[8];\nuniform float u_sat[8];\nuniform float u_lum[8];\n"
-                          "const float LO_CENTRES[9] = float[9](29.2, 52.8, 109.8, 142.5, 194.8, 264.1, 293.8, 328.4, 389.2);\n",
-                          LO_GLSL_LCH_HEAD
-                          "float dh = 0.0; float ds = 0.0; float dl = 0.0;\n"
-                          "for (int i = 0; i < 8; ++i) {\n"
-                          "    float c0 = LO_CENTRES[i]; float c1 = LO_CENTRES[i + 1];\n"
-                          "    float d = mod(h - c0, 360.0);\n"
-                          "    if (d < c1 - c0) {\n"
-                          "        float a = 0.5 * (1.0 + cos(3.14159265358979 * d / (c1 - c0)));\n"
-                          "        int j = i == 7 ? 0 : i + 1;\n"
-                          "        dh = a * u_hue[i] + (1.0 - a) * u_hue[j];\n"
-                          "        ds = a * u_sat[i] + (1.0 - a) * u_sat[j];\n"
-                          "        dl = a * u_lum[i] + (1.0 - a) * u_lum[j];\n"
-                          "        break;\n"
-                          "    }\n"
-                          "}\n"
-                          "float fade = smoothstep(0.0, 0.03, C);\n"
-                          "L *= 1.0 + fade * 0.4 * dl;\n"
-                          "C *= max(1.0 + fade * ds, 0.0);\n"
-                          "h += fade * dh * 30.0;\n" LO_GLSL_LCH_TAIL);
+        static const std::string body = hslBody();
+        context.setShader(LO_GLSL_OKLAB "uniform float u_hue[8];\nuniform float u_sat[8];\nuniform float u_lum[8];\n",
+                          body.c_str());
         context.setUniform1fv("u_hue", hue_, kHslBands);
         context.setUniform1fv("u_sat", sat_, kHslBands);
         context.setUniform1fv("u_lum", lum_, kHslBands);

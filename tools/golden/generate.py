@@ -98,9 +98,22 @@ def color_outputs() -> dict[str, np.ndarray]:
         image = chart if name in COLOR_CHART_OPS else scene
         for index, params in enumerate(settings, start=1):
             outputs[f"colorops/{name}_{index}_f32.npy"] = op(image, *params)
+        if name in COLOR_GPU_DISCONTINUOUS:
+            continue
         middle = settings[min(1, len(settings) - 1)]
         outputs[f"colorops/{name}_gpu_srgb_display_f32.npy"] = reference.working_to_display(op(image, *middle), "srgb")
+    # Posterize and Threshold jump at step edges: their GPU goldens are computed from the
+    # float16 values the GPU texture holds, on cases with every pixel well away from a step
+    # (reference.discontinuity_margin), so float32 GPU arithmetic cannot flip a pixel.
+    for name, (input_name, params) in COLOR_GPU_DISCONTINUOUS.items():
+        image = (chart if input_name == "chart" else scene).astype(np.float16).astype(np.float32)
+        out = reference.COLOR_OPS[name](image, *params)
+        outputs[f"colorops/{name}_gpu_srgb_display_f32.npy"] = reference.working_to_display(out, "srgb")
     return outputs
+
+
+# GPU cases of the step ops: (input, params); see color_outputs.
+COLOR_GPU_DISCONTINUOUS = {"posterize": ("chart", (12.0,)), "threshold": ("scene", (0.5,))}
 
 
 def write_file(path: Path, array: np.ndarray) -> None:

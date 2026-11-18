@@ -29,7 +29,7 @@ HSL / Color Mixer (with targeted adjustment), Invert, Posterize, Threshold.
 | `:core:ui` | 7 tools `done` (162 tools, 18 done) |
 | `:feature:editor` | `ColorPanel` (temperature / tint gradient tracks, As shot, eyedropper, HSL channels with band dots, targeted toggle, invert / posterize / threshold), `EyedropperLoupe`, `TargetedHudOverlay`, `CanvasView` pick modes, ViewModel Color state with off-main-thread sampling |
 
-Tests added: ctest `color_ops_test` (11); JVM `ColorAdjustmentsTest` (7), `ColorEditingTest`
+Tests added: ctest `color_ops_test` (12); JVM `ColorAdjustmentsTest` (7), `ColorEditingTest`
 (8), `CanvasGestureTest` +2, `ColorPanelScreenshots` (4 images), editor screenshots +2 per
 width; instrumented `EngineGpuTest` +7.
 
@@ -72,7 +72,11 @@ width; instrumented `EngineGpuTest` +7.
 10. **Targeted adjustment**: one finger on the canvas in this mode samples the colour as the
     mixer sees it (ops before the mixer), and a vertical drag over the full canvas height
     moves the active channel (H, S or L) by 200, split over the bands by their weights.
-11. Version 0.6.0 (8). Branch: session branch `ccr-a94fce54-a1j7s3`.
+11. **GPU tests of the step ops** (Posterize, Threshold) compare against goldens computed
+    from the float16 values the GPU texture holds, on cases chosen so no pixel sits within
+    2e-5 (encoded) of a step (`discontinuity_margin`); otherwise a float32 rounding anywhere
+    could legitimately move a pixel a whole step.
+12. Version 0.6.0 (8). Branch: session branch `ccr-a94fce54-a1j7s3`.
 
 ## Dependencies added (R10)
 
@@ -94,6 +98,8 @@ Screenshots changed, and why:
 | Symptom | Root cause | Fix |
 | --- | --- | --- |
 | Graph JSON lost the mixer's bands | The native reader kept only number fields | Number arrays parsed and written back (after scalars, as Kotlin declares them) |
+| CI emulator: HSL mixer GPU result far from the reference (mean 0.13) | The band uniforms, indexed dynamically inside a loop with `break`, were not applied by SwiftShader | Unrolled segment branches with constant indices (`hsl_shader_uses_constant_band_indices` guards it) |
+| CI emulator: a few Posterize pixels off by one step | Pixels on a step edge: the GPU reads float16 input, the golden used float32 | GPU goldens of the step ops from float16-rounded input, on a case (chart, 12 levels) with every pixel ≥ 2e-5 from a step |
 | A patch script applied only partly | Quoting error in the second half of the script | Re-applied the rest from separate files; verified each edit |
 
 Plan B used: no.

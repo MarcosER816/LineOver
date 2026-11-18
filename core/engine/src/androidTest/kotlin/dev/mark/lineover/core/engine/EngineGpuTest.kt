@@ -135,7 +135,7 @@ class EngineGpuTest {
     fun gpuInvertMatchesTheReference() = checkColor("invert", """{"op":"invert"}""", SCENE)
 
     @Test
-    fun gpuPosterizeMatchesTheReference() = checkColor("posterize", """{"op":"posterize","levels":5.0}""", SCENE)
+    fun gpuPosterizeMatchesTheReference() = checkColor("posterize", """{"op":"posterize","levels":12.0}""", CHART)
 
     @Test
     fun gpuThresholdMatchesTheReference() = checkColor("threshold", """{"op":"threshold","level":0.5}""", SCENE)

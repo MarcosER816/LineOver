@@ -167,4 +167,24 @@ LO_TEST(graph_round_trips_color_ops_with_arrays) {
     for (int i = 0; i < 7 && i < static_cast<int>(ops->ops().size()); ++i) LO_CHECK(ops->ops()[i]->type() == expected[i]);
 }
 
+// The mixer's shader indexes its uniform arrays with constants only (SwiftShader did not
+// apply dynamically indexed band values inside a loop), one branch per band segment.
+LO_TEST(hsl_shader_uses_constant_band_indices) {
+    struct Recorder final : lo::GpuOpContext {
+        std::string body;
+        int arrays = 0;
+        void setShader(const char*, const char* b) override { body = b; }
+        void setUniform1f(const char*, float) override {}
+        void setUniform1fv(const char*, const float*, int count) override { arrays += count == lo::kHslBands ? 1 : 0; }
+    };
+    Recorder r;
+    lo::makeHslMixer(bands({1, 0, 0, 0, 0, 0, 0, 0}), bands({0, 0, 0, 0, 0, 0, 0, 0}), bands({0, 0, 0, 0, 0, 0, 0, 0}))->gpu(r);
+    LO_CHECK(r.arrays == 3);
+    LO_CHECK(r.body.find("u_hue[i]") == std::string::npos && r.body.find("u_hue[j]") == std::string::npos);
+    std::size_t branches = 0;
+    for (std::size_t at = r.body.find("if (d < "); at != std::string::npos; at = r.body.find("if (d < ", at + 1)) ++branches;
+    LO_CHECK(branches == lo::kHslBands);
+    LO_CHECK(r.body.find("u_sat[7]") != std::string::npos && r.body.find("u_lum[0]") != std::string::npos);
+}
+
 int main() { return runAllTests(); }
