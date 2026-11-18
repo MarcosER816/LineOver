@@ -6,6 +6,10 @@ All notable changes, newest first. One section per stage.
 
 ### Changed (after testing on real photos)
 
+- Curves on phones: the panel is shorter so it fits with the photo visible above it. The
+  channels (RGB · R · G · B · L) sit beside Close, the graph is wider than tall, the in / out
+  values sit inside the graph and Free curve / Reset are chips under it.
+
 - Color Grading: the Highlights wheel is gentler (as strong as the Shadows wheel) and leaves
   white and very bright areas neutral, so a warm highlight tint no longer turns a white sky
   peach.

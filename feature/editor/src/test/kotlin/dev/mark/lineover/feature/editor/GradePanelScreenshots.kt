@@ -67,7 +67,7 @@ abstract class GradePanelScreenshots(
                 Column(Modifier.width(panelWidth.dp).background(LoColors.Surface1)) {
                     tools.forEach { tool ->
                         Label(tool)
-                        GradePanel(tool, state, {}, onClose = {})
+                        GradePanel(tool, state, {}, onClose = {}, wide = widthClass == "expanded")
                     }
                 }
             }
@@ -93,7 +93,7 @@ abstract class GradePanelScreenshots(
                 val density = LocalDensity.current
                 CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 2f)) {
                     Column(Modifier.width(panelWidth.dp).fillMaxWidth().background(LoColors.Surface1)) {
-                        GradePanel("light.curves_point", state, {}, onClose = {})
+                        GradePanel("light.curves_point", state, {}, onClose = {}, wide = widthClass == "expanded")
                     }
                 }
             }

@@ -111,7 +111,7 @@ private fun ToolPanelContent(
         }
 
         id in GRADE_TOOLS -> {
-            GradePanel(id, state, onIntent, onClose = close)
+            GradePanel(id, state, onIntent, onClose = close, wide = wide)
         }
 
         else -> {

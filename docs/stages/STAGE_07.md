@@ -191,10 +191,27 @@ per-channel clipping had hidden this gain. Fix: the GPU goldens model the float1
 the GPU takes (as Stage 6 did for Posterize), tolerance unchanged; `color/working_to_*`
 (ctest, CPU) stay float32.
 
+## Addendum: compact curve editor
+
+Mark's answer to question 1: make it smaller so it fits while the photo shows. On phones
+(`GradePanel(wide = false)`) the point-curves panel is now: channels as short labels
+(RGB · R · G · B · L; TalkBack reads the full names via `LoSegmented(descriptions)`) beside
+Close in one row (the title row is dropped), a full-width graph at 2.9 : 1 (≈ 130 dp high),
+the In / Out readout inside the graph's lower right corner, and Free curve / Reset as chips.
+The magnifier is at most the graph's height. Wide layouts keep the square editor and the
+title row. No slot moved and the panel's 40 % height cap is unchanged (R9).
+`CurvesPanelFitTest` (411 × 840 dp = the POCO minus system bars, and 360 × 740 dp) checks the
+graph and Reset are inside the panel and ≥ 55 % of the canvas stays visible.
+
+Screenshots changed: `editor/{compact,expanded}/grade_curves`, `grade_panel/*_curves_levels`,
+`grade_panel/*_font_scale_2` (new compact layout; readout moved into the graph on wide
+layouts too) and `components/*/lo_curve_editor` (readout inside the graph).
+
+Mark has seen no Highlights / Shadows halos on his photos: that Stage 5 question is closed.
+
 ## Open questions (R12)
 
-1. **Curve editor size**: is it usable one-handed in the panel, or should it open as a bigger
-   modal (e.g. full-height sheet)? Default: in the panel (high detent, scrolls).
-2. (Stage 6) White balance / HSL strength vs another editor? (Stage 5) Highlights / Shadows
-   halos? (Stage 4) Sample files: answered, see the addendum above.
+1. ~~Curve editor size~~: answered (smaller, fits with the photo), see the addendum.
+2. (Stage 6) White balance / HSL strength vs another editor? (Stage 5) ~~Highlights /
+   Shadows halos~~: none seen. (Stage 4) ~~Sample files~~: added, see the addendum.
 3. ~~Color Grading strength~~ and 4. ~~display gamut mapping~~: answered yes, done (addendum).

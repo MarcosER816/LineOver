@@ -17,6 +17,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
@@ -79,11 +80,13 @@ object LoCurveEditorMath {
 }
 
 /**
- * The curve editor (point curves; full width, square). Tap the graph to add a point on
+ * The curve editor (point curves; full width, [aspectRatio] width / height: square on wide
+ * layouts, short on phones so the photo stays visible). Tap the graph to add a point on
  * the curve, drag a point to move it, drag it off the graph to delete it (it turns red
- * first). While dragging, a 3× magnifier shows the area around the point and the input /
- * output values are shown under the graph. [histogram] (heights 0..1) is drawn behind
- * the curve. The caller owns the points and their rules (monotone or free).
+ * first). While dragging, a 3× magnifier shows the area around the point; the input /
+ * output values are shown in the graph's lower right corner (where a curve rarely goes).
+ * [histogram] (heights 0..1) is drawn behind the curve. The caller owns the points and
+ * their rules (monotone or free).
  */
 @Composable
 fun LoCurveEditor(
@@ -97,6 +100,7 @@ fun LoCurveEditor(
     histogram: FloatArray? = null,
     enabled: Boolean = true,
     label: String = "Curve",
+    aspectRatio: Float = 1f,
 ) {
     val drag = remember { CurveDrag() }
     val callbacks = rememberUpdatedState(CurveCallbacks(points, onAddPoint, onMovePoint, onDeletePoint))
@@ -112,7 +116,7 @@ fun LoCurveEditor(
         Box(
             Modifier
                 .fillMaxWidth()
-                .aspectRatio(1f)
+                .aspectRatio(aspectRatio)
                 .clip(LoShapes.Small)
                 .background(LoColors.Surface2)
                 .semantics {
@@ -131,21 +135,19 @@ fun LoCurveEditor(
                     }
                 }
             }
+            val shown = points.getOrNull(if (active >= 0) active else selected)
+            Text(
+                text =
+                    if (offGraph) {
+                        "Release to delete the point"
+                    } else {
+                        shown?.let(LoCurveEditorMath::readout) ?: "Tap the curve to add a point"
+                    },
+                style = LoType.Caption,
+                color = if (offGraph) LoColors.Danger else LoColors.TextSecondary,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(INSET),
+            )
         }
-        val shown = points.getOrNull(if (active >= 0) active else selected)
-        Text(
-            text =
-                if (offGraph) {
-                    "Release to delete the point"
-                } else {
-                    shown?.let(
-                        LoCurveEditorMath::readout,
-                    ) ?: "Tap the curve to add a point"
-                },
-            style = LoType.Caption,
-            color = if (offGraph) LoColors.Danger else LoColors.TextSecondary,
-            modifier = Modifier.padding(top = LoSpacing.Xxs),
-        )
     }
 }
 
@@ -264,7 +266,8 @@ private fun DrawScope.drawMagnifier(
     focus: Offset,
     content: DrawScope.() -> Unit,
 ) {
-    val radius = MAGNIFIER.toPx() / 2
+    // At most the graph's height, so it fits the short phone graph.
+    val radius = minOf(MAGNIFIER.toPx(), area.height - 8.dp.toPx()) / 2
     val focusPx = Offset(origin.x + focus.x * area.width, origin.y + (1f - focus.y) * area.height)
     val centre =
         Offset(
