@@ -103,6 +103,7 @@ private fun LightSlider(
     LoSlider(
         value = state.light[param],
         onValueChange = { onIntent(EditorIntent.SetLight(param, it)) },
+        onValueChangeFinished = { onIntent(EditorIntent.EndEdit) },
         label = param.label,
         modifier = Modifier.testTag(EditorTags.slot(param.toolId)),
         valueRange = param.min..param.max,

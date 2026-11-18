@@ -1,6 +1,8 @@
 plugins {
     id("lineover.android.library")
     id("lineover.android.room")
+    // manifest.json of .loproj project files.
+    id("lineover.kotlin.serialization")
 }
 
 android {

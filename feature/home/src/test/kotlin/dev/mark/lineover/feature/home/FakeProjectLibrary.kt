@@ -1,10 +1,13 @@
 package dev.mark.lineover.feature.home
 
 import android.net.Uri
+import dev.mark.lineover.core.io.project.DocumentLoad
 import dev.mark.lineover.core.io.project.ImportResult
 import dev.mark.lineover.core.io.project.PreviewImage
 import dev.mark.lineover.core.io.project.ProjectLibrary
+import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.Project
+import dev.mark.lineover.core.model.ProjectDocument
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
 
@@ -62,4 +65,30 @@ class FakeProjectLibrary : ProjectLibrary {
         project: Project,
         maxEdge: Int,
     ): PreviewImage? = null
+
+    /** Projects reported as recovered after a crash (Stage 8). */
+    var recovered: List<Project> = emptyList()
+    var exported = mutableListOf<Pair<Long, Uri>>()
+
+    override suspend fun loadDocument(project: Project): DocumentLoad = DocumentLoad.Loaded(ProjectDocument.of(EditGraph()), fresh = true)
+
+    override suspend fun saveDocument(
+        project: Project,
+        document: ProjectDocument,
+        thumbnails: Map<String, ByteArray>,
+    ) = Unit
+
+    override suspend fun beginEditing(id: Long) = Unit
+
+    override suspend fun endEditing(id: Long) = Unit
+
+    override suspend fun recoverInterrupted(): List<Project> = recovered.also { recovered = emptyList() }
+
+    override suspend fun exportProjectFile(
+        id: Long,
+        target: Uri,
+    ): Boolean {
+        exported += id to target
+        return true
+    }
 }

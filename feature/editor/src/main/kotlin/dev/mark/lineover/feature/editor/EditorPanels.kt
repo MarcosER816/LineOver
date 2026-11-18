@@ -125,7 +125,7 @@ internal val EditorState.hasCompactPanel: Boolean
     get() = panel != null || category == ToolCategory.Masks
 
 @Composable
-private fun PanelHeader(
+internal fun PanelHeader(
     title: String,
     subtitle: String?,
     onClose: (() -> Unit)?,
@@ -285,33 +285,6 @@ private fun LayerRow(
             Text(caption, style = LoType.Caption, color = LoColors.TextSecondary)
         }
         Icon(painterResource(LoIcons.Visibility), contentDescription = "Visible", tint = LoColors.TextSecondary)
-    }
-}
-
-/** History: list, snapshots and versions (Stage 8). */
-@Composable
-private fun HistorySheet(
-    state: EditorState,
-    onIntent: (EditorIntent) -> Unit,
-    onClose: () -> Unit,
-) {
-    PanelHeader("History", null, onClose)
-    Column(Modifier.padding(horizontal = LoSpacing.M), verticalArrangement = Arrangement.spacedBy(LoSpacing.Xs)) {
-        LoSegmented(
-            options = HistoryTab.entries.map { it.label },
-            selectedIndex = state.historyTab.ordinal,
-            onSelect = { onIntent(EditorIntent.SelectHistoryTab(HistoryTab.entries[it])) },
-            modifier = Modifier.fillMaxWidth(),
-        )
-        SlotPlaceholder(
-            requireNotNull(ToolRegistry[state.historyTab.toolId]),
-            detail =
-                when (state.historyTab) {
-                    HistoryTab.History -> "Every edit step, tap one to go back to it."
-                    HistoryTab.Snapshots -> "Named states you can return to at any time."
-                    HistoryTab.Versions -> "Variants of the same photo, side by side."
-                },
-        )
     }
 }
 

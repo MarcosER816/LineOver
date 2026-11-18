@@ -1,6 +1,7 @@
 package dev.mark.lineover.core.engine
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Debug
 import android.util.Log
@@ -18,6 +19,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.UUID
 
 /** Native op type ids (lo::OpType) the sampling API refers to. */
@@ -136,6 +139,21 @@ class EngineSession private constructor(
 
     /** Levels → Auto: the preview's per-channel encoded percentiles (low R, high R, low G, high G, low B, high B). */
     fun autoLevels(): FloatArray? = if (closed) null else native.autoLevels()
+
+    /**
+     * [graph] rendered small (long edge <= 512 px, sRGB) on the CPU reference path, for
+     * thumbnails. Any thread but the main one; null before the preview is ready.
+     */
+    fun thumbnail(graph: EditGraph): Bitmap? {
+        if (closed) return null
+        val bytes = native.renderThumbnail(EditGraphJson.encode(graph)) ?: return null
+        val header = ByteBuffer.wrap(bytes, 0, THUMB_HEADER).order(ByteOrder.LITTLE_ENDIAN)
+        val width = header.int
+        val height = header.int
+        return Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).apply {
+            copyPixelsFromBuffer(ByteBuffer.wrap(bytes, THUMB_HEADER, width * height * CHANNELS))
+        }
+    }
 
     /** Hold to compare: the original while true. */
     fun setShowOriginal(original: Boolean) {
@@ -296,6 +314,7 @@ class EngineSession private constructor(
 
         private const val MB_SHIFT = 20
         private const val REQUEST_SIZE = 3
+        private const val THUMB_HEADER = 8
 
         private fun mb(bytes: Long) = bytes shr MB_SHIFT
     }

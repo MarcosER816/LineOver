@@ -46,6 +46,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.mark.lineover.core.designsystem.LoColors
@@ -61,6 +63,7 @@ import dev.mark.lineover.core.designsystem.component.LoPanel
 import dev.mark.lineover.core.designsystem.component.LoPanelDetent
 import dev.mark.lineover.core.designsystem.component.LoPanelState
 import dev.mark.lineover.core.designsystem.component.LoToastHost
+import dev.mark.lineover.core.designsystem.component.LoToastResult
 import dev.mark.lineover.core.designsystem.component.LoToastState
 import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.CanvasSurround
@@ -73,6 +76,7 @@ import dev.mark.lineover.core.ui.tools.ToolRegistry
 import dev.mark.lineover.feature.editor.canvas.CanvasGestureListener
 import dev.mark.lineover.feature.editor.canvas.CanvasView
 import dev.mark.lineover.feature.editor.canvas.EditorCanvasFactory
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 @Composable
@@ -83,12 +87,14 @@ fun EditorRoute(
     canvases: EditorCanvasFactory,
     onBack: () -> Unit,
     onExport: () -> Unit,
+    /** Outlives the screen: the last save and the engine's close finish there. */
+    saveScope: CoroutineScope,
 ) {
     val context = LocalContext.current
     val debuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
     val viewModel =
         viewModel(key = "editor-$projectId") {
-            EditorViewModel(projectId, library, preferences, canvases, debuggable = debuggable)
+            EditorViewModel(projectId, library, preferences, canvases, debuggable = debuggable, saveScope = saveScope)
         }
     WideColorGamutWindow()
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -96,10 +102,20 @@ fun EditorRoute(
     LaunchedEffect(viewModel) {
         viewModel.effects.collect { effect ->
             when (effect) {
-                is EditorEffect.Message -> launch { toast.show(effect.text) }
+                is EditorEffect.Message -> {
+                    launch { toast.show(effect.text) }
+                }
+
+                is EditorEffect.Undoable -> {
+                    launch {
+                        if (toast.show(effect.text, actionLabel = "Undo") == LoToastResult.ActionPerformed) viewModel.onIntent(effect.undo)
+                    }
+                }
             }
         }
     }
+    // Leaving the app (or the screen turning off) saves at once: a kill afterwards loses nothing.
+    LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onIntent(EditorIntent.SaveNow) }
     EditorScreen(
         state = state,
         onIntent = viewModel::onIntent,

@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.provider.OpenableColumns
 import dev.mark.lineover.core.model.Project
+import dev.mark.lineover.core.model.ProjectDocument
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -21,12 +22,28 @@ sealed interface ImportResult {
         val failed: Int,
     ) : ImportResult
 
-    /** A .loproj project file: opening those arrives with the project format (Stage 8). */
-    data object ProjectFileNotYetSupported : ImportResult
+    /** A .loproj project file that could not be opened, with the reason. */
+    data class ProjectFileFailed(
+        val reason: String,
+    ) : ImportResult
+}
+
+/** A project's saved edit, or why it cannot be used. */
+sealed interface DocumentLoad {
+    data class Loaded(
+        val document: ProjectDocument,
+        /** True when nothing was saved yet (a new project). */
+        val fresh: Boolean,
+    ) : DocumentLoad
+
+    /** The saved file cannot be read (e.g. made by a newer LineOver): it must not be overwritten. */
+    data class Failed(
+        val reason: String,
+    ) : DocumentLoad
 }
 
 /** Everything the screens do with projects. Main-safe: file and decode work runs on IO. */
-interface ProjectLibrary {
+interface ProjectLibrary : ProjectDocuments {
     fun observeProjects(): Flow<List<Project>>
 
     fun observeRecent(): Flow<List<Project>>
@@ -73,10 +90,20 @@ object ProjectLibraries {
     fun create(context: Context): ProjectLibrary {
         val app = context.applicationContext
         val db = ProjectDatabase.build(app)
+        val version =
+            try {
+                app.packageManager
+                    .getPackageInfo(app.packageName, 0)
+                    .versionName
+                    .orEmpty()
+            } catch (_: android.content.pm.PackageManager.NameNotFoundException) {
+                ""
+            }
         return AndroidProjectLibrary(
             resolver = app.contentResolver,
             repository = RoomProjectRepository(db.projects()),
-            storage = ProjectStorage(app.filesDir),
+            storage = ProjectStorage(app.filesDir, app.cacheDir),
+            appVersion = version,
         )
     }
 }
@@ -87,7 +114,11 @@ internal class AndroidProjectLibrary(
     private val storage: ProjectStorage,
     private val clock: () -> Long = System::currentTimeMillis,
     private val io: CoroutineDispatcher = Dispatchers.IO,
-) : ProjectLibrary {
+    appVersion: String = "",
+    private val documents: AndroidProjectDocuments =
+        AndroidProjectDocuments(resolver, repository, storage, clock, io, appVersion),
+) : ProjectLibrary,
+    ProjectDocuments by documents {
     private val thumbnailer = Thumbnailer(resolver)
     private val previewDecoder = PreviewDecoder(resolver)
 
@@ -110,7 +141,7 @@ internal class AndroidProjectLibrary(
     override suspend fun importDocument(uri: Uri): ImportResult =
         withContext(io) {
             val name = displayName(uri)
-            if (ProjectNames.isProjectFile(name)) return@withContext ImportResult.ProjectFileNotYetSupported
+            if (ProjectNames.isProjectFile(name)) return@withContext documents.importProjectFile(uri)
             val id = importOne(uri, name)
             ImportResult.Imported(listOfNotNull(id), if (id == null) 1 else 0)
         }
@@ -166,16 +197,7 @@ internal class AndroidProjectLibrary(
         return Uri.fromFile(target)
     }
 
-    private fun displayName(uri: Uri): String? {
-        if (uri.scheme == ContentResolver.SCHEME_FILE) return uri.lastPathSegment
-        return try {
-            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) cursor.getString(0) else null
-            }
-        } catch (_: SecurityException) {
-            null
-        } ?: uri.lastPathSegment
-    }
+    private fun displayName(uri: Uri): String? = resolver.displayName(uri)
 
     override suspend fun rename(
         id: Long,
@@ -229,4 +251,16 @@ internal class AndroidProjectLibrary(
         project: Project,
         maxEdge: Int,
     ): PreviewImage? = withContext(io) { previewDecoder.decode(Uri.parse(project.sourceUri), maxEdge) }
+}
+
+/** The name a content URI shows in pickers, or its last path segment. */
+internal fun ContentResolver.displayName(uri: Uri): String? {
+    if (uri.scheme == ContentResolver.SCHEME_FILE) return uri.lastPathSegment
+    return try {
+        query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+            if (cursor.moveToFirst()) cursor.getString(0) else null
+        }
+    } catch (_: SecurityException) {
+        null
+    } ?: uri.lastPathSegment
 }

@@ -33,6 +33,12 @@ interface ProjectRepository {
         sourceUri: String,
     )
 
+    /** The edit changed (an autosave): the project moves to the top of the Projects tab. */
+    suspend fun setModified(
+        id: Long,
+        now: Long,
+    )
+
     suspend fun rename(
         id: Long,
         name: String,
@@ -83,6 +89,11 @@ internal class RoomProjectRepository(
         id: Long,
         sourceUri: String,
     ) = dao.setSource(id, sourceUri)
+
+    override suspend fun setModified(
+        id: Long,
+        now: Long,
+    ) = dao.setModified(id, now)
 
     override suspend fun rename(
         id: Long,

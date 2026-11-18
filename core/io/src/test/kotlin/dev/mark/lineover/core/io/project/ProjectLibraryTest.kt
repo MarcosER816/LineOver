@@ -7,6 +7,11 @@ import android.net.Uri
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import dev.mark.lineover.core.model.EditGraph
+import dev.mark.lineover.core.model.EditHistory
+import dev.mark.lineover.core.model.OpParams
+import dev.mark.lineover.core.model.ProjectDocument
+import dev.mark.lineover.core.model.Snapshot
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestDispatcher
@@ -125,13 +130,103 @@ class ProjectLibraryTest {
         }
 
     @Test
-    fun projectFilesAreNotImportedYet() =
+    fun aBrokenProjectFileIsRefusedWithAReason() =
         runTest {
             val library = library(StandardTestDispatcher(testScheduler))
             val file = File(temp.root, "trip.loproj").apply { writeText("{}") }
 
-            assertEquals(ImportResult.ProjectFileNotYetSupported, library.importDocument(Uri.fromFile(file)))
+            val result = library.importDocument(Uri.fromFile(file)) as ImportResult.ProjectFileFailed
+            assertEquals("Not a complete LineOver project file", result.reason)
             assertTrue(library.observeProjects().first().isEmpty())
+        }
+
+    private fun edited(): ProjectDocument {
+        var history = EditHistory.start()
+        history = history.record(EditGraph().withBackgroundOps(listOf(OpParams.Exposure(0.7f))), "Exposure +0.7", "exposure.ev")
+        history =
+            history.record(
+                EditGraph().withBackgroundOps(listOf(OpParams.Exposure(0.7f), OpParams.Contrast(20f))),
+                "Contrast +20",
+                "contrast.amount",
+            )
+        return ProjectDocument.of(EditGraph()).withHistory(history).copy(
+            snapshots = listOf(Snapshot("s1", "Bright", 5L, history.entries[1].graph)),
+        )
+    }
+
+    private fun jpeg(): ByteArray {
+        val bitmap = Bitmap.createBitmap(64, 32, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLUE) }
+        return java.io
+            .ByteArrayOutputStream()
+            .also { bitmap.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+            .toByteArray()
+    }
+
+    @Test
+    fun aSavedEditLoadsBackAndUpdatesTheHomeThumbnail() =
+        runTest {
+            val library = library(StandardTestDispatcher(testScheduler))
+            val id = (library.importPicked(listOf(photo())) as ImportResult.Imported).ids.single()
+            val project = library.observe(id).first()!!
+            assertEquals(DocumentLoad.Loaded(ProjectDocument.of(EditGraph(), 1_000L), fresh = true), library.loadDocument(project))
+
+            now = 7_000L
+            library.saveDocument(project, edited(), mapOf("current.jpg" to jpeg()))
+
+            val loaded = library.loadDocument(project) as DocumentLoad.Loaded
+            assertFalse(loaded.fresh)
+            assertEquals(edited(), loaded.document)
+            val after = library.observe(id).first()!!
+            assertEquals(7_000L, after.modified)
+            assertTrue(after.thumbPath!!.endsWith("thumb-7000.jpg"))
+            assertEquals(64, BitmapFactory.decodeFile(after.thumbPath).width)
+            // The next save replaces the edited thumbnail (Home caches by path).
+            now = 8_000L
+            library.saveDocument(project, edited(), mapOf("current.jpg" to jpeg()))
+            assertFalse(File(after.thumbPath!!).exists())
+        }
+
+    @Test
+    fun anExportedProjectFileImportsAsANewProjectWithItsOriginalAndEdit() =
+        runTest {
+            val library = library(StandardTestDispatcher(testScheduler))
+            val source = photo()
+            val id = (library.importPicked(listOf(source)) as ImportResult.Imported).ids.single()
+            val project = library.observe(id).first()!!
+            library.saveDocument(project, edited())
+            val shared = File(temp.root, "shared.loproj").apply { createNewFile() }
+
+            assertTrue(library.exportProjectFile(id, Uri.fromFile(shared)))
+            val result = library.importDocument(Uri.fromFile(shared)) as ImportResult.Imported
+
+            val copy = library.observe(result.ids.single()).first()!!
+            assertNotEquals(id, copy.id)
+            assertEquals("IMG_0001", copy.name)
+            assertTrue(File(source.path!!).readBytes().contentEquals(File(Uri.parse(copy.sourceUri).path!!).readBytes()))
+            assertEquals(edited(), (library.loadDocument(copy) as DocumentLoad.Loaded).document)
+            assertNotNull(copy.thumbPath)
+        }
+
+    @Test
+    fun anInterruptedEditingSessionIsRecoveredOnTheNextLaunch() =
+        runTest {
+            val library = library(StandardTestDispatcher(testScheduler))
+            val id = (library.importPicked(listOf(photo())) as ImportResult.Imported).ids.single()
+            val project = library.observe(id).first()!!
+            library.beginEditing(id)
+            library.saveDocument(project, edited())
+            // Killed during the next save: a truncated temp file and the marker stay behind.
+            val file = File(temp.root, "files/projects/$id/project.loproj")
+            File(file.path + ".tmp").writeBytes(file.readBytes().copyOf(100))
+
+            assertEquals(listOf(id), library.recoverInterrupted().map { it.id })
+            assertFalse(File(file.path + ".tmp").exists())
+            assertEquals(edited(), (library.loadDocument(project) as DocumentLoad.Loaded).document)
+            assertTrue("nothing left to recover", library.recoverInterrupted().isEmpty())
+            // A session that ends normally is not "interrupted".
+            library.beginEditing(id)
+            library.endEditing(id)
+            assertTrue(library.recoverInterrupted().isEmpty())
         }
 
     @Test

@@ -549,8 +549,29 @@ private fun buildTools(): List<ToolSpec> =
                 "inpaint",
             )
 
-            shell("history.undo_redo", "Undo / redo", "topbar/undo-redo", 8, PanelType.Action, LoIcons.Undo, "undo", "redo", "step back")
-            shell("history.history_list", "History list", "panel/history/list", 8, PanelType.Sheet, LoIcons.History, "history", "steps")
+            shell(
+                "history.undo_redo",
+                "Undo / redo",
+                "topbar/undo-redo",
+                8,
+                PanelType.Action,
+                LoIcons.Undo,
+                "undo",
+                "redo",
+                "step back",
+                done = true,
+            )
+            shell(
+                "history.history_list",
+                "History list",
+                "panel/history/list",
+                8,
+                PanelType.Sheet,
+                LoIcons.History,
+                "history",
+                "steps",
+                done = true,
+            )
             shell(
                 "history.snapshots",
                 "Snapshots",
@@ -560,8 +581,19 @@ private fun buildTools(): List<ToolSpec> =
                 LoIcons.Bookmark,
                 "snapshot",
                 "save state",
+                done = true,
             )
-            shell("history.versions", "Versions", "panel/history/versions", 8, PanelType.Sheet, LoIcons.Stacks, "version", "variants")
+            shell(
+                "history.versions",
+                "Versions",
+                "panel/history/versions",
+                8,
+                PanelType.Sheet,
+                LoIcons.Stacks,
+                "version",
+                "variants",
+                done = true,
+            )
             shell(
                 "history.before_after",
                 "Before / after",
@@ -582,6 +614,7 @@ private fun buildTools(): List<ToolSpec> =
                 LoIcons.Folder,
                 "loproj",
                 "save project",
+                done = true,
             )
 
             exportOption("export.jpeg", "JPEG", "format/01", LoIcons.Image, "jpg")

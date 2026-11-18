@@ -6,7 +6,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -20,6 +23,9 @@ import kotlinx.coroutines.launch
 
 /** Most photos the picker returns at once (kept for batch editing, Stage 28). */
 const val MAX_PICKED_PHOTOS = 50
+
+/** A .loproj is a ZIP; saved as a generic binary so every file manager accepts it. */
+private const val PROJECT_FILE_TYPE = "application/octet-stream"
 
 /** Files offered by "Open file": RAW and TIFF are images; .loproj is a binary file. */
 private val OPEN_FILE_TYPES = arrayOf("image/*", "application/octet-stream")
@@ -59,11 +65,26 @@ fun HomeRoute(
         rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             viewModel.onIntent(HomeIntent.OpenDocument(uri))
         }
+    var savingProject by rememberSaveable { mutableLongStateOf(0L) }
+    val createProjectFile =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(PROJECT_FILE_TYPE)) { uri ->
+            viewModel.onIntent(HomeIntent.ProjectFileTarget(savingProject, uri))
+        }
     LaunchedEffect(viewModel) {
         viewModel.effects.collect { effect ->
             when (effect) {
-                is HomeEffect.OpenEditor -> onOpenEditor(effect.projectId)
-                is HomeEffect.Message -> launch { toast.show(effect.text) }
+                is HomeEffect.OpenEditor -> {
+                    onOpenEditor(effect.projectId)
+                }
+
+                is HomeEffect.Message -> {
+                    launch { toast.show(effect.text) }
+                }
+
+                is HomeEffect.PickProjectFileTarget -> {
+                    savingProject = effect.projectId
+                    createProjectFile.launch(effect.fileName)
+                }
             }
         }
     }

@@ -225,6 +225,11 @@ private fun ProjectCard(
                 menuOpen = false
                 onIntent(HomeIntent.Duplicate(project.id))
             }
+            // history.project_file (Stage 8): the project with its original, to share or keep.
+            MenuItem("Save project file", LoIcons.Folder, Modifier.testTag("slot:history.project_file")) {
+                menuOpen = false
+                onIntent(HomeIntent.SaveProjectFile(project))
+            }
             MenuItem("Delete", LoIcons.Delete) {
                 menuOpen = false
                 onIntent(HomeIntent.Delete(project.id))
@@ -274,12 +279,14 @@ internal val HOME_MORE_TOOLS =
 private fun MenuItem(
     label: String,
     icon: Int,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     DropdownMenuItem(
         text = { Text(label, style = LoType.Body, color = LoColors.TextPrimary) },
         leadingIcon = { Icon(painterResource(icon), contentDescription = null, tint = LoColors.TextSecondary) },
         onClick = onClick,
+        modifier = modifier,
     )
 }
 

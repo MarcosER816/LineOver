@@ -18,11 +18,18 @@ import dev.mark.lineover.core.designsystem.LineOverTheme
 import dev.mark.lineover.core.designsystem.LoColors
 import dev.mark.lineover.core.engine.CompareMode
 import dev.mark.lineover.core.engine.Histogram
+import dev.mark.lineover.core.model.EditGraph
+import dev.mark.lineover.core.model.EditHistory
+import dev.mark.lineover.core.model.HistoryLabels
 import dev.mark.lineover.core.model.HslBand
 import dev.mark.lineover.core.model.HslChannel
 import dev.mark.lineover.core.model.LightAdjustments
 import dev.mark.lineover.core.model.LightParam
+import dev.mark.lineover.core.model.OpParams
+import dev.mark.lineover.core.model.ProjectDocument
+import dev.mark.lineover.core.model.Snapshot
 import dev.mark.lineover.core.model.ToolCategory
+import dev.mark.lineover.core.model.Version
 import dev.mark.lineover.core.ui.tools.ToolRegistry
 import dev.mark.lineover.feature.editor.canvas.PickMode
 import org.junit.Rule
@@ -206,11 +213,54 @@ abstract class EditorScreenshots(
     @Test
     fun addLayerMenu() = screenShot("menu_add_layer", base().copy(panel = EditorPanel.Layers, menu = EditorMenu.AddLayer))
 
+    /** A worked-on project: five steps (one undone), two snapshots, two versions with thumbnails. */
+    private fun historyState(tab: HistoryTab): EditorState {
+        var history = EditHistory.start()
+        var ops = listOf<OpParams>()
+        listOf(
+            OpParams.Exposure(0.7f) to "exposure.ev",
+            OpParams.Contrast(25f) to "contrast.amount",
+            OpParams.HighlightsShadows(-40f, 0f) to "highlights_shadows.highlights",
+            OpParams.Vibrance(30f) to "vibrance.amount",
+            OpParams.Whites(15f) to "whites.amount",
+        ).forEach { (op, _) ->
+            val before = EditGraph().withBackgroundOps(ops)
+            ops = ops + op
+            val after = EditGraph().withBackgroundOps(ops)
+            val change = HistoryLabels.describe(before, after)
+            history = history.record(after, change.label, change.key)
+        }
+        history = history.undo()
+        val second = EditHistory.start(EditGraph().withBackgroundOps(listOf(OpParams.Saturation(-100f))), "From Version 1")
+        val document =
+            ProjectDocument(
+                versions = listOf(Version("v1", "Version 1", 1L, history), Version("v2", "Black & white", 2L, second)),
+                activeVersion = "v1",
+                snapshots =
+                    listOf(
+                        Snapshot("s1", "Base exposure", 1_700_000_000_000L, history.entries[1].graph),
+                        Snapshot("s2", "Before colour", 1_700_000_600_000L, history.entries[3].graph),
+                    ),
+            )
+
+        fun thumb(color: Int) =
+            android.graphics.Bitmap
+                .createBitmap(40, 30, android.graphics.Bitmap.Config.ARGB_8888)
+                .apply { eraseColor(color) }
+        return base().copy(
+            panel = EditorPanel.History,
+            historyTab = tab,
+            history = history,
+            graph = history.current,
+            document = document,
+            versionThumbnails = mapOf("v1" to thumb(0xFF4A7BB7.toInt()), "v2" to thumb(0xFF8A8A8A.toInt())),
+        )
+    }
+
     @Test
     fun historySheet() {
-        HistoryTab.entries.forEach { tab ->
-            shot("sheet_history_${tab.name.lowercase()}", base().copy(panel = EditorPanel.History, historyTab = tab))
-        }
+        HistoryTab.entries.forEach { tab -> shot("sheet_history_${tab.name.lowercase()}", historyState(tab)) }
+        shot("sheet_history_preview", historyState(HistoryTab.History).copy(preview = HistoryPreview.Step(2)))
     }
 
     @Test

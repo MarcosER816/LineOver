@@ -79,6 +79,10 @@ void lo_engine_set_callbacks(lo_engine* engine, void (*on_loading)(void* user, i
 int lo_engine_auto_light(lo_engine* engine, float* exposure, float* blacks);
 /* Levels Auto: per-channel encoded 0.1 / 99.9 % percentiles (lowR, highR, lowG, highG, lowB, highB). */
 int lo_engine_auto_levels(lo_engine* engine, float* out6);
+
+// `graph_json` rendered on a <= 512 px copy of the preview as sRGB RGBA8 into `out`
+// (`capacity` bytes); sets the size. 0 before a preview, on a bad graph or a short buffer.
+int lo_engine_render_thumbnail(lo_engine* engine, const char* graph_json, uint8_t* out, int capacity, int* width, int* height);
 void lo_engine_set_show_original(lo_engine* engine, int original);
 void lo_engine_set_compare(lo_engine* engine, int mode, float split);
 void lo_engine_set_clipping(lo_engine* engine, int clipping);

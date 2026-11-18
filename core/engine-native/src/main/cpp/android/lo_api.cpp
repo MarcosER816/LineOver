@@ -1,6 +1,7 @@
 #include "lo_api.h"
 
 #include <algorithm>
+#include <vector>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -200,6 +201,17 @@ int lo_engine_auto_light(lo_engine* engine, float* exposure, float* blacks) {
 }
 
 int lo_engine_auto_levels(lo_engine* engine, float* out6) { return engine->engine->autoLevels(out6) ? 1 : 0; }
+
+int lo_engine_render_thumbnail(lo_engine* engine, const char* graph_json, uint8_t* out, int capacity, int* width, int* height) {
+    std::vector<std::uint8_t> rgba;
+    int w = 0, h = 0;
+    if (!engine->engine->renderThumbnail(graph_json, &rgba, &w, &h)) return 0;
+    if (static_cast<std::size_t>(capacity) < rgba.size()) return 0;
+    std::copy(rgba.begin(), rgba.end(), out);
+    *width = w;
+    *height = h;
+    return 1;
+}
 
 void lo_engine_set_show_original(lo_engine* engine, int original) { engine->engine->setShowOriginal(original != 0); }
 

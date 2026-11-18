@@ -16,8 +16,8 @@ listed in `TOOL_CATALOG.md`; stages 1–4 build the foundation they plug into.
 | 5 | Light | Exposure, Contrast, Highlights, Shadows, Whites, Blacks, Brightness; Histogram; clipping warnings; before / after (hold, split, side by side) | ✅ |
 | 6 | Color basics | White balance, Vibrance, Saturation, HSL / Color Mixer, Invert, Posterize, Threshold | ✅ |
 | 7 | Curves and grading | Curves (point, parametric), Levels; Color Grading, Split toning, Color Balance, Selective Color, Channel Mixer, Black & White, Photo Filter, Gradient Map, Calibration | ✅ |
-| 8 | History and projects | Undo / redo, history list, snapshots, versions, `.loproj` project file (before / after moved to Stage 5) | 🔜 |
-| 9 | Crop and optics | Crop, aspect ratios, Straighten, Rotate, Flip, perspective crop; Upright, lens distortion, chromatic aberration, lens vignetting | ⬜ |
+| 8 | History and projects | Undo / redo, history list, snapshots, versions, `.loproj` project file (before / after moved to Stage 5) | ✅ |
+| 9 | Crop and optics | Crop, aspect ratios, Straighten, Rotate, Flip, perspective crop; Upright, lens distortion, chromatic aberration, lens vignetting | 🔜 |
 | 10 | Effects and detail | Texture, Clarity, Dehaze, Vignette, Grain; Sharpen, Noise reduction | ⬜ |
 | 11 | Presets and Auto | Presets, Profiles, 3D LUTs, copy / paste settings, Auto | ⬜ |
 | 12 | Export | JPEG, PNG, WebP, HEIF, AVIF, TIFF, Ultra HDR; resize, metadata, watermark, ICC; output to `Pictures/LineOver` | ⬜ |

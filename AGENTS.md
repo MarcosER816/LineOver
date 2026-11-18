@@ -143,6 +143,16 @@ python3 tools/golden/generate.py --check
 - Full-resolution bitmaps never exist on the Java heap: previews are ≤ 2048 px, tiles are
   512 px regions recycled after conversion.
 
+## History and projects (Stage 8)
+
+- Every edit goes through `EditorViewModel.reduce`, which records it in `EditHistory`; never
+  set `EditorState.graph` without recording it (or reading it back with `showingGraph`).
+- A new continuous control reports its release with `EditorIntent.EndEdit`
+  (`onValueChangeFinished`), so a drag stays one step.
+- `.loproj`: change `ProjectFile.SCHEMA_VERSION` only with a `ProjectMigration` and a test;
+  never edit an old migration. Writes go through `AtomicFiles`; never write a project file in
+  place.
+
 ## Editor shell (frozen after Stage 3)
 
 - Every tool is defined once in `core/ui/.../tools/ToolRegistry.kt`; `ToolCatalogTest`
