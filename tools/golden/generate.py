@@ -24,6 +24,7 @@ import reference
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 GOLDEN_DIR = REPO_ROOT / "testdata" / "golden"
+PHOTO_DIR = REPO_ROOT / "testdata" / "photos"
 
 # Float files are compared with this tolerance in --check so that a different
 # BLAS / colour-science patch release does not make committed files look stale.
@@ -66,6 +67,7 @@ def build_outputs() -> dict[str, np.ndarray]:
     outputs.update(light_outputs())
     outputs.update(color_outputs())
     outputs.update(grade_outputs())
+    outputs.update(photo_outputs())
     return outputs
 
 
@@ -130,6 +132,28 @@ def grade_outputs() -> dict[str, np.ndarray]:
         for index, params in enumerate(settings, start=1):
             outputs[f"grade/{name}_{index}_f32.npy"] = op(image, params)
         outputs[f"grade/{name}_gpu_srgb_display_f32.npy"] = reference.working_to_display(op(image, settings[1]), "srgb")
+    return outputs
+
+
+def photo_outputs() -> dict[str, np.ndarray]:
+    """Real photos (testdata/photos): 32 x 32 block means of each photo in the working
+    space (the device's full-resolution decode is compared with them, and they are the
+    96 x 128 inputs of the ctest / GPU cases), block means of the checklist edits run at
+    full resolution, and each edit on the 96 x 128 photo (working + sRGB display)."""
+    outputs = {}
+    small = {}
+    for name, file in reference.PHOTOS.items():
+        full = reference.photo_rec2020(PHOTO_DIR / file)
+        small[name] = reference.block_mean(full)
+        outputs[f"photos/{name}_rec2020_f32.npy"] = small[name]
+        for edit, (photo, fn) in reference.PHOTO_EDITS.items():
+            if photo == name:
+                outputs[f"photos/{edit}_full_f32.npy"] = reference.block_mean(reference.pointwise_chunked(fn, full))
+        del full
+    for edit, (photo, fn) in {**reference.PHOTO_EDITS, **reference.PHOTO_REGION_EDITS}.items():
+        out = fn(small[photo]).astype(np.float32)
+        outputs[f"photos/{edit}_f32.npy"] = out
+        outputs[f"photos/{edit}_gpu_srgb_display_f32.npy"] = reference.working_to_display(out, "srgb")
     return outputs
 
 

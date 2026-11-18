@@ -71,6 +71,7 @@ CI run link, APK artifact link, screenshot diffs and the phone checklist.
 | `gradle/libs.versions.toml` | The only place versions are pinned |
 | `build-logic/convention` | `lineover.*` convention plugins used by every module |
 | `tools/golden`, `testdata/golden` | Python reference implementations and their golden files |
+| `testdata/photos` | Mark's real photos (POCO F7 Ultra, Ultra HDR, Display P3), used by `photo_test` and `RealPhotoTest` |
 
 The module list in `settings.gradle.kts` is **fixed forever**; never add, remove or rename
 a module.

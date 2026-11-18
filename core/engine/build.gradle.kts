@@ -12,9 +12,10 @@ android {
     }
 
     sourceSets {
-        // Instrumented tests read the golden reference files as assets.
+        // Instrumented tests read the golden reference files and the real photos as assets.
         getByName("androidTest") {
             assets.directories.add(rootProject.file("testdata/golden").path)
+            assets.directories.add(rootProject.file("testdata/photos").path)
         }
     }
 }

@@ -126,9 +126,41 @@ POCO F7 Ultra, `lineover-<sha>.apk`:
 - [ ] Levels → Auto on a flat photo; Photo Filter → Warming 85; Black & White on, move Blues;
       Gradient Map → Teal – orange.
 
+## Addendum: tests on real photos
+
+Mark added three of his own photos (POCO F7 Ultra, 3072 × 4096 Ultra HDR JPEGs, ICC
+colourants exactly Display P3, no GPS). They moved from `testdata/` to `testdata/photos/`
+(androidTest assets of `:core:engine`).
+
+- `reference.photo_rec2020` decodes them with OpenCV as Display P3 and converts them to the
+  working space; `generate.py` writes 14 files to `testdata/golden/photos` (2.7 MB): each
+  photo as 32 × 32 block means (96 × 128), the phone-checklist edits run at **full
+  resolution** and then block-averaged, and each edit on the 96 × 128 photo (working + sRGB
+  display). OpenCV and Pillow decode the files identically (0 difference).
+- Cases (the checklists of Stages 5–7): S-curve on `drop`, teal shadows / orange highlights
+  on `bird`, Highlights −80 / Shadows +60 on `bird`, orange saturation +60 on `marigold`.
+- `photo_test` (ctest, 5): each edit built from the app's graph JSON, cpuRef vs Python, 1e-3.
+- `RealPhotoTest` (device): the photos open as Display P3 with their real gain maps and a
+  2048 px preview; the full-resolution path (region decoder → P3 → working space → CPU ops,
+  48 tiles of 512 px) matches Python's decode and the full-resolution edits as block means
+  (8-bit tolerance: 2/255 max, 0.5/255 mean); the GPU matches the reference on the four
+  edits (3/255).
+
+No existing golden file changed.
+
+Seen on the photos (questions below): the orange highlights wheel at 50 tints the bright
+sky strongly peach while teal in the shadows is faint; orange saturation +60 drifts the
+marigolds towards red on an sRGB display because the display transform clips each channel
+(out-of-gamut colours are kept until the display, then clipped per channel).
+
 ## Open questions (R12)
 
 1. **Curve editor size**: is it usable one-handed in the panel, or should it open as a bigger
    modal (e.g. full-height sheet)? Default: in the panel (high detent, scrolls).
 2. (Stage 6) White balance / HSL strength vs another editor? (Stage 5) Highlights / Shadows
-   halos? (Stage 4) Sample files for `testdata`?
+   halos? (Stage 4) Sample files: answered, see the addendum above.
+3. **Color Grading strength** (real photos): the highlights wheel tints near-white (sky)
+   strongly. Should it be gentler on near-white, like other editors? Default: unchanged.
+4. **Display gamut mapping** (real photos): saturated oranges clip per channel at the
+   display and shift towards red. Should the display transform map out-of-gamut colours
+   (reduce chroma at constant hue in OKLCh) instead of clipping? Default: unchanged.

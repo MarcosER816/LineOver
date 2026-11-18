@@ -249,6 +249,7 @@ SHA-256 (`Sha256`) before loading, and Settings can delete it. The runtime is Li
 | Layer | Tool | Where |
 | --- | --- | --- |
 | Reference results | Python (NumPy, OpenCV, colour-science) | `tools/golden` → `testdata/golden` |
+| Real photos | Mark's JPEGs in `testdata/photos`, decoded by OpenCV as Display P3; 32 × 32 block means | `photo_test` (ctest), `RealPhotoTest` (device: open, full-resolution decode + edits, GPU) |
 | Engine, CPU, host | ctest + `GoldenAssert` (C++) | `core/engine-native/src/main/cpp/tests` |
 | Engine on device (JNI, GL) | Instrumented tests + `GoldenAssert` (Kotlin) | `core/engine/src/androidTest` |
 | Kotlin logic | JUnit 4 | `src/test` of each module |
