@@ -252,10 +252,39 @@ Native **C++17, OpenGL ES 3**, in `:core:engine-native`; Kotlin reaches it throu
 - GLSL indexes uniform arrays with constants only (generated unrolled code), after
   SwiftShader mishandled dynamic indexing in Stage 6.
 
+### Crop and optics (Stage 9)
+
+- **One geometry op, one resample.** Crop, straighten, quarter turns, flips, Upright, the
+  manual transform and perspective crop are composed in Kotlin (`GeometryMath.compose`,
+  `CropMath`, `Mat3` / `Homography` DLT) into ONE 3 x 3 matrix: output normalised (u, v) ->
+  source pixels (edges at 0 and width). The op (`OpParams.Geometry`, JSON `geometry`) also
+  carries Brown-Conrady k1 / k2 (r normalised by the half diagonal), a radial scale per
+  channel for chromatic aberration, lens vignetting and the panel values (`settings`, which
+  the native parser ignores). It is first in `editOps()`.
+- **Ops stay in source space.** The colour ops run on the source preview and source tiles as
+  before (the lens vignetting correction is a source-space op placed first); the geometry is
+  applied where pixels are sampled: the display pass maps every screen pixel output ->
+  source and samples once with OpenCV's bicubic (Keys a = -0.75, exact float positions,
+  border 0); `geometry.h` `warp()` is the same on the CPU (thumbnails, export, gain map).
+- **Tiles under a geometry**: the visible output rect's source footprint picks the source
+  tiles (level from the local output scale); each tile is drawn over the output rect its
+  source rect maps to (`outputRectOf`) and discards fragments outside its own rect.
+  Export renders 512 px *output* tiles (`renderOutputTile`: ops on the footprint, then the
+  warp; large footprints are split). The histogram reads the preview warped to the output.
+- **Analysis** (`lines.h`, on a <= 1024 px copy of the preview): LSD-style line segments for
+  Upright (vanishing points by least squares, camera rotation K·R·K⁻¹, limited to ±25° with a
+  fallback to Level), Canny + Hough for the horizon (auto straighten), and a radial
+  edge-alignment search for chromatic aberration.
+- **Editor**: while a crop tool is open the canvas draws the whole frame (`canvasGraph`) and
+  the overlay draws the crop; the canvas image size is the output size. Crop gestures live in
+  `CanvasView` (`CropGestures`); `CropOverlayLayer` only draws, reading the transform in the
+  draw phase.
+- Ultra HDR: `EngineSession.gainmapFor(graph)` warps the gain map with the same geometry.
+
 `core/engine-native/src/main/cpp`:
 
 ```
-include/lineover/   public C++ API (portable): color, ops, light, color_ops, grade_ops, graph, tiling, tile_store
+include/lineover/   public C++ API (portable): color, ops, light, color_ops, grade_ops, graph, tiling, tile_store, geometry, lines, thumbnail
 src/                portable engine core                         -> lo_engine (static)
 third_party/zstd    zstd 1.5.7 sources (BSD), spilled tiles      -> lo_zstd (static)
 android/            render thread, EGL, GL pipeline, C API (lo_api.h), JNI -> liblineover_engine.so

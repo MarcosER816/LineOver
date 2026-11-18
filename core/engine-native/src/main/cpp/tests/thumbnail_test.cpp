@@ -40,12 +40,13 @@ LO_TEST(a_graph_renders_like_its_ops_then_the_display_transform) {
     const lo::ImageF32 source = lo::boxDownsample(rgba.data(), 64, 48, 64);
     std::vector<std::uint8_t> identity, brighter, expected(source.rgba.size());
     std::string error;
-    LO_CHECK(lo::renderThumbnail(source, nullptr, R"({"schemaVersion":1,"layers":[]})", &identity, &error));
+    int w = 0, h = 0;
+    LO_CHECK(lo::renderThumbnail(source, nullptr, R"({"schemaVersion":1,"layers":[]})", &identity, &error, &w, &h));
     lo::color::workingToDisplay8(source.rgba.data(), expected.data(), source.rgba.size() / 4, lo::color::Display::Srgb);
     LO_CHECK(identity == expected);
     LO_CHECK(lo::renderThumbnail(source, nullptr,
                                  R"({"schemaVersion":1,"layers":[{"id":"background","ops":[{"op":"exposure","ev":1.0}]}]})",
-                                 &brighter, &error));
+                                 &brighter, &error, &w, &h));
     std::vector<float> doubled = source.rgba;
     for (std::size_t i = 0; i < doubled.size(); ++i)
         if (i % 4 != 3) doubled[i] *= 2.f;
@@ -53,7 +54,7 @@ LO_TEST(a_graph_renders_like_its_ops_then_the_display_transform) {
     int worst = 0;
     for (std::size_t i = 0; i < expected.size(); ++i) worst = std::max(worst, std::abs(int(brighter[i]) - int(expected[i])));
     LO_CHECK(worst <= 1);
-    LO_CHECK(!lo::renderThumbnail(source, nullptr, "not json", &brighter, &error));
+    LO_CHECK(!lo::renderThumbnail(source, nullptr, "not json", &brighter, &error, &w, &h));
     LO_CHECK(!error.empty());
 }
 

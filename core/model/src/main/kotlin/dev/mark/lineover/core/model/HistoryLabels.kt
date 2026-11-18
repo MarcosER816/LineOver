@@ -74,6 +74,7 @@ object HistoryLabels {
             val b = new[name]
             when {
                 a == b -> emptyList()
+                name == GEOMETRY -> GeometryLabels.changes(a, b).map { OpChange(GEOMETRY, it.key, it.label) }
                 else -> fieldChanges(name, a, b)
             }
         }
@@ -120,7 +121,7 @@ object HistoryLabels {
 
     private fun JsonObject.name(): String = (get("op") as? JsonPrimitive)?.content ?: "op"
 
-    private fun format(
+    internal fun format(
         op: String,
         field: String,
         value: Float,
@@ -149,6 +150,7 @@ object HistoryLabels {
     fun name(op: String): String = NAMES[op] ?: op.replace('_', ' ').replaceFirstChar { it.uppercase() }
 
     private const val FRACTION_BELOW = 10f
+    private const val GEOMETRY = "geometry"
 
     private val NAMES =
         mapOf(
@@ -178,6 +180,7 @@ object HistoryLabels {
             "photo_filter" to "Photo filter",
             "gradient_map" to "Gradient map",
             "calibration" to "Calibration",
+            "geometry" to "Geometry",
         )
 
     /** Ops with one meaningful value: the label is the op's name. */
@@ -187,6 +190,6 @@ object HistoryLabels {
     /** Ops whose fields read well alone: "Highlights -40", "Temperature 5600 K". */
     private val FIELD_TITLED = setOf("highlights_shadows", "white_balance")
 
-    private val UNSIGNED = setOf("temperature", "levels", "level", "density", "hue")
+    private val UNSIGNED = setOf("temperature", "levels", "level", "density", "hue", "scale", "vignettingMidpoint")
     private val UNSIGNED_OPS = setOf("posterize", "threshold")
 }

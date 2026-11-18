@@ -4,6 +4,7 @@
 #include <android/log.h>
 
 #include <algorithm>
+#include <cmath>
 #include <chrono>
 #include <future>
 
@@ -168,11 +169,54 @@ void Engine::requestRedraw() {
     wake_.notify_all();
 }
 
+namespace {
+// Long edge of the thumbnail source: sharp enough for the Home grid on a 1440 px phone.
+constexpr int kThumbnailEdge = 512;
+// Long edge of the analysis copy (segments, horizon, chromatic aberration).
+constexpr int kAnalysisEdge = 1024;
+// Most source tiles kept in view through a geometry (strong perspective magnifies far parts).
+constexpr std::size_t kMaxGeometryTiles = 48;
+// Export renders an output region in parts while its source footprint is larger than this.
+constexpr long long kMaxFootprintPixels = 2048LL * 2048LL;
+
+// The geometry refers to sourceWidth x sourceHeight; scale its matrix to `width` x `height`.
+Geometry fitted(Geometry g, int width, int height) {
+    if (g.sourceWidth > 0 && g.sourceHeight > 0 && (g.sourceWidth != width || g.sourceHeight != height)) {
+        const double sx = static_cast<double>(width) / g.sourceWidth, sy = static_cast<double>(height) / g.sourceHeight;
+        for (int c = 0; c < 3; ++c) {
+            g.matrix[c] *= sx;
+            g.matrix[3 + c] *= sy;
+        }
+    }
+    g.sourceWidth = width;
+    g.sourceHeight = height;
+    return g;
+}
+
+GeometryDraw drawOf(const Geometry& g) {
+    GeometryDraw d;
+    for (int i = 0; i < 9; ++i) d.matrix[i] = static_cast<float>(g.matrix[i]);
+    d.outSize[0] = static_cast<float>(g.outputWidth);
+    d.outSize[1] = static_cast<float>(g.outputHeight);
+    d.srcSize[0] = static_cast<float>(g.sourceWidth);
+    d.srcSize[1] = static_cast<float>(g.sourceHeight);
+    d.lens[0] = static_cast<float>(g.k1);
+    d.lens[1] = static_cast<float>(g.k2);
+    d.lens[2] = static_cast<float>(g.caRed);
+    d.lens[3] = static_cast<float>(g.caBlue);
+    d.drawRect[2] = d.outSize[0];
+    d.drawRect[3] = d.outSize[1];
+    return d;
+}
+}  // namespace
+
 void Engine::openImage(int width, int height) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
         imageWidth_ = width;
         imageHeight_ = height;
+        hasGeometry_ = hasRawGeometry_ && width > 0 && height > 0;
+        if (hasGeometry_) geometry_ = fitted(rawGeometry_, width, height);
         ++imageGeneration_;
         pendingPreview_.clear();
         previewChanged_ = false;
@@ -187,10 +231,6 @@ void Engine::openImage(int width, int height) {
     requestRedraw();
 }
 
-namespace {
-// Long edge of the thumbnail source: sharp enough for the Home grid on a 1440 px phone.
-constexpr int kThumbnailEdge = 512;
-}  // namespace
 
 void Engine::setPreview(std::vector<float> working, int width, int height) {
     // Image analysis for the Light tools, here on the caller's (background) thread.
@@ -202,10 +242,12 @@ void Engine::setPreview(std::vector<float> working, int width, int height) {
     float channels[6];
     grade::channelPercentiles(working.data(), pixels, 0.001f, 0.999f, channels, std::max<std::size_t>(1, pixels / 1000000));
     auto thumbSource = std::make_shared<const ImageF32>(boxDownsample(working.data(), width, height, kThumbnailEdge));
+    auto analysis = std::make_shared<const ImageF32>(boxDownsample(working.data(), width, height, kAnalysisEdge));
     {
         std::lock_guard<std::mutex> lock(mutex_);
         guided_ = std::move(guided);
         thumbSource_ = std::move(thumbSource);
+        analysisSource_ = std::move(analysis);
         guidedChanged_ = true;
         havePercentiles_ = true;
         lowPercentile_ = low;
@@ -274,13 +316,20 @@ bool Engine::renderThumbnail(const std::string& graphJson, std::vector<std::uint
     }
     if (!source || source->width == 0) return false;
     std::string error;
-    if (!lo::renderThumbnail(*source, guided.get(), graphJson, rgba, &error)) return false;
-    *width = source->width;
-    *height = source->height;
-    return true;
+    return lo::renderThumbnail(*source, guided.get(), graphJson, rgba, &error, width, height);
+}
+
+void Engine::canvasToSource(float* u, float* v) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!hasGeometry_) return;
+    double x, y;
+    mapToSource(geometry_, geometry_.sourceWidth, geometry_.sourceHeight, *u, *v, 1, &x, &y);
+    *u = std::clamp(static_cast<float>(x / geometry_.sourceWidth), 0.f, 1.f);
+    *v = std::clamp(static_cast<float>(y / geometry_.sourceHeight), 0.f, 1.f);
 }
 
 bool Engine::samplePatch(float u, float v, OpType before, float rgb[3]) {
+    canvasToSource(&u, &v);
     constexpr int kPatch = 5;
     float pixels[kPatch * kPatch * 4];
     int count = 0;
@@ -324,6 +373,7 @@ bool Engine::samplePatch(float u, float v, OpType before, float rgb[3]) {
 
 bool Engine::sampleGrid(float u, float v, int n, float* rgba) {
     if (n <= 0 || n > 15) return false;
+    canvasToSource(&u, &v);
     return runSync([&] {
         if (previewSource_ == 0 || previewW_ < n || previewH_ < n || !gpu_.halfFloat()) return false;
         eglMakeCurrent(display_, pbuffer_, pbuffer_, context_);
@@ -390,8 +440,14 @@ bool Engine::setGraph(const std::string& json, std::string* error) {
     std::string skipped;
     std::shared_ptr<const OpList> ops = buildOps(graph, &skipped);
     if (!skipped.empty()) LOGW("unknown ops skipped: %s", skipped.c_str());
+    Geometry geometry;
+    const bool hasGeometry = geometryOf(graph, &geometry);
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        hasRawGeometry_ = hasGeometry;
+        rawGeometry_ = geometry;
+        hasGeometry_ = hasGeometry && imageWidth_ > 0 && imageHeight_ > 0;
+        if (hasGeometry_) geometry_ = fitted(geometry, imageWidth_, imageHeight_);
         ops_ = std::move(ops);
         ++graphVersion_;
         graphTimes_.emplace_back(graphVersion_, std::chrono::steady_clock::now());
@@ -624,8 +680,12 @@ void Engine::frame() {
     bool showOriginal, clipping;
     CompareMode compare;
     float split;
+    bool hasGeometry;
+    Geometry geometry;
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        hasGeometry = hasGeometry_;
+        geometry = geometry_;
         imageW = imageWidth_;
         imageH = imageHeight_;
         viewW = viewWidth_;
@@ -686,7 +746,7 @@ void Engine::frame() {
     // Sharp tiles: only when the preview is magnified on screen.
     std::vector<TileKey> visible;
     int level = -1;
-    if (imageW > 0 && imageH > 0 && viewW > 0 && viewH > 0) {
+    if (imageW > 0 && imageH > 0 && viewW > 0 && viewH > 0 && !hasGeometry) {
         const float previewScale = previewW_ > 0 ? static_cast<float>(previewW_) / imageW : 0.f;
         const float scale = transform.scale();
         if (scale > previewScale * 1.01f) {
@@ -696,6 +756,50 @@ void Engine::frame() {
                 visible = visibleTiles(transform, viewW, viewH, imageW, imageH, level);
             } else {
                 level = -1;
+            }
+        }
+    } else if (imageW > 0 && imageH > 0 && viewW > 0 && viewH > 0) {
+        // The canvas shows the output: the visible output rect -> the source pixels it reads
+        // (its footprint) -> the source tiles of the level that matches the screen there.
+        Affine toCanvas;
+        if (transform.invert(&toCanvas)) {
+            float minX = 1e30f, minY = 1e30f, maxX = -1e30f, maxY = -1e30f;
+            const float corners[4][2] = {{0.f, 0.f}, {static_cast<float>(viewW), 0.f}, {0.f, static_cast<float>(viewH)},
+                                         {static_cast<float>(viewW), static_cast<float>(viewH)}};
+            for (const auto& c : corners) {
+                float x, y;
+                toCanvas.apply(c[0], c[1], &x, &y);
+                minX = std::min(minX, x);
+                minY = std::min(minY, y);
+                maxX = std::max(maxX, x);
+                maxY = std::max(maxY, y);
+            }
+            const int x0 = std::max(0, static_cast<int>(std::floor(minX)));
+            const int y0 = std::max(0, static_cast<int>(std::floor(minY)));
+            const int x1 = std::min(geometry.outputWidth, static_cast<int>(std::ceil(maxX)));
+            const int y1 = std::min(geometry.outputHeight, static_cast<int>(std::ceil(maxY)));
+            if (x1 > x0 && y1 > y0) {
+                const double cu = 0.5 * (x0 + x1) / geometry.outputWidth, cv = 0.5 * (y0 + y1) / geometry.outputHeight;
+                // View pixels per source pixel at the middle of the view.
+                const float scale = transform.scale() * static_cast<float>(outputScaleAt(geometry, imageW, imageH, cu, cv));
+                const float previewScale = previewW_ > 0 ? static_cast<float>(previewW_) / imageW : 0.f;
+                if (scale > previewScale * 1.01f) {
+                    level = levelForScale(scale, levelCount(imageW, imageH));
+                    const float levelScale = 1.0f / static_cast<float>(1 << level);
+                    if (levelScale > previewScale * 1.01f) {
+                        int fp[4];
+                        footprint(geometry, imageW, imageH, x0, y0, x1 - x0, y1 - y0, fp);
+                        if (fp[2] > 0 && fp[3] > 0) {
+                            Affine select;
+                            select.e = static_cast<float>(-fp[0]);
+                            select.f = static_cast<float>(-fp[1]);
+                            visible = visibleTiles(select, fp[2], fp[3], imageW, imageH, level);
+                            if (visible.size() > kMaxGeometryTiles) visible.resize(kMaxGeometryTiles);
+                        }
+                    } else {
+                        level = -1;
+                    }
+                }
             }
         }
     }
@@ -795,16 +899,19 @@ void Engine::frame() {
             std::lock_guard<std::mutex> lock(mutex_);
             imageToNdc(ndc);
         }
+        // The original is shown through the same geometry: compare is about the edit's
+        // colours, and the split / side-by-side halves stay aligned.
+        const Geometry* geom = hasGeometry ? &geometry : nullptr;
         if (showOriginal || compare == CompareMode::Off) {
-            drawScene(showOriginal, ndc, imageW, imageH, level, drawable, clipping && !showOriginal);
+            drawScene(showOriginal, ndc, imageW, imageH, level, drawable, clipping && !showOriginal, geom);
         } else if (compare == CompareMode::Split) {
-            drawScene(false, ndc, imageW, imageH, level, drawable, clipping);
+            drawScene(false, ndc, imageW, imageH, level, drawable, clipping, geom);
             const int splitPx = static_cast<int>(split * static_cast<float>(viewW) + 0.5f);
             if (splitPx > 0) {
                 glEnable(GL_SCISSOR_TEST);
                 glScissor(0, 0, splitPx, viewH);
                 glClear(GL_COLOR_BUFFER_BIT);
-                drawScene(true, ndc, imageW, imageH, level, drawable, false);
+                drawScene(true, ndc, imageW, imageH, level, drawable, false, geom);
                 glDisable(GL_SCISSOR_TEST);
             }
         } else {
@@ -825,10 +932,10 @@ void Engine::frame() {
             glEnable(GL_SCISSOR_TEST);
             glViewport(0, 0, half, viewH);
             glScissor(0, 0, half, viewH);
-            drawScene(true, halfNdc, imageW, imageH, level, drawable, false);
+            drawScene(true, halfNdc, imageW, imageH, level, drawable, false, geom);
             glViewport(half, 0, viewW - half, viewH);
             glScissor(half, 0, viewW - half, viewH);
-            drawScene(false, halfNdc, imageW, imageH, level, drawable, clipping);
+            drawScene(false, halfNdc, imageW, imageH, level, drawable, clipping, geom);
             glDisable(GL_SCISSOR_TEST);
             glViewport(0, 0, viewW, viewH);
         }
@@ -882,9 +989,38 @@ void Engine::frame() {
 }
 
 void Engine::drawScene(bool original, const float ndc[9], int imageW, int imageH, int level,
-                       const std::vector<TileKey>& drawable, bool clipping) {
+                       const std::vector<TileKey>& drawable, bool clipping, const Geometry* geometry) {
     DisplayOptions options;
     options.clipping = clipping;
+    if (geometry != nullptr) {
+        // Canvas = output pixels; every draw samples its source once through the geometry.
+        const GeometryDraw base = drawOf(*geometry);
+        if (previewSource_ != 0 && imageW > 0) {
+            const GLuint texture = !original && previewResult_ != 0 ? previewResult_ : previewSource_;
+            gpu_.drawImage(texture, base.drawRect, ndc, output_, shaderEncodes_, options, &base);
+        }
+        if (level < 0) return;
+        const LevelInfo info = levelInfo(imageW, imageH, level);
+        const double span = static_cast<double>(1 << level);
+        for (const TileKey& key : drawable) {
+            const GpuTile& tile = gpuTiles_[key];
+            const Rect r = tileRect(info, key.tx, key.ty);
+            const double source[4] = {r.x * span, r.y * span, std::min(r.w * span, imageW - r.x * span),
+                                      std::min(r.h * span, imageH - r.y * span)};
+            double out[4];
+            if (!outputRectOf(*geometry, imageW, imageH, source, out)) continue;
+            GeometryDraw d = base;
+            for (int i = 0; i < 4; ++i) d.drawRect[i] = static_cast<float>(out[i]);
+            d.srcRect[0] = static_cast<float>(r.x) / info.width;
+            d.srcRect[1] = static_cast<float>(r.y) / info.height;
+            d.srcRect[2] = static_cast<float>(r.w) / info.width;
+            d.srcRect[3] = static_cast<float>(r.h) / info.height;
+            d.clampTile = true;
+            const GLuint texture = !original && tile.result != 0 ? tile.result : tile.source;
+            gpu_.drawImage(texture, d.drawRect, ndc, output_, shaderEncodes_, options, &d);
+        }
+        return;
+    }
     if (previewSource_ != 0 && imageW > 0) {
         const float rect[4] = {0.f, 0.f, static_cast<float>(imageW), static_cast<float>(imageH)};
         const GLuint texture = !original && previewResult_ != 0 ? previewResult_ : previewSource_;
@@ -938,9 +1074,37 @@ void Engine::serviceHistogram() {
     if (!histogramDirty_ || !histogramEnabled_ || previewSource_ == 0) return;
     const auto now = std::chrono::steady_clock::now();
     if (now < lastHistogram_ + kHistogramInterval) return;
-    const GLuint texture = previewResult_ != 0 ? previewResult_ : previewSource_;
-    const bool started = gpu_.computeSupported() ? gpu_.dispatchHistogram(texture, previewW_, previewH_)
-                                                 : gpu_.startReadback(texture, previewW_, previewH_);
+    GLuint texture = previewResult_ != 0 ? previewResult_ : previewSource_;
+    int histogramW = previewW_, histogramH = previewH_;
+    bool hasGeometry;
+    Geometry geometry;
+    int imageW;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        hasGeometry = hasGeometry_;
+        geometry = geometry_;
+        imageW = imageWidth_;
+    }
+    if (hasGeometry && imageW > 0) {
+        // The histogram of the output: the preview warped at the preview's scale.
+        const double scale = static_cast<double>(previewW_) / imageW;
+        histogramW = std::max(1, static_cast<int>(std::lround(geometry.outputWidth * scale)));
+        histogramH = std::max(1, static_cast<int>(std::lround(geometry.outputHeight * scale)));
+        if (histogramWarp_ == 0 || histogramWarpW_ != histogramW || histogramWarpH_ != histogramH) {
+            if (histogramWarp_ != 0) glDeleteTextures(1, &histogramWarp_);
+            histogramWarp_ = createTexture(histogramW, histogramH, gpu_.halfFloat(), nullptr);
+            histogramWarpW_ = histogramW;
+            histogramWarpH_ = histogramH;
+        }
+        std::string error;
+        if (!gpu_.warp(texture, drawOf(geometry), histogramWarp_, histogramW, histogramH, &error)) {
+            LOGW("histogram warp failed: %s", error.c_str());
+            return;
+        }
+        texture = histogramWarp_;
+    }
+    const bool started = gpu_.computeSupported() ? gpu_.dispatchHistogram(texture, histogramW, histogramH)
+                                                 : gpu_.startReadback(texture, histogramW, histogramH);
     if (!started) return;
     histogramFence_ = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
     glFlush();
@@ -1002,11 +1166,173 @@ bool Engine::renderTileCpu(const TileKey& key, std::vector<float>* out, int* wid
     return true;
 }
 
+void Engine::outputSize(int* width, int* height) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    *width = hasGeometry_ ? geometry_.outputWidth : imageWidth_;
+    *height = hasGeometry_ ? geometry_.outputHeight : imageHeight_;
+}
+
+std::vector<TileKey> Engine::outputTileSources(int tx, int ty) {
+    bool hasGeometry;
+    Geometry g;
+    int imageW, imageH;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        hasGeometry = hasGeometry_;
+        g = geometry_;
+        imageW = imageWidth_;
+        imageH = imageHeight_;
+    }
+    std::vector<TileKey> missing;
+    if (!hasGeometry) {
+        if (!store_.contains({0, tx, ty})) missing.push_back({0, tx, ty});
+        return missing;
+    }
+    const int x0 = tx * kTileSize, y0 = ty * kTileSize;
+    const int w = std::min(kTileSize, g.outputWidth - x0), h = std::min(kTileSize, g.outputHeight - y0);
+    if (w <= 0 || h <= 0) return missing;
+    int fp[4];
+    footprint(g, imageW, imageH, x0, y0, w, h, fp);
+    if (fp[2] <= 0 || fp[3] <= 0) return missing;
+    const LevelInfo info = levelInfo(imageW, imageH, 0);
+    for (int y = fp[1] / kTileSize; y <= (fp[1] + fp[3] - 1) / kTileSize && y < info.tilesY; ++y)
+        for (int x = fp[0] / kTileSize; x <= (fp[0] + fp[2] - 1) / kTileSize && x < info.tilesX; ++x)
+            if (!store_.contains({0, x, y})) missing.push_back({0, x, y});
+    return missing;
+}
+
+bool Engine::renderOutputRegion(const Geometry& g, int imageW, int imageH, int x0, int y0, int w, int h, float* out,
+                                int stride) {
+    int fp[4];
+    footprint(g, imageW, imageH, x0, y0, w, h, fp);
+    if (static_cast<long long>(fp[2]) * fp[3] > kMaxFootprintPixels && (w > 16 || h > 16)) {
+        // A far part of a strong perspective reads a large source area: render in halves.
+        if (w >= h) {
+            const int half = w / 2;
+            return renderOutputRegion(g, imageW, imageH, x0, y0, half, h, out, stride) &&
+                   renderOutputRegion(g, imageW, imageH, x0 + half, y0, w - half, h, out + 4 * half, stride);
+        }
+        const int half = h / 2;
+        return renderOutputRegion(g, imageW, imageH, x0, y0, w, half, out, stride) &&
+               renderOutputRegion(g, imageW, imageH, x0, y0 + half, w, h - half, out + static_cast<std::size_t>(half) * stride * 4,
+                                  stride);
+    }
+    std::vector<float> region(static_cast<std::size_t>(w) * h * 4, 0.f);
+    if (fp[2] > 0 && fp[3] > 0) {
+        // The footprint assembled from the level-0 tiles, then the ops on it (source space).
+        std::vector<float> source(static_cast<std::size_t>(fp[2]) * fp[3] * 4, 0.f);
+        const LevelInfo info = levelInfo(imageW, imageH, 0);
+        for (int ty = fp[1] / kTileSize; ty <= (fp[1] + fp[3] - 1) / kTileSize && ty < info.tilesY; ++ty) {
+            for (int tx = fp[0] / kTileSize; tx <= (fp[0] + fp[2] - 1) / kTileSize && tx < info.tilesX; ++tx) {
+                const std::shared_ptr<const Tile> tile = store_.get({0, tx, ty});
+                if (!tile) return false;
+                const Rect r = tileRect(info, tx, ty);
+                const int ax = std::max(r.x, fp[0]), ay = std::max(r.y, fp[1]);
+                const int bx = std::min(r.x + tile->width, fp[0] + fp[2]), by = std::min(r.y + tile->height, fp[1] + fp[3]);
+                for (int y = ay; y < by; ++y) {
+                    const float* src = tile->pixels.data() + (static_cast<std::size_t>(y - r.y) * tile->width + (ax - r.x)) * 4;
+                    float* dst = source.data() + (static_cast<std::size_t>(y - fp[1]) * fp[2] + (ax - fp[0])) * 4;
+                    std::copy(src, src + (bx - ax) * 4, dst);
+                }
+            }
+        }
+        std::shared_ptr<const OpList> ops;
+        std::shared_ptr<const GuidedCoefficients> guided;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            ops = ops_;
+            guided = guided_;
+        }
+        OpRegion opRegion;
+        opRegion.rect[0] = static_cast<float>(fp[0]) / imageW;
+        opRegion.rect[1] = static_cast<float>(fp[1]) / imageH;
+        opRegion.rect[2] = static_cast<float>(fp[2]) / imageW;
+        opRegion.rect[3] = static_cast<float>(fp[3]) / imageH;
+        opRegion.width = fp[2];
+        opRegion.height = fp[3];
+        opRegion.coefficients = guided.get();
+        ops->cpuRefRegion(source.data(), source.data(), opRegion);
+        WarpSource ws;
+        ws.rgba = source.data();
+        ws.width = fp[2];
+        ws.height = fp[3];
+        ws.x0 = fp[0];
+        ws.y0 = fp[1];
+        ws.scale = 1.0;
+        warp(g, imageW, imageH, ws, 1.0, x0, y0, w, h, region.data());
+    }
+    for (int y = 0; y < h; ++y)
+        std::copy(region.data() + static_cast<std::size_t>(y) * w * 4, region.data() + static_cast<std::size_t>(y + 1) * w * 4,
+                  out + static_cast<std::size_t>(y) * stride * 4);
+    return true;
+}
+
+bool Engine::renderOutputTile(int tx, int ty, std::vector<float>* out, int* width, int* height) {
+    bool hasGeometry;
+    Geometry g;
+    int imageW, imageH;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        hasGeometry = hasGeometry_;
+        g = geometry_;
+        imageW = imageWidth_;
+        imageH = imageHeight_;
+    }
+    if (!hasGeometry) return renderTileCpu({0, tx, ty}, out, width, height);
+    const int x0 = tx * kTileSize, y0 = ty * kTileSize;
+    const int w = std::min(kTileSize, g.outputWidth - x0), h = std::min(kTileSize, g.outputHeight - y0);
+    if (w <= 0 || h <= 0) return false;
+    out->assign(static_cast<std::size_t>(w) * h * 4, 0.f);
+    if (!renderOutputRegion(g, imageW, imageH, x0, y0, w, h, out->data(), w)) return false;
+    *width = w;
+    *height = h;
+    return true;
+}
+
+bool Engine::lineSegments(std::vector<LineSegment>* out) {
+    std::shared_ptr<const ImageF32> source;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        source = analysisSource_;
+    }
+    if (!source || source->width == 0) return false;
+    *out = detectSegments(source->rgba.data(), source->width, source->height);
+    return true;
+}
+
+bool Engine::horizon(float* degrees) {
+    std::shared_ptr<const ImageF32> source;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        source = analysisSource_;
+    }
+    return source && source->width > 0 && horizonAngle(source->rgba.data(), source->width, source->height, degrees);
+}
+
+bool Engine::chromaticAberration(float* caRed, float* caBlue) {
+    std::shared_ptr<const ImageF32> source;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        source = analysisSource_;
+    }
+    return source && source->width > 0 &&
+           estimateChromaticAberration(source->rgba.data(), source->width, source->height, caRed, caBlue);
+}
+
 bool Engine::gpuSelfTest(const float* in, int width, int height, const std::string& graph, std::uint8_t* out,
-                         std::string* error) {
+                         std::size_t capacity, std::string* error) {
     Graph parsed;
     if (!parseGraph(graph, &parsed, error)) return false;
     std::shared_ptr<const OpList> ops = buildOps(parsed, nullptr);
+    Geometry rawGeometry;
+    const bool hasGeometry = geometryOf(parsed, &rawGeometry);
+    const Geometry geometry = hasGeometry ? fitted(rawGeometry, width, height) : Geometry{};
+    const int outW = hasGeometry ? geometry.outputWidth : width;
+    const int outH = hasGeometry ? geometry.outputHeight : height;
+    if (capacity < static_cast<std::size_t>(outW) * outH * 4) {
+        *error = "output buffer too small for " + std::to_string(outW) + " x " + std::to_string(outH);
+        return false;
+    }
     std::string failure;
     const bool ok = runSync([&] {
         eglMakeCurrent(display_, pbuffer_, pbuffer_, context_);
@@ -1024,18 +1350,24 @@ bool Engine::gpuSelfTest(const float* in, int width, int height, const std::stri
             GLuint target = 0, fbo = 0;
             glGenTextures(1, &target);
             glBindTexture(GL_TEXTURE_2D, target);
-            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, outW, outH, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
             glGenFramebuffers(1, &fbo);
             glBindFramebuffer(GL_FRAMEBUFFER, fbo);
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, target, 0);
-            glViewport(0, 0, width, height);
+            glViewport(0, 0, outW, outH);
             glClearColor(0.f, 0.f, 0.f, 0.f);
             glClear(GL_COLOR_BUFFER_BIT);
             // Image row 0 -> framebuffer row 0 (the first row glReadPixels returns).
-            const float ndc[9] = {2.f / width, 0.f, -1.f, 0.f, 2.f / height, -1.f, 0.f, 0.f, 1.f};
-            const float rect[4] = {0.f, 0.f, static_cast<float>(width), static_cast<float>(height)};
-            gpu_.drawImage(result, rect, ndc, color::Display::Srgb, true);
-            glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, out);
+            const float ndc[9] = {2.f / outW, 0.f, -1.f, 0.f, 2.f / outH, -1.f, 0.f, 0.f, 1.f};
+            const float rect[4] = {0.f, 0.f, static_cast<float>(outW), static_cast<float>(outH)};
+            if (hasGeometry) {
+                // The canvas's own geometry draw: one bicubic resample in the display pass.
+                const GeometryDraw draw = drawOf(geometry);
+                gpu_.drawImage(result, rect, ndc, color::Display::Srgb, true, {}, &draw);
+            } else {
+                gpu_.drawImage(result, rect, ndc, color::Display::Srgb, true);
+            }
+            glReadPixels(0, 0, outW, outH, GL_RGBA, GL_UNSIGNED_BYTE, out);
             const std::string glError = glErrorString();
             if (!glError.empty()) {
                 failure = "GL error " + glError;

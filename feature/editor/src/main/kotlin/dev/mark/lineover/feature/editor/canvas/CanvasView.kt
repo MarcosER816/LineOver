@@ -81,7 +81,10 @@ enum class PickMode { None, Eyedropper, Targeted }
  * - Pick modes ([PickMode]): the white-balance eyedropper (the finger's image point, the
  *   pick on lift) and the HSL targeted adjustment (vertical drag on a colour).
  *
- * Other one-finger gestures are left free for the tools of later stages (brushes, handles).
+ * - Crop / Optics (Stage 9, [CropGestures]): 48 dp crop handles, perspective-crop corners,
+ *   Guided Upright lines; double tap on the frame resets the crop.
+ *
+ * Other one-finger gestures are left free for the tools of later stages (brushes).
  */
 
 @SuppressLint("ViewConstructor")
@@ -134,6 +137,29 @@ class CanvasView(
             field = value
         }
 
+    private val crop = CropGestures(transform, HANDLE_DP * resources.displayMetrics.density)
+
+    /** Crop / perspective / guide editing (Stage 9): one finger drags its handles. */
+    var cropFrame: CropFrame?
+        get() = crop.frame
+        set(value) {
+            crop.frame = value
+        }
+
+    var cropListener: CropGestureListener?
+        get() = crop.listener
+        set(value) {
+            crop.listener = value
+        }
+
+    /** The overlay's view of the transform (written on every publish). */
+    var matrix: CanvasMatrix? = null
+        set(value) {
+            field = value
+            crop.matrix = value
+            value?.update(transform)
+        }
+
     private val imagePoint = FloatArray(2)
     private var lastY = 0f
 
@@ -155,6 +181,8 @@ class CanvasView(
             context,
             object : GestureDetector.SimpleOnGestureListener() {
                 override fun onDoubleTap(e: MotionEvent): Boolean {
+                    // Cropping: double tap on the frame resets the crop.
+                    if (crop.frame?.mode == CropMode.Crop) return true.also { crop.listener?.onCropReset() }
                     val fitted = transform.doubleTapTarget(e.x, e.y, target)
                     animateTo(target[0], target[1], target[2], fitted)
                     return true
@@ -177,6 +205,16 @@ class CanvasView(
         transform.setImageSize(renderer.imageWidth, renderer.imageHeight)
         if (currentSurround != 0) renderer.setSurround(currentSurround)
         surface?.let { attachTo(renderer, it) }
+        publish()
+    }
+
+    /** The canvas image size (the edit's output, or the frame while cropping): refits on change. */
+    fun setImageSize(
+        width: Int,
+        height: Int,
+    ) {
+        if (width.toFloat() == transform.imageWidth && height.toFloat() == transform.imageHeight) return
+        transform.setImageSize(width, height)
         publish()
     }
 
@@ -296,6 +334,10 @@ class CanvasView(
         x: Float,
         y: Float,
     ) {
+        if (crop.begin(x, y)) {
+            oneFinger = OneFinger.Crop
+            return
+        }
         when (pickMode) {
             PickMode.Eyedropper -> {
                 oneFinger = OneFinger.Eyedropper
@@ -359,7 +401,7 @@ class CanvasView(
                 lastX = x
             }
 
-            OneFinger.Eyedropper, OneFinger.Targeted -> {
+            OneFinger.Eyedropper, OneFinger.Targeted, OneFinger.Crop -> {
                 movePick(x, y)
             }
 
@@ -382,7 +424,9 @@ class CanvasView(
         x: Float,
         y: Float,
     ) {
-        if (oneFinger == OneFinger.Eyedropper) {
+        if (oneFinger == OneFinger.Crop) {
+            crop.move(x, y)
+        } else if (oneFinger == OneFinger.Eyedropper) {
             val p = toImage(x, y)
             gestureListener?.onEyedropperMove(x, y, p[0], p[1])
         } else {
@@ -413,6 +457,10 @@ class CanvasView(
                 gestureListener?.onTargetedEnd()
             }
 
+            OneFinger.Crop -> {
+                crop.end(x, y, lifted)
+            }
+
             OneFinger.Hold -> {
                 renderer?.setShowOriginal(false)
                 gestureListener?.onHoldChanged(false)
@@ -429,7 +477,7 @@ class CanvasView(
         oneFinger = OneFinger.None
     }
 
-    private enum class OneFinger { None, Pending, Hold, Free, SwipeAdjust, SwipeSelect, Eyedropper, Targeted }
+    private enum class OneFinger { None, Pending, Hold, Free, SwipeAdjust, SwipeSelect, Eyedropper, Targeted, Crop }
 
     private fun move(event: MotionEvent) {
         if (twoFingers && event.pointerCount >= 2) {
@@ -538,6 +586,7 @@ class CanvasView(
             transform.writeAffine(affine)
             it.setTransform(affine[0], affine[1], affine[2], affine[3], affine[4], affine[5])
         }
+        matrix?.update(transform)
         onTransformChanged?.invoke()
     }
 
@@ -549,6 +598,7 @@ class CanvasView(
         const val MIN_FLING_SPEED = 400f
         const val HOLD_MILLIS = 250L
         const val SWIPE_STEP_DP = 48f
+        const val HANDLE_DP = 24f // radius: 48 dp crop handles
 
         const val DOUBLE_TAP_SECONDS = MotionTokens.STANDARD_MILLIS / 1000f
         val EASING = MotionTokens.StandardEasing

@@ -179,6 +179,31 @@ internal class NativeEngine(
         out: FloatArray,
     ): IntArray? = nativeRenderTileCpu(h(), level, tx, ty, out)
 
+    /** The edited image's size: the geometry's output, else the image (width, height). */
+    fun outputSize(): IntArray = nativeOutputSize(h())
+
+    /** The level-0 source tiles output tile ([tx], [ty]) still needs: (tx, ty) pairs. */
+    fun outputTileSources(
+        tx: Int,
+        ty: Int,
+    ): IntArray = nativeOutputTileSources(h(), tx, ty)
+
+    /** Output tile ([tx], [ty]) on the CPU (ops, one resample) into [out]; (width, height) or null. */
+    fun renderOutputTile(
+        tx: Int,
+        ty: Int,
+        out: FloatArray,
+    ): IntArray? = nativeRenderOutputTile(h(), tx, ty, out)
+
+    /** Line segments of the preview, 5 floats each (x1, y1, x2, y2 normalised, width); null before a preview. */
+    fun lineSegments(): FloatArray? = nativeLineSegments(h())
+
+    /** Tilt of the dominant near-horizontal line in degrees (clockwise positive), or null. */
+    fun horizon(): Float? = nativeHorizon(h())?.get(0)
+
+    /** (caRed, caBlue) undoing lateral chromatic aberration, or null. */
+    fun chromaticAberration(): FloatArray? = nativeChromaticAberration(h())
+
     /** Test hook: [graph] on the GPU over [input], sRGB display transform into [out] (RGBA8). */
     fun gpuSelfTest(
         input: FloatArray,
@@ -354,6 +379,27 @@ internal class NativeEngine(
         ty: Int,
         out: FloatArray,
     ): IntArray?
+
+    private external fun nativeOutputSize(engine: Long): IntArray
+
+    private external fun nativeOutputTileSources(
+        engine: Long,
+        tx: Int,
+        ty: Int,
+    ): IntArray
+
+    private external fun nativeRenderOutputTile(
+        engine: Long,
+        tx: Int,
+        ty: Int,
+        out: FloatArray,
+    ): IntArray?
+
+    private external fun nativeLineSegments(engine: Long): FloatArray?
+
+    private external fun nativeHorizon(engine: Long): FloatArray?
+
+    private external fun nativeChromaticAberration(engine: Long): FloatArray?
 
     @Suppress("LongParameterList")
     private external fun nativeGpuSelfTest(

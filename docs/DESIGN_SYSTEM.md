@@ -32,6 +32,7 @@ There is no light theme.
 | `histogramRed` / `histogramGreen` / `histogramBlue` | `#FF5A5F` / `#3DDC97` / `#5B9DFF` at 55 % | Histogram channels |
 | `histogramLuma` | `textPrimary` | Histogram luminance outline |
 | `canvasSurround` | `#121212` / `#777777` | Area around the image: dark (default) or mid grey |
+| `cropScrim` / `cropLine` / `cropGrid` | black at 60 % / white at 90 % / white at 50 % | Crop overlay: outside the crop, frame and handles, composition grid (Stage 9) |
 
 Gradient and wheel tokens (only for tracks that show what a value does):
 

@@ -23,6 +23,17 @@ struct OpPassInputs {
     int guidedHeight = 1;
 };
 
+// The geometry of one draw (Stage 9, kGeometrySource): matrices row major.
+struct GeometryDraw {
+    float matrix[9] = {1, 0, 0, 0, 1, 0, 0, 0, 1};  // output normalised -> source pixels
+    float outSize[2] = {1, 1};                        // output pixels
+    float srcSize[2] = {1, 1};                        // source pixels
+    float lens[4] = {0, 0, 0, 0};                     // k1, k2, caRed, caBlue
+    float srcRect[4] = {0, 0, 1, 1};                  // the texture's rect, normalised source coordinates
+    float drawRect[4] = {0, 0, 1, 1};                 // the drawn quad, output pixels
+    bool clampTile = false;                           // a tile: clamp taps, discard outside its rect
+};
+
 struct DisplayOptions {
     bool clipping = false;  // paint clipped highlights clipHi and crushed shadows clipLo
 };
@@ -50,8 +61,13 @@ public:
     // through `imageToNdc` (row-major 3x3 mapping original-image pixels to NDC), with the
     // display transform: Rec.2020 -> display primaries, clip, and the sRGB transfer when
     // `encode` (false when the EGL surface encodes itself). Output is premultiplied.
+    // With `geometry`, `rect` is in OUTPUT pixels and each fragment samples the texture
+    // through the geometry (one bicubic resample).
     void drawImage(GLuint texture, const float rect[4], const float imageToNdc[9], color::Display display, bool encode,
-                   const DisplayOptions& options = {});
+                   const DisplayOptions& options = {}, const GeometryDraw* geometry = nullptr);
+    // Renders the geometry of `texture` into `target` (width x height, the whole output at
+    // that size), working-space values: the output's histogram and the GPU self test.
+    bool warp(GLuint texture, const GeometryDraw& geometry, GLuint target, int width, int height, std::string* error);
 
     // Starts counting the 256-bin R, G, B, L histogram of `texture` (working space;
     // sRGB display values) into the histogram buffer. False without compute support.
@@ -85,7 +101,8 @@ private:
     GLuint vbo_ = 0;
     GLuint fbo_ = 0;
     GLuint displayProgram_ = 0;
-    GLint displayTex_ = -1, displayMatrix_ = -1, displayToDisplay_ = -1, displayEncode_ = -1, displayClip_ = -1, displayClipHi_ = -1, displayClipLo_ = -1;
+    GLuint displayGeomProgram_ = 0;
+    GLuint warpProgram_ = 0;
     std::string histogramError_;
     GLuint histogramProgram_ = 0;
     GLuint histogramBuffer_ = 0;

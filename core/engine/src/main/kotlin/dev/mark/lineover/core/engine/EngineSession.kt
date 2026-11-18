@@ -2,6 +2,7 @@ package dev.mark.lineover.core.engine
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Gainmap
 import android.net.Uri
 import android.os.Debug
 import android.util.Log
@@ -12,6 +13,8 @@ import dev.mark.lineover.core.io.source.SourceReader
 import dev.mark.lineover.core.io.source.TileDecoder
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.EditGraphJson
+import dev.mark.lineover.core.model.LineSegment
+import dev.mark.lineover.core.model.OpParams
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
@@ -155,6 +158,46 @@ class EngineSession private constructor(
         }
     }
 
+    /** The edited image's size: the geometry's output (crop, rotation), else the original's. */
+    fun outputSize(): Pair<Int, Int> {
+        if (closed) return info.width to info.height
+        val size = native.outputSize()
+        return if (size[0] > 0 && size[1] > 0) size[0] to size[1] else info.width to info.height
+    }
+
+    /** Line segments of the preview for Upright (normalised coordinates); null before the preview. */
+    @Suppress("MagicNumber") // 5 floats per segment
+    fun lineSegments(): List<LineSegment>? {
+        if (closed) return null
+        val values = native.lineSegments() ?: return null
+        return (0 until values.size / SEGMENT_FLOATS).map { i ->
+            val o = i * SEGMENT_FLOATS
+            LineSegment(values[o], values[o + 1], values[o + 2], values[o + 3], values[o + 4])
+        }
+    }
+
+    /** Auto straighten: the tilt (degrees, clockwise positive) of the dominant horizon-like line, or null. */
+    fun horizon(): Float? = if (closed) null else native.horizon()
+
+    /** Chromatic aberration Auto: (red, blue) radial scale - 1, or null. */
+    fun chromaticAberration(): Pair<Float, Float>? = if (closed) null else native.chromaticAberration()?.let { it[0] to it[1] }
+
+    /**
+     * The preview's Ultra HDR gain map with [graph]'s geometry applied (same matrix and lens,
+     * at the gain map's resolution), so it stays aligned with the edited pixels; the gain map
+     * itself when the graph has no geometry.
+     */
+    fun gainmapFor(graph: EditGraph): Gainmap? {
+        val gainmap = preview.gainmap ?: return null
+        val geometry =
+            graph.layers
+                .firstOrNull()
+                ?.ops
+                ?.filterIsInstance<OpParams.Geometry>()
+                ?.firstOrNull() ?: return gainmap
+        return GeometryWarp.warpGainmap(gainmap, EditGraphJson.encode(graph), geometry, info.width, info.height)
+    }
+
     /** Hold to compare: the original while true. */
     fun setShowOriginal(original: Boolean) {
         if (!closed) native.setShowOriginal(original)
@@ -188,8 +231,9 @@ class EngineSession private constructor(
     fun nativePlusGpuBytes(): Long = Debug.getNativeHeapAllocatedSize() + stats().gpuBytes
 
     /**
-     * Full-resolution render (export only, Stage 12 writes the files): every level-0 tile
-     * is decoded, run through the ops on the CPU reference path and handed to [sink] in
+     * Full-resolution render (export only, Stage 12 writes the files): every 512 px tile of
+     * the output (see [outputSize]) is rendered on the CPU reference path (ops on its source
+     * footprint, then one bicubic resample through the geometry) and handed to [sink] in
      * working-space RGBA. Cancellable between tiles.
      */
     suspend fun renderFullResolution(
@@ -198,14 +242,18 @@ class EngineSession private constructor(
     ) = withContext(dispatcher) {
         val decoder = reader.openTiles(info) ?: error("no region decoder for ${info.uri}")
         decoder.use {
-            val tilesX = (info.width + TileDecoder.TILE - 1) / TileDecoder.TILE
-            val tilesY = (info.height + TileDecoder.TILE - 1) / TileDecoder.TILE
+            // Tiles of the OUTPUT (the geometry's crop / rotation; the original without one):
+            // each reads the level-0 source tiles under its footprint, decoded on demand.
+            val (width, height) = outputSize()
+            val tilesX = (width + TileDecoder.TILE - 1) / TileDecoder.TILE
+            val tilesY = (height + TileDecoder.TILE - 1) / TileDecoder.TILE
             val buffer = FloatArray(TileDecoder.TILE * TileDecoder.TILE * CHANNELS)
             for (ty in 0 until tilesY) {
                 for (tx in 0 until tilesX) {
                     currentCoroutineContext().ensureActive()
-                    decodeInto(decoder, 0, tx, ty)
-                    val size = native.renderTileCpu(0, tx, ty, buffer) ?: error("tile $tx,$ty could not be rendered")
+                    val sources = native.outputTileSources(tx, ty)
+                    for (i in 0 until sources.size / 2) decodeInto(decoder, 0, sources[2 * i], sources[2 * i + 1])
+                    val size = native.renderOutputTile(tx, ty, buffer) ?: error("tile $tx,$ty could not be rendered")
                     sink(tx, ty, size[0], size[1], buffer)
                 }
             }
@@ -283,6 +331,7 @@ class EngineSession private constructor(
         private const val POLL_MILLIS = 200
         private const val JOIN_MILLIS = 2000L
         private const val CHANNELS = 4
+        private const val SEGMENT_FLOATS = 5
 
         /**
          * Opens [uri]: reads its header, decodes the preview proxy (≤ 2048 px) and starts the

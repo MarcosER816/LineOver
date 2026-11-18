@@ -14,6 +14,7 @@ Changing a committed golden file needs an explanation in the stage notes (rule R
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -68,6 +69,7 @@ def build_outputs() -> dict[str, np.ndarray]:
     outputs.update(color_outputs())
     outputs.update(grade_outputs())
     outputs.update(photo_outputs())
+    outputs.update(geometry_outputs())
     return outputs
 
 
@@ -163,6 +165,38 @@ def photo_outputs() -> dict[str, np.ndarray]:
     return outputs
 
 
+def geometry_outputs() -> dict:
+    """Stage 9: warps vs OpenCV (warpPerspective / remap, bicubic), vignetting, homography fixtures.
+
+    geometry/<case>.graph.json is the graph (one geometry op) the engine runs for each case.
+    """
+    pattern = reference.srgb8_to_working(reference.test_pattern_rgba8())
+    scene = reference.scene_rec2020()
+    chart = reference.colors_rec2020()
+    reference.geometry_self_check(pattern, scene, chart)
+    outputs = {}
+    for name, input_name, image, w, h, matrix, extra in reference.geometry_cases(pattern, scene, chart):
+        op = reference.geometry_op(matrix, w, h, extra)
+        op["sourceWidth"] = float(image.shape[1])
+        op["sourceHeight"] = float(image.shape[0])
+        graph = {"schemaVersion": 1, "layers": [{"id": "background", "ops": [op]}]}
+        # The graph the engine reads for this case (input: input/<input>_rec2020_f32.npy).
+        outputs[f"geometry/{name}.graph.json"] = json.dumps(graph, separators=(",", ":")) + "\n"
+
+        def warp(im, matrix=matrix, w=w, h=h, extra=extra):
+            return reference.geometry_warp(im, matrix, w, h, extra.get("k1", 0.0), extra.get("k2", 0.0),
+                                           extra.get("caRed", 0.0), extra.get("caBlue", 0.0))
+
+        outputs[f"geometry/{name}_f32.npy"] = warp(image)
+        outputs[f"geometry/{name}_gpu_srgb_display_f32.npy"] = reference.gpu_display(warp, image)
+    outputs["geometry/homographies.json"] = json.dumps({"cases": reference.homography_fixtures()}, indent=1) + "\n"
+    for index, (amount, mid) in enumerate(reference.VIGNETTING_SETTINGS, start=1):
+        outputs[f"geometry/vignetting_{index}_f32.npy"] = reference.vignetting(scene, amount, mid)
+    amount, mid = reference.VIGNETTING_SETTINGS[0]
+    outputs["geometry/vignetting_gpu_srgb_display_f32.npy"] = reference.gpu_display(lambda im: reference.vignetting(im, amount, mid), scene)
+    return outputs
+
+
 # GPU cases of the step ops: (input, params); see color_outputs.
 COLOR_GPU_DISCONTINUOUS = {"posterize": ("chart", (12.0,)), "threshold": ("scene", (0.5,))}
 
@@ -177,11 +211,15 @@ def write_file(path: Path, array: np.ndarray) -> None:
     elif path.suffix == ".npy":
         assert array.dtype == np.float32 and array.ndim == 3
         np.save(path, np.ascontiguousarray(array.astype("<f4")))
+    elif path.suffix == ".json":
+        path.write_text(array)
     else:
         raise ValueError(f"unsupported golden file type: {path}")
 
 
 def read_file(path: Path) -> np.ndarray:
+    if path.suffix == ".json":
+        return path.read_text()
     if path.suffix == ".png":
         bgra = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
         if bgra is None:
@@ -195,6 +233,8 @@ def is_stale(path: Path, expected: np.ndarray) -> str | None:
     if not path.is_file():
         return "missing"
     actual = read_file(path)
+    if isinstance(expected, str):
+        return None if actual == expected else "text differs"
     if actual.shape != expected.shape or actual.dtype != expected.dtype:
         return f"shape/dtype {actual.shape} {actual.dtype}, expected {expected.shape} {expected.dtype}"
     if expected.dtype == np.uint8:
@@ -223,7 +263,7 @@ def main() -> int:
         for name, why in stale.items():
             print(f"STALE  {name}: {why}", file=sys.stderr)
         expected_files = set(outputs)
-        on_disk = {p.relative_to(GOLDEN_DIR).as_posix() for p in GOLDEN_DIR.rglob("*") if p.suffix in (".png", ".npy")}
+        on_disk = {p.relative_to(GOLDEN_DIR).as_posix() for p in GOLDEN_DIR.rglob("*") if p.suffix in (".png", ".npy", ".json")}
         orphans = sorted(on_disk - expected_files)
         for name in orphans:
             print(f"ORPHAN {name}: not produced by generate.py", file=sys.stderr)
@@ -234,7 +274,7 @@ def main() -> int:
 
     for name, array in outputs.items():
         write_file(GOLDEN_DIR / name, array)
-        print(f"wrote {name}  {array.shape} {array.dtype}")
+        print(f"wrote {name}  {getattr(array, 'shape', 'json')}")
     return 0
 
 

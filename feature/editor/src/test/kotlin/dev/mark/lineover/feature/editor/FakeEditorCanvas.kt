@@ -74,6 +74,20 @@ class FakeEditorCanvas(
         }
     }
 
+    /** Upright input: the preview's line segments (null = no preview yet). */
+    var segments: List<dev.mark.lineover.core.model.LineSegment>? = emptyList()
+
+    /** Auto straighten: the horizon's clockwise tilt in degrees. */
+    var horizonTilt: Float? = 2.5f
+
+    var chromatic: Pair<Float, Float>? = 0.004f to -0.002f
+
+    override fun lineSegments() = segments
+
+    override fun horizon() = horizonTilt
+
+    override fun chromaticAberration() = chromatic
+
     /** What the eyedropper solves to, null for "black". */
     var whiteBalance: Pair<Float, Float>? = 4500f to 12f
 

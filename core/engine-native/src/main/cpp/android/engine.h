@@ -26,6 +26,8 @@
 #include <vector>
 
 #include "gpu_pipeline.h"
+#include "lineover/geometry.h"
+#include "lineover/lines.h"
 #include "lineover/thumbnail.h"
 #include "lineover/grade_ops.h"
 #include "lineover/light.h"
@@ -133,9 +135,24 @@ public:
     // when the tile has not been decoded into the store.
     bool renderTileCpu(const TileKey& key, std::vector<float>* out, int* width, int* height);
 
+    // Geometry (Stage 9) ---------------------------------------------------------------
+    // The size of the edited image: the geometry op's output, else the image.
+    void outputSize(int* width, int* height);
+    // Export of OUTPUT tile (tx, ty) (512 px grid of the output size): the level-0 source
+    // tiles it reads that are not in the store yet (decode and submit them, then render).
+    std::vector<TileKey> outputTileSources(int tx, int ty);
+    // Output tile (tx, ty): ops on its source footprint (CPU reference), then one bicubic
+    // resample through the geometry. False when a source tile is missing.
+    bool renderOutputTile(int tx, int ty, std::vector<float>* out, int* width, int* height);
+    // Image analysis on a <= 1024 px copy of the (unedited) preview, any thread.
+    bool lineSegments(std::vector<LineSegment>* out);
+    bool horizon(float* degrees);
+    bool chromaticAberration(float* caRed, float* caBlue);
+
     // Test hook: runs `graph` on the GPU over `in` (w x h working RGBA) and renders the
     // sRGB display transform into `out` (RGBA8). Same shaders as the canvas.
-    bool gpuSelfTest(const float* in, int width, int height, const std::string& graph, std::uint8_t* out,
+    // With a geometry op the output is the geometry's output size (`capacity` bytes at least).
+    bool gpuSelfTest(const float* in, int width, int height, const std::string& graph, std::uint8_t* out, std::size_t capacity,
                      std::string* error);
 
     // Test hook: the histogram compute pass over `in` (w x h working RGBA, uploaded as
@@ -162,7 +179,10 @@ private:
     void serviceHistogram();
     bool histogramAvailable() const;
     void drawScene(bool original, const float ndc[9], int imageW, int imageH, int level, const std::vector<TileKey>& drawable,
-                   bool clipping);
+                   bool clipping, const Geometry* geometry);
+    // Source pixels -> preview uv for output point (u, v) of the canvas (identity without geometry).
+    void canvasToSource(float* u, float* v);
+    bool renderOutputRegion(const Geometry& g, int imageW, int imageH, int x0, int y0, int w, int h, float* out, int stride);
     void evictGpu(const std::unordered_set<TileKey, TileKeyHash>& keep);
     void dropGpuTiles();
     void imageToNdc(float out[9]) const;
@@ -199,6 +219,11 @@ private:
     std::vector<float> pendingPreview_;
     std::shared_ptr<const GuidedCoefficients> guided_;  // of the current preview
     std::shared_ptr<const ImageF32> thumbSource_;       // the preview box-filtered to <= 512 px
+    std::shared_ptr<const ImageF32> analysisSource_;    // the preview box-filtered to <= 1024 px
+    bool hasGeometry_ = false;
+    Geometry geometry_;     // fitted to the image size (sourceWidth = imageWidth_)
+    bool hasRawGeometry_ = false;
+    Geometry rawGeometry_;  // as the graph has it (refitted when the image changes)
     bool guidedChanged_ = false;
     bool havePercentiles_ = false;
     float lowPercentile_ = 0.f, highPercentile_ = 0.f;
@@ -228,6 +253,8 @@ private:
     int previewW_ = 0, previewH_ = 0;
     std::uint64_t previewVersion_ = 0;
     GLuint guidedTexture_ = 0;
+    GLuint histogramWarp_ = 0;  // the warped preview the histogram reads when there is a geometry
+    int histogramWarpW_ = 0, histogramWarpH_ = 0;
     int guidedW_ = 1, guidedH_ = 1;
     // Histogram (render thread)
     std::atomic<bool> histogramDirty_{false};

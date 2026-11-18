@@ -30,6 +30,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -74,7 +75,9 @@ import dev.mark.lineover.core.ui.adaptive.LoWindowInfo
 import dev.mark.lineover.core.ui.adaptive.rememberLoWindowInfo
 import dev.mark.lineover.core.ui.tools.ToolRegistry
 import dev.mark.lineover.feature.editor.canvas.CanvasGestureListener
+import dev.mark.lineover.feature.editor.canvas.CanvasMatrix
 import dev.mark.lineover.feature.editor.canvas.CanvasView
+import dev.mark.lineover.feature.editor.canvas.CropGestureListener
 import dev.mark.lineover.feature.editor.canvas.EditorCanvasFactory
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -116,14 +119,17 @@ fun EditorRoute(
     }
     // Leaving the app (or the screen turning off) saves at once: a kill afterwards loses nothing.
     LifecycleEventEffect(Lifecycle.Event.ON_STOP) { viewModel.onIntent(EditorIntent.SaveNow) }
-    EditorScreen(
-        state = state,
-        onIntent = viewModel::onIntent,
-        onBack = onBack,
-        onExport = onExport,
-        toast = toast,
-        canvas = { modifier -> PhotoCanvas(state, modifier, viewModel.gestures) },
-    )
+    val matrix = remember { CanvasMatrix() }
+    CompositionLocalProvider(LocalCanvasMatrix provides matrix) {
+        EditorScreen(
+            state = state,
+            onIntent = viewModel::onIntent,
+            onBack = onBack,
+            onExport = onExport,
+            toast = toast,
+            canvas = { modifier -> PhotoCanvas(state, modifier, viewModel.gestures, viewModel.cropGestures) },
+        )
+    }
 }
 
 /**
@@ -135,18 +141,26 @@ internal fun PhotoCanvas(
     state: EditorState,
     modifier: Modifier,
     gestures: CanvasGestureListener? = null,
+    cropGestures: CropGestureListener? = null,
 ) {
     val canvas = state.canvas
     val surround = state.surround.color.toArgb()
     val swipeMode = state.swipeMode
     val pickMode = state.pickMode
+    val size = state.canvasSize
+    val cropFrame = state.cropFrame
+    val matrix = LocalCanvasMatrix.current
     AndroidView(
-        factory = { CanvasView(it) },
+        factory = { CanvasView(it).also { view -> view.matrix = matrix } },
         modifier = modifier,
         update = { view ->
             view.setSurround(surround)
             view.setRenderer(canvas)
+            // The canvas shows the edit's output (cropped, rotated) or the frame while cropping.
+            size?.let { (w, h) -> view.setImageSize(w, h) }
             view.gestureListener = gestures
+            view.cropListener = cropGestures
+            view.cropFrame = cropFrame
             view.swipeMode = swipeMode
             view.pickMode = pickMode
         },
@@ -335,14 +349,15 @@ private fun CanvasArea(
                 strokeWidth = 2.dp,
             )
         }
-        // Overlay for the on-canvas handles of later stages (crop, gradients, pins). Hidden for now.
-        CanvasOverlayLayer(visible = false)
+        // Overlay for the on-canvas handles: crop, perspective corners, guides (Stage 9);
+        // gradients and pins in later stages.
+        CanvasOverlayLayer(state)
     }
 }
 
 @Composable
-private fun CanvasOverlayLayer(visible: Boolean) {
-    if (visible) Box(Modifier.fillMaxSize().testTag(EditorTags.CANVAS_OVERLAY))
+private fun CanvasOverlayLayer(state: EditorState) {
+    if (state.cropMode != null) CropOverlayLayer(state)
 }
 
 /**

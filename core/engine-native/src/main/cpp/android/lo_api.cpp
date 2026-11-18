@@ -257,10 +257,59 @@ int lo_engine_render_tile_cpu(lo_engine* engine, int level, int tx, int ty, floa
     return static_cast<int>(pixels.size() / 4);
 }
 
+void lo_engine_output_size(lo_engine* engine, int* width, int* height) { engine->engine->outputSize(width, height); }
+
+int lo_engine_output_tile_sources(lo_engine* engine, int tx, int ty, int* out, size_t capacity) {
+    const std::vector<lo::TileKey> keys = engine->engine->outputTileSources(tx, ty);
+    for (std::size_t i = 0; i < keys.size() && 2 * i + 1 < capacity; ++i) {
+        out[2 * i] = keys[i].tx;
+        out[2 * i + 1] = keys[i].ty;
+    }
+    return static_cast<int>(keys.size());
+}
+
+int lo_engine_render_output_tile(lo_engine* engine, int tx, int ty, float* out, size_t capacity, int* width, int* height) {
+    std::vector<float> pixels;
+    if (!engine->engine->renderOutputTile(tx, ty, &pixels, width, height) || pixels.size() > capacity) return 0;
+    std::copy(pixels.begin(), pixels.end(), out);
+    return static_cast<int>(pixels.size() / 4);
+}
+
+int lo_engine_line_segments(lo_engine* engine, float* out, size_t capacity) {
+    std::vector<lo::LineSegment> segments;
+    if (!engine->engine->lineSegments(&segments)) return -1;
+    for (std::size_t i = 0; i < segments.size() && 5 * i + 4 < capacity; ++i) {
+        const lo::LineSegment& s = segments[i];
+        const float values[5] = {s.x1, s.y1, s.x2, s.y2, s.width};
+        std::copy(values, values + 5, out + 5 * i);
+    }
+    return static_cast<int>(segments.size());
+}
+
+int lo_engine_horizon(lo_engine* engine, float* degrees) { return engine->engine->horizon(degrees) ? 1 : 0; }
+
+int lo_engine_chromatic_aberration(lo_engine* engine, float* ca_red, float* ca_blue) {
+    return engine->engine->chromaticAberration(ca_red, ca_blue) ? 1 : 0;
+}
+
+int lo_warp_rgba8(const char* graph_json, int source_width, int source_height, const uint8_t* rgba, int width, int height,
+                  int out_width, int out_height, uint8_t* out) {
+    lo::Graph graph;
+    std::string error;
+    if (!lo::parseGraph(graph_json, &graph, &error)) return 0;
+    lo::Geometry geometry;
+    if (!lo::geometryOf(graph, &geometry)) return 0;
+    const std::vector<std::uint8_t> result =
+        lo::warpRgba8(geometry, source_width, source_height, rgba, width, height, out_width, out_height);
+    if (result.size() != static_cast<std::size_t>(out_width) * out_height * 4) return 0;
+    std::copy(result.begin(), result.end(), out);
+    return 1;
+}
+
 int lo_engine_gpu_self_test(lo_engine* engine, const float* in, int width, int height, const char* graph, uint8_t* out,
-                            char* error, size_t error_len) {
+                            size_t capacity, char* error, size_t error_len) {
     std::string failure;
-    if (!engine->engine->gpuSelfTest(in, width, height, graph, out, &failure)) {
+    if (!engine->engine->gpuSelfTest(in, width, height, graph, out, capacity, &failure)) {
         copyError(failure, error, error_len);
         return 0;
     }

@@ -18,8 +18,13 @@ import dev.mark.lineover.core.designsystem.LineOverTheme
 import dev.mark.lineover.core.designsystem.LoColors
 import dev.mark.lineover.core.engine.CompareMode
 import dev.mark.lineover.core.engine.Histogram
+import dev.mark.lineover.core.model.CropAspect
+import dev.mark.lineover.core.model.CropMath
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.EditHistory
+import dev.mark.lineover.core.model.GeometryAdjustments
+import dev.mark.lineover.core.model.GeometryMath
+import dev.mark.lineover.core.model.GuideLine
 import dev.mark.lineover.core.model.HistoryLabels
 import dev.mark.lineover.core.model.HslBand
 import dev.mark.lineover.core.model.HslChannel
@@ -29,8 +34,10 @@ import dev.mark.lineover.core.model.OpParams
 import dev.mark.lineover.core.model.ProjectDocument
 import dev.mark.lineover.core.model.Snapshot
 import dev.mark.lineover.core.model.ToolCategory
+import dev.mark.lineover.core.model.UprightMode
 import dev.mark.lineover.core.model.Version
 import dev.mark.lineover.core.ui.tools.ToolRegistry
+import dev.mark.lineover.feature.editor.canvas.ImageSummary
 import dev.mark.lineover.feature.editor.canvas.PickMode
 import org.junit.Rule
 import org.junit.Test
@@ -110,6 +117,65 @@ abstract class EditorScreenshots(
     @Test
     fun categoryStrips() {
         ToolCategory.entries.forEach { category -> shot("category_${category.id}", base(category)) }
+    }
+
+    /**
+     * Stage 9: Crop and Optics. The canvas stand-in fills the view; the overlay draws the crop
+     * on the fitted frame (dimmed outside, 48 dp handles, the thirds grid while dragging).
+     */
+    private fun geometryState(
+        tool: String,
+        geometry: GeometryAdjustments,
+        dragging: Boolean = false,
+    ) = base(ToolRegistry[tool]!!.category!!).copy(
+        image = ImageSummary(4000, 3000, 2048, 1536, "Display P3", "8-bit Display P3", ultraHdr = true),
+        geometry = geometry,
+        panel = EditorPanel.Tool(tool),
+        cropDragging = dragging,
+    )
+
+    @Test
+    fun cropPanels() {
+        val fourFive = CropMath.fitAspect(floatArrayOf(0f, 0f, 1f, 1f), 0.8f, 4000, 3000)
+        val crop =
+            GeometryAdjustments(
+                cropLeft = fourFive[0],
+                cropTop = fourFive[1],
+                cropRight = fourFive[2],
+                cropBottom = fourFive[3],
+                aspect = CropAspect.FourFive,
+            )
+        shot("crop_panel", geometryState(CROP_TOOL, crop))
+        shot("crop_dragging_thirds", geometryState(CROP_TOOL, crop, dragging = true))
+        shot("crop_straighten", geometryState(STRAIGHTEN_TOOL, crop.copy(straighten = 4.5f), dragging = true))
+        shot(
+            "crop_perspective",
+            geometryState(
+                PERSPECTIVE_CROP_TOOL,
+                GeometryAdjustments(perspectiveCorners = listOf(0.1f, 0.15f, 0.85f, 0.05f, 0.9f, 0.9f, 0.05f, 0.8f)),
+            ),
+        )
+    }
+
+    @Test
+    fun opticsPanels() {
+        shot(
+            "optics_upright",
+            geometryState(UPRIGHT_TOOL, GeometryAdjustments(upright = UprightMode.Auto, uprightPitch = 6f, vertical = 10f)),
+        )
+        shot(
+            "optics_upright_guided",
+            geometryState(
+                UPRIGHT_TOOL,
+                GeometryAdjustments(
+                    upright = UprightMode.Guided,
+                    guides = listOf(GuideLine(0.2f, 0.1f, 0.24f, 0.9f), GuideLine(0.8f, 0.1f, 0.75f, 0.9f)),
+                ),
+            ),
+        )
+        shot("optics_distortion", geometryState(DISTORTION_TOOL, GeometryAdjustments(distortion = 25f)))
+        shot("optics_chromatic", geometryState(CHROMATIC_TOOL, GeometryAdjustments(chromaticRed = 30f, chromaticBlue = -15f)))
+        shot("optics_vignetting", geometryState(LENS_VIGNETTING_TOOL, GeometryAdjustments(vignetting = 40f)))
     }
 
     @Test

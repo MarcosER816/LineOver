@@ -143,6 +143,20 @@ python3 tools/golden/generate.py --check
 - Full-resolution bitmaps never exist on the Java heap: previews are ≤ 2048 px, tiles are
   512 px regions recycled after conversion.
 
+## Crop and optics (Stage 9)
+
+- Geometry is ONE op (`OpParams.Geometry`, first in `editOps()`): Kotlin composes every
+  crop / rotation / Upright / manual / perspective-crop setting into one matrix
+  (`GeometryMath.compose`); pixels are resampled once (bicubic, `geometry.h`). Never add a
+  second resampling step; add a new transform to the composition instead.
+- `geometry.cpp` (`mapToSource`, `warp`), the display shader (`kGeometrySource`) and
+  `reference.geometry_maps` / `geometry_warp` change together; goldens are checked against
+  OpenCV `warpPerspective` / `remap` (`EngineGpuTest` within 3/255).
+- The colour ops stay in source space; only sampling goes through the geometry. The canvas
+  image size is the output size (`EditorState.canvasSize`); while a crop tool is open the
+  canvas shows the uncropped frame (`canvasGraph`).
+- Upright angles are limited to ±25° and fall back to Level (`Upright.LIMIT`).
+
 ## History and projects (Stage 8)
 
 - Every edit goes through `EditorViewModel.reduce`, which records it in `EditHistory`; never

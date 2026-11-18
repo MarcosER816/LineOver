@@ -169,7 +169,8 @@ data class ColorAdjustments(
 }
 
 /**
- * The whole background edit, in the engine's fixed order: Calibration → White balance →
+ * The whole background edit, in the engine's fixed order: Geometry (Stage 9: one
+ * resample, its vignetting correction first in source space) → Calibration → White balance →
  * Light → Levels → Curves → Parametric curve → Vibrance → Saturation → HSL → Color
  * Balance → Selective Color → Channel Mixer → Color Grading → Photo Filter → Black &
  * White → Gradient Map → Invert → Posterize → Threshold.
@@ -178,6 +179,8 @@ fun editOps(
     light: LightAdjustments,
     color: ColorAdjustments,
     grade: GradeAdjustments = GradeAdjustments(),
+    geometry: OpParams.Geometry? = null,
 ): List<OpParams> =
-    grade.calibrationOps() + color.beforeLight() + light.toOps() + grade.toneOps() + color.basics() + grade.gradingOps() +
+    listOfNotNull(geometry) + grade.calibrationOps() + color.beforeLight() + light.toOps() + grade.toneOps() + color.basics() +
+        grade.gradingOps() +
         color.finishing()

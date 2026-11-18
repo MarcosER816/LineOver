@@ -114,6 +114,14 @@ private fun ToolPanelContent(
             GradePanel(id, state, onIntent, onClose = close, wide = wide)
         }
 
+        id in CROP_TOOLS -> {
+            CropPanel(id, state, onIntent, onClose = close)
+        }
+
+        id in OPTICS_TOOLS -> {
+            OpticsPanel(id, state, onIntent, onClose = close)
+        }
+
         else -> {
             ToolRegistry[id]?.let { ToolPanel(it, close) }
         }

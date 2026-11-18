@@ -2,6 +2,23 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 9 — Crop and optics (0.9.0)
+
+### Added
+
+- Crop: drag the 48 dp handles or move the frame; Free, Original, 1:1, 4:5, 3:2, 16:9 or a
+  custom ratio (portrait ⇄ landscape); rule of thirds, golden ratio or grid shown while you
+  drag; double tap the frame to reset; pinch to zoom as usual.
+- Straighten: a ruler (±45°) that ticks when it reaches 0, and Auto (finds the horizon).
+- Rotate 90° left / right and Flip horizontal / vertical.
+- Constrain crop (on by default): the crop shrinks so no empty corners ever show.
+- Perspective crop: drag four corners onto a tilted rectangle (a page, a painting).
+- Upright: Auto, Level, Vertical, Full, or Guided (draw 2–4 lines on edges that should be
+  straight); plus Vertical, Horizontal, Rotate, Aspect, Scale and offsets by hand.
+- Lens distortion (barrel / pincushion), chromatic aberration (with Auto), lens vignetting.
+- Everything is one transform, applied once, so the photo is resampled a single time
+  (bicubic); full-resolution export and the Ultra HDR gain map follow it.
+
 ## Stage 8 — History and projects (0.8.0)
 
 ### Added

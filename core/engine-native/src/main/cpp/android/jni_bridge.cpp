@@ -3,6 +3,7 @@
 #include <android/native_window_jni.h>
 #include <jni.h>
 
+#include <algorithm>
 #include <array>
 #include <string>
 #include <vector>
@@ -319,14 +320,97 @@ JNIEXPORT jintArray LO_NATIVE(nativeRenderTileCpu)(JNIEnv* env, jobject, jlong e
     return result;
 }
 
+JNIEXPORT jintArray LO_NATIVE(nativeOutputSize)(JNIEnv* env, jobject, jlong engine) {
+    jint size[2] = {0, 0};
+    lo_engine_output_size(handle(engine), &size[0], &size[1]);
+    jintArray result = env->NewIntArray(2);
+    if (result != nullptr) env->SetIntArrayRegion(result, 0, 2, size);
+    return result;
+}
+
+JNIEXPORT jintArray LO_NATIVE(nativeOutputTileSources)(JNIEnv* env, jobject, jlong engine, jint tx, jint ty) {
+    std::vector<int> pairs(64);
+    int count = lo_engine_output_tile_sources(handle(engine), tx, ty, pairs.data(), pairs.size());
+    if (2 * static_cast<std::size_t>(count) > pairs.size()) {
+        pairs.resize(2 * static_cast<std::size_t>(count));
+        count = lo_engine_output_tile_sources(handle(engine), tx, ty, pairs.data(), pairs.size());
+        count = std::min(count, static_cast<int>(pairs.size() / 2));
+    }
+    jintArray result = env->NewIntArray(2 * count);
+    if (result != nullptr) env->SetIntArrayRegion(result, 0, 2 * count, reinterpret_cast<const jint*>(pairs.data()));
+    return result;
+}
+
+JNIEXPORT jintArray LO_NATIVE(nativeRenderOutputTile)(JNIEnv* env, jobject, jlong engine, jint tx, jint ty, jfloatArray out) {
+    const jsize capacity = env->GetArrayLength(out);
+    std::vector<float> pixels(static_cast<std::size_t>(capacity));
+    int width = 0, height = 0;
+    const int count = lo_engine_render_output_tile(handle(engine), tx, ty, pixels.data(), pixels.size(), &width, &height);
+    if (count == 0) return nullptr;
+    env->SetFloatArrayRegion(out, 0, count * 4, pixels.data());
+    const jint size[2] = {width, height};
+    jintArray result = env->NewIntArray(2);
+    if (result != nullptr) env->SetIntArrayRegion(result, 0, 2, size);
+    return result;
+}
+
+// 5 floats per segment (x1, y1, x2, y2 normalised, width px); null before a preview.
+JNIEXPORT jfloatArray LO_NATIVE(nativeLineSegments)(JNIEnv* env, jobject, jlong engine) {
+    std::vector<float> values(5 * 512);
+    int count = lo_engine_line_segments(handle(engine), values.data(), values.size());
+    if (count < 0) return nullptr;
+    if (5 * static_cast<std::size_t>(count) > values.size()) {
+        values.resize(5 * static_cast<std::size_t>(count));
+        count = std::min(lo_engine_line_segments(handle(engine), values.data(), values.size()), count);
+    }
+    jfloatArray result = env->NewFloatArray(5 * count);
+    if (result != nullptr) env->SetFloatArrayRegion(result, 0, 5 * count, values.data());
+    return result;
+}
+
+JNIEXPORT jfloatArray LO_NATIVE(nativeHorizon)(JNIEnv* env, jobject, jlong engine) {
+    float degrees = 0.f;
+    if (lo_engine_horizon(handle(engine), &degrees) == 0) return nullptr;
+    jfloatArray result = env->NewFloatArray(1);
+    if (result != nullptr) env->SetFloatArrayRegion(result, 0, 1, &degrees);
+    return result;
+}
+
+JNIEXPORT jfloatArray LO_NATIVE(nativeChromaticAberration)(JNIEnv* env, jobject, jlong engine) {
+    float ca[2] = {0.f, 0.f};
+    if (lo_engine_chromatic_aberration(handle(engine), &ca[0], &ca[1]) == 0) return nullptr;
+    jfloatArray result = env->NewFloatArray(2);
+    if (result != nullptr) env->SetFloatArrayRegion(result, 0, 2, ca);
+    return result;
+}
+
+JNIEXPORT jbyteArray JNICALL Java_dev_mark_lineover_core_engine_GeometryWarp_nativeWarpRgba8(JNIEnv* env, jclass, jstring graph,
+                                                                                            jint sourceWidth, jint sourceHeight,
+                                                                                            jbyteArray rgba, jint width,
+                                                                                            jint height, jint outWidth,
+                                                                                            jint outHeight) {
+    std::vector<std::uint8_t> in(static_cast<std::size_t>(env->GetArrayLength(rgba)));
+    if (in.size() < static_cast<std::size_t>(width) * height * 4) return nullptr;
+    env->GetByteArrayRegion(rgba, 0, static_cast<jsize>(in.size()), reinterpret_cast<jbyte*>(in.data()));
+    std::vector<std::uint8_t> out(static_cast<std::size_t>(outWidth) * outHeight * 4);
+    const char* text = env->GetStringUTFChars(graph, nullptr);
+    const int ok = lo_warp_rgba8(text, sourceWidth, sourceHeight, in.data(), width, height, outWidth, outHeight, out.data());
+    env->ReleaseStringUTFChars(graph, text);
+    if (ok == 0) return nullptr;
+    jbyteArray result = env->NewByteArray(static_cast<jsize>(out.size()));
+    if (result != nullptr) env->SetByteArrayRegion(result, 0, static_cast<jsize>(out.size()), reinterpret_cast<const jbyte*>(out.data()));
+    return result;
+}
+
 JNIEXPORT jstring LO_NATIVE(nativeGpuSelfTest)(JNIEnv* env, jobject, jlong engine, jfloatArray input, jint width, jint height,
                                                jstring graph, jbyteArray out) {
     std::vector<float> in(static_cast<std::size_t>(env->GetArrayLength(input)));
     env->GetFloatArrayRegion(input, 0, static_cast<jsize>(in.size()), in.data());
-    std::vector<std::uint8_t> result(static_cast<std::size_t>(width) * height * 4);
+    std::vector<std::uint8_t> result(static_cast<std::size_t>(env->GetArrayLength(out)));
     const char* text = env->GetStringUTFChars(graph, nullptr);
     char error[256] = {0};
-    const int ok = lo_engine_gpu_self_test(handle(engine), in.data(), width, height, text, result.data(), error, sizeof(error));
+    const int ok = lo_engine_gpu_self_test(handle(engine), in.data(), width, height, text, result.data(), result.size(), error,
+                                           sizeof(error));
     env->ReleaseStringUTFChars(graph, text);
     if (ok) env->SetByteArrayRegion(out, 0, static_cast<jsize>(result.size()), reinterpret_cast<const jbyte*>(result.data()));
     return errorOrNull(env, ok, error);

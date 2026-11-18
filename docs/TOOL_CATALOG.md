@@ -1,6 +1,6 @@
 # Tool catalog
 
-Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 35 done.**
+Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 45 done.**
 
 - **id**: stable identifier (`<group>.<tool>`), used in code, favourites and project files. Never renamed.
 - **UI slot**: where the tool lives. Slots are reserved now and are never moved (rule R9); a stage only *fills* slots.
@@ -136,21 +136,21 @@ The Favorites strip shows the tools the user pinned; it has no tools of its own.
 
 | id | Name | Category | UI slot | Stage | Status |
 | --- | --- | --- | --- | --- | --- |
-| `optics.upright` | Upright | Optics | `cat/Optics/01` | 9 | reserved |
-| `optics.lens_distortion` | Lens distortion | Optics | `cat/Optics/02` | 9 | reserved |
-| `optics.chromatic_aberration` | Chromatic aberration | Optics | `cat/Optics/03` | 9 | reserved |
-| `optics.lens_vignetting` | Lens vignetting | Optics | `cat/Optics/04` | 9 | reserved |
+| `optics.upright` | Upright | Optics | `cat/Optics/01` | 9 | done |
+| `optics.lens_distortion` | Lens distortion | Optics | `cat/Optics/02` | 9 | done |
+| `optics.chromatic_aberration` | Chromatic aberration | Optics | `cat/Optics/03` | 9 | done |
+| `optics.lens_vignetting` | Lens vignetting | Optics | `cat/Optics/04` | 9 | done |
 
 ## Crop
 
 | id | Name | Category | UI slot | Stage | Status |
 | --- | --- | --- | --- | --- | --- |
-| `crop.crop` | Crop | Crop | `cat/Crop/01` | 9 | reserved |
-| `crop.aspect_ratios` | Aspect ratios | Crop | `cat/Crop/02` | 9 | reserved |
-| `crop.straighten` | Straighten | Crop | `cat/Crop/03` | 9 | reserved |
-| `crop.rotate` | Rotate | Crop | `cat/Crop/04` | 9 | reserved |
-| `crop.flip` | Flip | Crop | `cat/Crop/05` | 9 | reserved |
-| `crop.perspective_crop` | Perspective crop | Crop | `cat/Crop/06` | 9 | reserved |
+| `crop.crop` | Crop | Crop | `cat/Crop/01` | 9 | done |
+| `crop.aspect_ratios` | Aspect ratios | Crop | `cat/Crop/02` | 9 | done |
+| `crop.straighten` | Straighten | Crop | `cat/Crop/03` | 9 | done |
+| `crop.rotate` | Rotate | Crop | `cat/Crop/04` | 9 | done |
+| `crop.flip` | Flip | Crop | `cat/Crop/05` | 9 | done |
+| `crop.perspective_crop` | Perspective crop | Crop | `cat/Crop/06` | 9 | done |
 
 ## Masks (local adjustments)
 

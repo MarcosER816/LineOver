@@ -11,6 +11,7 @@ import dev.mark.lineover.core.engine.EngineStats
 import dev.mark.lineover.core.engine.Histogram
 import dev.mark.lineover.core.engine.NativeOp
 import dev.mark.lineover.core.model.EditGraph
+import dev.mark.lineover.core.model.LineSegment
 import dev.mark.lineover.core.model.Project
 import kotlinx.coroutines.flow.StateFlow
 
@@ -84,6 +85,15 @@ interface EditorCanvas :
         u: Float,
         v: Float,
     ): FloatArray?
+
+    /** Upright: line segments of the preview (normalised source coordinates). Off the main thread. */
+    fun lineSegments(): List<LineSegment>? = null
+
+    /** Auto straighten: the dominant near-horizontal line's tilt in degrees (clockwise positive). Off the main thread. */
+    fun horizon(): Float? = null
+
+    /** Chromatic aberration Auto: (red, blue) radial scale - 1. Off the main thread. */
+    fun chromaticAberration(): Pair<Float, Float>? = null
 }
 
 /** Opens the engine for a project (a fake in JVM tests, where there is no native engine). */
@@ -106,6 +116,7 @@ class EngineCanvasFactory(
         }
 }
 
+@Suppress("TooManyFunctions") // one method per EditorCanvas call
 private class EngineCanvas(
     private val session: EngineSession,
 ) : EditorCanvas {
@@ -192,6 +203,12 @@ private class EngineCanvas(
         u: Float,
         v: Float,
     ): FloatArray? = session.sampleGrid(u, v, LOUPE_PIXELS)
+
+    override fun lineSegments(): List<LineSegment>? = session.lineSegments()
+
+    override fun horizon(): Float? = session.horizon()
+
+    override fun chromaticAberration(): Pair<Float, Float>? = session.chromaticAberration()
 
     override fun close() = session.close()
 

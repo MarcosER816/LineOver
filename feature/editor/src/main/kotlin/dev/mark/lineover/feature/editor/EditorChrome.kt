@@ -108,6 +108,19 @@ object EditorTags {
     fun hslDot(band: String) = "hsl-dot:$band"
 
     fun hslSlider(band: String) = "hsl-slider:$band"
+
+    // Crop and Optics (Stage 9)
+    const val GEOMETRY_PANEL = "geometry-panel"
+    const val STRAIGHTEN_RULER = "straighten-ruler"
+    const val AUTO_STRAIGHTEN = "auto-straighten"
+    const val AUTO_CHROMATIC = "auto-chromatic"
+    const val CONSTRAIN = "constrain-crop"
+
+    fun aspect(name: String) = "aspect:$name"
+
+    fun upright(name: String) = "upright:$name"
+
+    fun slider(id: String) = "slider:$id"
 }
 
 /** The 56 dp top bar: Back · Undo · Redo · Compare · History · Layers · More · Export. */

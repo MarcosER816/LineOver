@@ -60,4 +60,9 @@ object LoColors {
 
     /** Centre of the colour wheel: neutral, so zero saturation reads as grey. */
     val WheelCenter = Color(0xFF8E8E93)
+
+    /** Crop overlay (Stage 9): outside the crop dimmed, frame and handles, the composition grid. */
+    val CropScrim = Color(0x99000000)
+    val CropLine = Color(0xE6FFFFFF)
+    val CropGrid = Color(0x80FFFFFF)
 }
