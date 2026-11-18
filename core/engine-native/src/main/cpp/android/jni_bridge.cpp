@@ -206,6 +206,43 @@ JNIEXPORT void LO_NATIVE(nativeStats)(JNIEnv* env, jobject, jlong engine, jlongA
     env->SetLongArrayRegion(out, 0, 18, values);
 }
 
+JNIEXPORT jfloatArray LO_NATIVE(nativeSample)(JNIEnv* env, jobject, jlong engine, jfloat u, jfloat v, jint before) {
+    float rgb[3];
+    if (lo_engine_sample(handle(engine), u, v, before, rgb) == 0) return nullptr;
+    jfloatArray result = env->NewFloatArray(3);
+    if (result != nullptr) env->SetFloatArrayRegion(result, 0, 3, rgb);
+    return result;
+}
+
+JNIEXPORT jfloatArray LO_NATIVE(nativeSampleGrid)(JNIEnv* env, jobject, jlong engine, jfloat u, jfloat v, jint n) {
+    if (n <= 0 || n > 15) return nullptr;
+    std::vector<float> rgba(static_cast<std::size_t>(n) * n * 4);
+    if (lo_engine_sample_grid(handle(engine), u, v, n, rgba.data()) == 0) return nullptr;
+    jfloatArray result = env->NewFloatArray(static_cast<jsize>(rgba.size()));
+    if (result != nullptr) env->SetFloatArrayRegion(result, 0, static_cast<jsize>(rgba.size()), rgba.data());
+    return result;
+}
+
+JNIEXPORT jfloatArray JNICALL Java_dev_mark_lineover_core_engine_ColorMath_nativeNeutral(JNIEnv* env, jclass, jfloat r, jfloat g,
+                                                                                        jfloat b) {
+    const float rgb[3] = {r, g, b};
+    float out[2];
+    if (lo_white_balance_for_neutral(rgb, &out[0], &out[1]) == 0) return nullptr;
+    jfloatArray result = env->NewFloatArray(2);
+    if (result != nullptr) env->SetFloatArrayRegion(result, 0, 2, out);
+    return result;
+}
+
+JNIEXPORT jfloatArray JNICALL Java_dev_mark_lineover_core_engine_ColorMath_nativeHslWeights(JNIEnv* env, jclass, jfloat r, jfloat g,
+                                                                                           jfloat b) {
+    const float rgb[3] = {r, g, b};
+    float out[8];
+    lo_hsl_targeted_weights(rgb, out);
+    jfloatArray result = env->NewFloatArray(8);
+    if (result != nullptr) env->SetFloatArrayRegion(result, 0, 8, out);
+    return result;
+}
+
 JNIEXPORT jfloatArray LO_NATIVE(nativeAutoLight)(JNIEnv* env, jobject, jlong engine) {
     float exposure = 0.f, blacks = 0.f;
     if (lo_engine_auto_light(handle(engine), &exposure, &blacks) == 0) return nullptr;

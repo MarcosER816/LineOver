@@ -4,10 +4,12 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import android.view.Surface
+import dev.mark.lineover.core.engine.ColorMath
 import dev.mark.lineover.core.engine.CompareMode
 import dev.mark.lineover.core.engine.EngineSession
 import dev.mark.lineover.core.engine.EngineStats
 import dev.mark.lineover.core.engine.Histogram
+import dev.mark.lineover.core.engine.NativeOp
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.Project
 import kotlinx.coroutines.flow.StateFlow
@@ -55,6 +57,27 @@ interface EditorCanvas :
 
     /** Engine counters for the debug overlay (null without an engine). */
     fun stats(): EngineStats?
+
+    /**
+     * Eyedropper: the white balance (K, tint) that makes the 5 x 5 patch at image point
+     * ([u], [v]) neutral, sampled before white balance. Blocks: call off the main thread.
+     */
+    fun whiteBalanceAt(
+        u: Float,
+        v: Float,
+    ): Pair<Float, Float>?
+
+    /** Targeted adjustment: the 8 HSL band weights of the colour at (u, v) as the mixer sees it. Off the main thread. */
+    fun hslWeightsAt(
+        u: Float,
+        v: Float,
+    ): FloatArray?
+
+    /** The 9 x 9 original pixels around (u, v), RGBA working space, top row first (eyedropper loupe). Off the main thread. */
+    fun loupeAt(
+        u: Float,
+        v: Float,
+    ): FloatArray?
 }
 
 /** Opens the engine for a project (a fake in JVM tests, where there is no native engine). */
@@ -145,6 +168,21 @@ private class EngineCanvas(
 
     override fun stats(): EngineStats? = session.stats()
 
+    override fun whiteBalanceAt(
+        u: Float,
+        v: Float,
+    ): Pair<Float, Float>? = session.sample(u, v, NativeOp.WhiteBalance)?.let(ColorMath::whiteBalanceForNeutral)
+
+    override fun hslWeightsAt(
+        u: Float,
+        v: Float,
+    ): FloatArray? = session.sample(u, v, NativeOp.HslMixer)?.let(ColorMath::hslWeights)
+
+    override fun loupeAt(
+        u: Float,
+        v: Float,
+    ): FloatArray? = session.sampleGrid(u, v, LOUPE_PIXELS)
+
     override fun close() = session.close()
 
     private companion object {
@@ -152,5 +190,6 @@ private class EngineCanvas(
         const val GREEN = 8
         const val BYTE = 0xFF
         const val MAX = 255f
+        const val LOUPE_PIXELS = 9
     }
 }

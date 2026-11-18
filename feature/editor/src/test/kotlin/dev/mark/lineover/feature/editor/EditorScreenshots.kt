@@ -18,10 +18,13 @@ import dev.mark.lineover.core.designsystem.LineOverTheme
 import dev.mark.lineover.core.designsystem.LoColors
 import dev.mark.lineover.core.engine.CompareMode
 import dev.mark.lineover.core.engine.Histogram
+import dev.mark.lineover.core.model.HslBand
+import dev.mark.lineover.core.model.HslChannel
 import dev.mark.lineover.core.model.LightAdjustments
 import dev.mark.lineover.core.model.LightParam
 import dev.mark.lineover.core.model.ToolCategory
 import dev.mark.lineover.core.ui.tools.ToolRegistry
+import dev.mark.lineover.feature.editor.canvas.PickMode
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -111,7 +114,7 @@ abstract class EditorScreenshots(
 
     // A tool that is still reserved (Light tools have real panels since Stage 5).
     @Test
-    fun toolPanelPlaceholder() = shot("tool_panel", base(ToolCategory.Color).copy(panel = EditorPanel.Tool("color.white_balance")))
+    fun toolPanelPlaceholder() = shot("tool_panel", base(ToolCategory.Color).copy(panel = EditorPanel.Tool("color.color_grading")))
 
     /** Stage 5: the Light panel (collapsed on phones: the selected slider; all of them when wide). */
     @Test
@@ -152,6 +155,32 @@ abstract class EditorScreenshots(
 
     @Test
     fun compareSideBySide() = shot("compare_side_by_side", base().copy(compare = CompareMode.SideBySide))
+
+    /** Stage 6: the white-balance panel in the editor, and the eyedropper loupe over the canvas. */
+    @Test
+    fun whiteBalancePanelWithLoupe() =
+        shot(
+            "color_white_balance_loupe",
+            base(ToolCategory.Color).copy(
+                panel = EditorPanel.Tool("color.white_balance"),
+                color = SAMPLE_COLOR,
+                pickMode = PickMode.Eyedropper,
+                loupe = Loupe(240f, 520f, FloatArray(9 * 9 * 4) { i -> if (i % 4 == 3) 1f else 0.05f + (i / 4 % 9) * 0.06f }),
+            ),
+        )
+
+    @Test
+    fun hslPanelWithTargetedHud() =
+        shot(
+            "color_hsl_targeted",
+            base(ToolCategory.Color).copy(
+                panel = EditorPanel.Tool("color.hsl_color_mixer"),
+                color = SAMPLE_COLOR,
+                hslChannel = HslChannel.Saturation,
+                pickMode = PickMode.Targeted,
+                targeted = TargetedHud(HslBand.Orange, HslChannel.Saturation, 35f),
+            ),
+        )
 
     @Test
     fun renderStats() = shot("render_stats", base().copy(debuggable = true, renderStats = true))

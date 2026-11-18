@@ -85,6 +85,17 @@ void lo_engine_set_clipping(lo_engine* engine, int clipping);
 void lo_engine_set_histogram_callback(lo_engine* engine, void (*on_histogram)(void* user, const uint32_t* bins), void* user);
 void lo_engine_set_histogram_enabled(lo_engine* engine, int enabled);
 
+/* Eyedropper / targeted adjustment: the average working RGB of the 5 x 5 preview pixels at
+ * image point (u, v), through the ops before the first op of type `before_op_type`
+ * (lo::OpType). 0 without a preview. */
+int lo_engine_sample(lo_engine* engine, float u, float v, int before_op_type, float* rgb);
+/* The n x n source preview pixels around (u, v), RGBA working space (n <= 15). */
+int lo_engine_sample_grid(lo_engine* engine, float u, float v, int n, float* rgba);
+/* (temperature K, tint) making `rgb` neutral; 0 for colours without a chromaticity. */
+int lo_white_balance_for_neutral(const float* rgb, float* kelvin, float* tint);
+/* The 8 HSL band weights of `rgb`, faded by chroma (all 0 for grey). */
+void lo_hsl_targeted_weights(const float* rgb, float* weights);
+
 /* Full-resolution CPU render of a decoded tile (export path). Returns the pixel count
  * written to `out` (RGBA float, capacity `capacity` floats) or 0 when the tile is not decoded. */
 int lo_engine_render_tile_cpu(lo_engine* engine, int level, int tx, int ty, float* out, size_t capacity, int* width,

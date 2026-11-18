@@ -101,6 +101,45 @@ class EngineGpuTest {
     fun gpuHighlightsShadowsMatchesTheReference() =
         checkLight("highlights_shadows", """{"op":"highlights_shadows","highlights":0.0,"shadows":100.0}""")
 
+    /** Stage 6: each Color op (middle golden setting), GPU vs the colour-science / OKLab reference. */
+    private fun checkColor(
+        name: String,
+        op: String,
+        input: String,
+    ) {
+        val expected = premultiplied8(npy("colorops/${name}_gpu_srgb_display_f32.npy"))
+        val graph = """{"schemaVersion":1,"layers":[{"id":"background","ops":[$op]}]}"""
+        GoldenAssert.assertMatches(gpu(graph, input), expected, "gpu_color_${name}_srgb8", Tolerance.GPU_VS_CPU, diffDir)
+    }
+
+    @Test
+    fun gpuWhiteBalanceMatchesTheReference() =
+        checkColor("white_balance", """{"op":"white_balance","temperature":9000.0,"tint":40.0}""", SCENE)
+
+    @Test
+    fun gpuVibranceMatchesTheReference() = checkColor("vibrance", """{"op":"vibrance","amount":40.0}""", CHART)
+
+    @Test
+    fun gpuSaturationMatchesTheReference() = checkColor("saturation", """{"op":"saturation","amount":-30.0}""", CHART)
+
+    @Test
+    fun gpuHslMixerMatchesTheReference() =
+        checkColor(
+            "hsl_mixer",
+            """{"op":"hsl_mixer","hue":[0,0,0,0,0,0,0,0],"saturation":[-100,-100,-100,-100,-100,100,0,0],""" +
+                """"luminance":[0,0,0,0,50,-60,0,0]}""",
+            CHART,
+        )
+
+    @Test
+    fun gpuInvertMatchesTheReference() = checkColor("invert", """{"op":"invert"}""", SCENE)
+
+    @Test
+    fun gpuPosterizeMatchesTheReference() = checkColor("posterize", """{"op":"posterize","levels":12.0}""", CHART)
+
+    @Test
+    fun gpuThresholdMatchesTheReference() = checkColor("threshold", """{"op":"threshold","level":0.5}""", SCENE)
+
     /** The compute-shader histogram against numpy (reference.histogram_srgb): within 1 count per bin. */
     @Test
     fun gpuHistogramMatchesNumpy() {
@@ -127,6 +166,7 @@ class EngineGpuTest {
 
     private companion object {
         const val SCENE = "input/scene_rec2020_f32.npy"
+        const val CHART = "input/colors_rec2020_f32.npy"
         const val IDENTITY = """{"schemaVersion":1,"layers":[{"id":"background","ops":[{"op":"identity"}]}]}"""
         const val EXPOSURE_MINUS_1 = """{"schemaVersion":1,"layers":[{"id":"background","ops":[{"op":"exposure_test","stops":-1.0}]}]}"""
     }

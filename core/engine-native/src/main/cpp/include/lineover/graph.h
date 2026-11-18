@@ -16,6 +16,9 @@ namespace lo {
 struct OpParams {
     std::string op;                                       // stable @SerialName, e.g. "exposure_test"
     std::vector<std::pair<std::string, double>> params;  // in declaration order
+    // Number arrays (e.g. the HSL mixer's 8 bands), written after the scalars: Kotlin
+    // ops declare their list fields last.
+    std::vector<std::pair<std::string, std::vector<double>>> arrays;
 };
 
 struct Layer {

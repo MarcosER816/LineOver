@@ -6,11 +6,15 @@ import dev.mark.lineover.core.engine.RenderScheduler
 import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.CanvasSurround
 import dev.mark.lineover.core.io.project.ProjectLibrary
+import dev.mark.lineover.core.model.ColorAdjustments
 import dev.mark.lineover.core.model.EditGraph
+import dev.mark.lineover.core.model.HslBand
+import dev.mark.lineover.core.model.HslChannel
 import dev.mark.lineover.core.model.LightAdjustments
 import dev.mark.lineover.core.model.LightParam
 import dev.mark.lineover.core.model.Project
 import dev.mark.lineover.core.model.ToolCategory
+import dev.mark.lineover.core.model.editOps
 import dev.mark.lineover.core.ui.mvi.MviViewModel
 import dev.mark.lineover.core.ui.tools.ToolPlace
 import dev.mark.lineover.core.ui.tools.ToolRegistry
@@ -21,13 +25,16 @@ import dev.mark.lineover.feature.editor.canvas.CanvasGestureListener
 import dev.mark.lineover.feature.editor.canvas.EditorCanvas
 import dev.mark.lineover.feature.editor.canvas.EditorCanvasFactory
 import dev.mark.lineover.feature.editor.canvas.ImageSummary
+import dev.mark.lineover.feature.editor.canvas.PickMode
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /** What the editor's panel slot shows (bottom panel on phones, right column when wide). */
 sealed interface EditorPanel {
@@ -54,6 +61,21 @@ enum class HistoryTab(
 
 /** Menus that drop down from a button. */
 enum class EditorMenu { More, AddLayer, AddMask }
+
+/** The eyedropper loupe: where the finger is and the 9 x 9 original pixels under it. */
+class Loupe(
+    val viewX: Float,
+    val viewY: Float,
+    /** RGBA working space, top row first; null until sampled. */
+    val pixels: FloatArray?,
+)
+
+/** What a targeted drag changes: the main band under the finger and its value. */
+data class TargetedHud(
+    val band: HslBand,
+    val channel: HslChannel,
+    val value: Float,
+)
 
 data class EditorState(
     val project: Project? = null,
@@ -82,6 +104,16 @@ data class EditorState(
     val compare: CompareMode = CompareMode.Off,
     /** Split mode: where the original ends, as a fraction of the canvas width. */
     val split: Float = DEFAULT_SPLIT,
+    /** The Color basics (Stage 6). */
+    val color: ColorAdjustments = ColorAdjustments(),
+    /** What the HSL panel's sliders change. */
+    val hslChannel: HslChannel = HslChannel.Hue,
+    /** Eyedropper or targeted adjustment armed: one finger picks on the canvas. */
+    val pickMode: PickMode = PickMode.None,
+    /** The eyedropper loupe while the finger is down. */
+    val loupe: Loupe? = null,
+    /** The targeted adjustment's band under the finger while dragging. */
+    val targeted: TargetedHud? = null,
     /** Debug builds only: the render-stats overlay (More → Render stats). */
     val debuggable: Boolean = false,
     val renderStats: Boolean = false,
@@ -212,6 +244,74 @@ sealed interface EditorIntent {
     data class SwipeActive(
         val active: Boolean,
     ) : EditorIntent
+
+    /** Color (Stage 6). */
+    data class SetWhiteBalance(
+        val kelvin: Float,
+        val tint: Float,
+    ) : EditorIntent
+
+    /** White balance → As shot: the camera's own balance (no change). */
+    data object AsShot : EditorIntent
+
+    data class SetVibrance(
+        val amount: Float,
+    ) : EditorIntent
+
+    data class SetSaturation(
+        val amount: Float,
+    ) : EditorIntent
+
+    data class SetHsl(
+        val channel: HslChannel,
+        val band: HslBand,
+        val value: Float,
+    ) : EditorIntent
+
+    data class SelectHslChannel(
+        val channel: HslChannel,
+    ) : EditorIntent
+
+    data object ToggleEyedropper : EditorIntent
+
+    data object ToggleTargeted : EditorIntent
+
+    data class SetInvert(
+        val on: Boolean,
+    ) : EditorIntent
+
+    /** Posterize levels 2..32, 0 = off. */
+    data class SetPosterize(
+        val levels: Int,
+    ) : EditorIntent
+
+    /** Threshold level 0..1, null = off. */
+    data class SetThreshold(
+        val level: Float?,
+    ) : EditorIntent
+
+    data class EyedropperMove(
+        val viewX: Float,
+        val viewY: Float,
+        val u: Float,
+        val v: Float,
+    ) : EditorIntent
+
+    data class EyedropperEnd(
+        val u: Float?,
+        val v: Float?,
+    ) : EditorIntent
+
+    data class TargetedStart(
+        val u: Float,
+        val v: Float,
+    ) : EditorIntent
+
+    data class TargetedDrag(
+        val fraction: Float,
+    ) : EditorIntent
+
+    data object TargetedEnd : EditorIntent
 }
 
 sealed interface EditorEffect {
@@ -225,6 +325,7 @@ sealed interface EditorEffect {
  * placeholder; the engine (Stage 4) renders the edit, the Light tools (Stage 5) are the
  * first that change it.
  */
+@Suppress("TooManyFunctions") // MVI: the single ViewModel of the editor screen (ARCHITECTURE.md)
 class EditorViewModel(
     projectId: Long,
     private val library: ProjectLibrary,
@@ -286,7 +387,7 @@ class EditorViewModel(
             is EditorIntent.SelectCategory -> selectCategory(intent.category)
             is EditorIntent.SelectTool -> selectTool(intent.id)
             is EditorIntent.OpenPanel -> setState { copy(panel = if (panel == intent.panel) null else intent.panel, menu = null) }
-            is EditorIntent.ClosePanel -> setState { copy(panel = null) }
+            is EditorIntent.ClosePanel -> setState { copy(panel = null, pickMode = PickMode.None, loupe = null, targeted = null) }
             is EditorIntent.SelectHistoryTab -> setState { copy(historyTab = intent.tab, panel = EditorPanel.History) }
             is EditorIntent.OpenMenu -> setState { copy(menu = intent.menu) }
             is EditorIntent.ToggleOverlay -> reduce { copy(overlays = overlays.toggle(intent.id), menu = null) }
@@ -334,6 +435,105 @@ class EditorViewModel(
         }
     }
 
+    @Suppress("CyclomaticComplexMethod") // one line per Color intent
+    private fun onColorIntent(intent: EditorIntent) {
+        when (intent) {
+            is EditorIntent.SetWhiteBalance -> reduce { withColor(color.withWhiteBalance(intent.kelvin, intent.tint)) }
+            is EditorIntent.AsShot -> reduce { withColor(color.withWhiteBalance(ColorAdjustments.DEFAULT_KELVIN, 0f)) }
+            is EditorIntent.SetVibrance -> reduce { withColor(color.copy(vibrance = intent.amount.coerceIn(-RANGE, RANGE))) }
+            is EditorIntent.SetSaturation -> reduce { withColor(color.copy(saturation = intent.amount.coerceIn(-RANGE, RANGE))) }
+            is EditorIntent.SetHsl -> reduce { withColor(color.withHsl(intent.channel, intent.band, intent.value)) }
+            is EditorIntent.SelectHslChannel -> setState { copy(hslChannel = intent.channel) }
+            is EditorIntent.ToggleEyedropper -> setState { copy(pickMode = pickMode.toggle(PickMode.Eyedropper), loupe = null) }
+            is EditorIntent.ToggleTargeted -> setState { copy(pickMode = pickMode.toggle(PickMode.Targeted), targeted = null) }
+            is EditorIntent.SetInvert -> reduce { withColor(color.copy(invert = intent.on)) }
+            is EditorIntent.SetPosterize -> reduce { withColor(color.copy(posterize = intent.levels.coerceIn(0, MAX_POSTERIZE))) }
+            is EditorIntent.SetThreshold -> reduce { withColor(color.copy(threshold = intent.level?.coerceIn(0f, 1f))) }
+            is EditorIntent.EyedropperMove -> eyedropperMove(intent)
+            is EditorIntent.EyedropperEnd -> eyedropperEnd(intent)
+            is EditorIntent.TargetedStart -> targetedStart(intent.u, intent.v)
+            is EditorIntent.TargetedDrag -> targetedDrag(intent.fraction)
+            is EditorIntent.TargetedEnd -> setState { copy(targeted = null) }
+            else -> Unit
+        }
+    }
+
+    private fun PickMode.toggle(mode: PickMode) = if (this == mode) PickMode.None else mode
+
+    private fun EditorState.withColor(next: ColorAdjustments): EditorState =
+        copy(color = next, graph = graph.withBackgroundOps(editOps(light, next)))
+
+    // Sampling blocks on the render thread: off the main thread, the latest request wins.
+    private var loupeJob: Job? = null
+    private var targetedWeights: FloatArray? = null
+
+    private fun eyedropperMove(move: EditorIntent.EyedropperMove) {
+        val canvas = state.value.canvas
+        setState { copy(loupe = Loupe(move.viewX, move.viewY, loupe?.pixels)) }
+        if (canvas == null || !inImage(move.u, move.v)) return
+        loupeJob?.cancel()
+        loupeJob =
+            viewModelScope.launch {
+                val pixels = withContext(renderDispatcher) { canvas.loupeAt(move.u, move.v) }
+                setState { if (loupe == null) this else copy(loupe = Loupe(move.viewX, move.viewY, pixels)) }
+            }
+    }
+
+    private fun eyedropperEnd(end: EditorIntent.EyedropperEnd) {
+        loupeJob?.cancel()
+        setState { copy(loupe = null) }
+        val canvas = state.value.canvas
+        // A cancel (second finger, null point) or a lift outside the photo picks nothing.
+        val u = end.u?.takeIf { it in 0f..1f }
+        val v = end.v?.takeIf { it in 0f..1f }
+        if (u == null || v == null || canvas == null) return
+        viewModelScope.launch {
+            val wb = withContext(renderDispatcher) { canvas.whiteBalanceAt(u, v) }
+            if (wb == null) {
+                sendEffect(EditorEffect.Message("Pick something lighter: black has no colour to balance"))
+            } else {
+                // One pick, then the eyedropper puts itself away (Lightroom-like).
+                reduce { withColor(color.withWhiteBalance(wb.first, wb.second)).copy(pickMode = PickMode.None) }
+            }
+        }
+    }
+
+    private fun targetedStart(
+        u: Float,
+        v: Float,
+    ) {
+        targetedWeights = null
+        val canvas = state.value.canvas ?: return
+        if (!inImage(u, v)) return
+        viewModelScope.launch {
+            val weights = withContext(renderDispatcher) { canvas.hslWeightsAt(u, v) } ?: return@launch
+            targetedWeights = weights
+            updateTargetedHud(weights)
+        }
+    }
+
+    private fun targetedDrag(fraction: Float) {
+        val weights = targetedWeights ?: return
+        val channel = state.value.hslChannel
+        reduce { withColor(color.nudgeHsl(channel, weights, fraction * TARGETED_RANGE_PER_HEIGHT)) }
+        updateTargetedHud(weights)
+    }
+
+    private fun updateTargetedHud(weights: FloatArray) {
+        val main = weights.indices.maxBy { weights[it] }
+        if (weights[main] <= 0f) {
+            setState { copy(targeted = null) }
+            return
+        }
+        val band = HslBand.entries[main]
+        setState { copy(targeted = TargetedHud(band, hslChannel, color.hsl(hslChannel)[main])) }
+    }
+
+    private fun inImage(
+        u: Float,
+        v: Float,
+    ) = u in 0f..1f && v in 0f..1f
+
     private fun onGestureIntent(intent: EditorIntent) {
         when (intent) {
             is EditorIntent.HoldOriginal -> {
@@ -356,7 +556,7 @@ class EditorViewModel(
             }
 
             else -> {
-                Unit
+                onColorIntent(intent)
             }
         }
     }
@@ -371,10 +571,31 @@ class EditorViewModel(
             override fun onSwipeAdjust(fraction: Float) = onIntent(EditorIntent.SwipeAdjust(fraction))
 
             override fun onSwipeActive(active: Boolean) = onIntent(EditorIntent.SwipeActive(active))
+
+            override fun onEyedropperMove(
+                viewX: Float,
+                viewY: Float,
+                u: Float,
+                v: Float,
+            ) = onIntent(EditorIntent.EyedropperMove(viewX, viewY, u, v))
+
+            override fun onEyedropperEnd(
+                u: Float?,
+                v: Float?,
+            ) = onIntent(EditorIntent.EyedropperEnd(u, v))
+
+            override fun onTargetedStart(
+                u: Float,
+                v: Float,
+            ) = onIntent(EditorIntent.TargetedStart(u, v))
+
+            override fun onTargetedDrag(fraction: Float) = onIntent(EditorIntent.TargetedDrag(fraction))
+
+            override fun onTargetedEnd() = onIntent(EditorIntent.TargetedEnd)
         }
 
     private fun EditorState.withLight(next: LightAdjustments): EditorState =
-        copy(light = next, graph = graph.withBackgroundOps(next.toOps()))
+        copy(light = next, graph = graph.withBackgroundOps(editOps(next, color)))
 
     private fun autoLight() {
         val result = state.value.canvas?.autoLight()
@@ -457,6 +678,7 @@ class EditorViewModel(
                 category = if (category != null && this.category != ToolCategory.Favorites) category else this.category,
                 panel = if (sameTool) null else EditorPanel.Tool(id),
                 menu = null,
+                pickMode = PickMode.None,
                 searchOpen = false,
             )
         }
@@ -489,6 +711,11 @@ class EditorViewModel(
 
     companion object {
         const val FAVORITES_TOOL = "favorites.favorites"
+        const val MAX_POSTERIZE = 32
+        private const val RANGE = ColorAdjustments.RANGE
+
+        /** A targeted drag over the whole canvas height moves the band by 200 (-100 → +100). */
+        const val TARGETED_RANGE_PER_HEIGHT = 200f
 
         /** The spinner appears only when sharp tiles take longer than this (Stage 4 UX). */
         const val SPINNER_DELAY_MILLIS = 300L

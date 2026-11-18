@@ -14,8 +14,8 @@ listed in `TOOL_CATALOG.md`; stages 1–4 build the foundation they plug into.
 | 3 | Editor shell | The full editor layout with a visible placeholder slot for **every** tool in `TOOL_CATALOG.md`; canvas view with zoom / pan / rotate gestures; side sheets; export sheet; tool search. **The layout is frozen after this stage (R9).** No engine yet | ✅ |
 | 4 | Engine foundation, file loading and edit graph | GLES 3.2 engine foundation (render thread, RGBA16F 512×512 tiles, linear Rec.2020, CPU reference path, GPU-vs-CPU golden tests); file loading (original never modified, decode, colour management, 2048-px preview proxy, full-resolution background render); edit graph wired from UI to engine | ✅ |
 | 5 | Light | Exposure, Contrast, Highlights, Shadows, Whites, Blacks, Brightness; Histogram; clipping warnings; before / after (hold, split, side by side) | ✅ |
-| 6 | Color basics | White balance, Vibrance, Saturation, HSL / Color Mixer, Invert, Posterize, Threshold | 🔜 |
-| 7 | Curves and grading | Curves (point, parametric), Levels; Color Grading, Split toning, Color Balance, Selective Color, Channel Mixer, Black & White, Photo Filter, Gradient Map, Calibration | ⬜ |
+| 6 | Color basics | White balance, Vibrance, Saturation, HSL / Color Mixer, Invert, Posterize, Threshold | ✅ |
+| 7 | Curves and grading | Curves (point, parametric), Levels; Color Grading, Split toning, Color Balance, Selective Color, Channel Mixer, Black & White, Photo Filter, Gradient Map, Calibration | 🔜 |
 | 8 | History and projects | Undo / redo, history list, snapshots, versions, `.loproj` project file (before / after moved to Stage 5) | ⬜ |
 | 9 | Crop and optics | Crop, aspect ratios, Straighten, Rotate, Flip, perspective crop; Upright, lens distortion, chromatic aberration, lens vignetting | ⬜ |
 | 10 | Effects and detail | Texture, Clarity, Dehaze, Vignette, Grain; Sharpen, Noise reduction | ⬜ |

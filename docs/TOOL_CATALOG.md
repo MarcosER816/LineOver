@@ -1,6 +1,6 @@
 # Tool catalog
 
-Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 11 done.**
+Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 18 done.**
 
 - **id**: stable identifier (`<group>.<tool>`), used in code, favourites and project files. Never renamed.
 - **UI slot**: where the tool lives. Slots are reserved now and are never moved (rule R9); a stage only *fills* slots.
@@ -98,13 +98,13 @@ The Favorites strip shows the tools the user pinned; it has no tools of its own.
 
 | id | Name | Category | UI slot | Stage | Status |
 | --- | --- | --- | --- | --- | --- |
-| `color.white_balance` | White balance | Color | `cat/Color/01` | 6 | reserved |
-| `color.vibrance` | Vibrance | Color | `cat/Color/02` | 6 | reserved |
-| `color.saturation` | Saturation | Color | `cat/Color/03` | 6 | reserved |
-| `color.hsl_color_mixer` | HSL / Color Mixer | Color | `cat/Color/04` | 6 | reserved |
-| `color.invert` | Invert | Color | `cat/Color/05` | 6 | reserved |
-| `color.posterize` | Posterize | Color | `cat/Color/06` | 6 | reserved |
-| `color.threshold` | Threshold | Color | `cat/Color/07` | 6 | reserved |
+| `color.white_balance` | White balance | Color | `cat/Color/01` | 6 | done |
+| `color.vibrance` | Vibrance | Color | `cat/Color/02` | 6 | done |
+| `color.saturation` | Saturation | Color | `cat/Color/03` | 6 | done |
+| `color.hsl_color_mixer` | HSL / Color Mixer | Color | `cat/Color/04` | 6 | done |
+| `color.invert` | Invert | Color | `cat/Color/05` | 6 | done |
+| `color.posterize` | Posterize | Color | `cat/Color/06` | 6 | done |
+| `color.threshold` | Threshold | Color | `cat/Color/07` | 6 | done |
 | `color.color_grading` | Color Grading | Color | `cat/Color/08` | 7 | reserved |
 | `color.split_toning` | Split toning | Color | `cat/Color/09` | 7 | reserved |
 | `color.color_balance` | Color Balance | Color | `cat/Color/10` | 7 | reserved |

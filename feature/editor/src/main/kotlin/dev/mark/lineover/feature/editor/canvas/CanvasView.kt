@@ -32,7 +32,35 @@ interface CanvasGestureListener {
 
     /** Swipe mode: a swipe started (true) or ended (false), for the HUD. */
     fun onSwipeActive(active: Boolean)
+
+    /** Eyedropper: the finger is at view ([viewX], [viewY]) = image point ([u], [v]), 0..1. */
+    fun onEyedropperMove(
+        viewX: Float,
+        viewY: Float,
+        u: Float,
+        v: Float,
+    ) = Unit
+
+    /** Eyedropper: lifted at image point ([u], [v]); null when cancelled (second finger). */
+    fun onEyedropperEnd(
+        u: Float?,
+        v: Float?,
+    ) = Unit
+
+    /** Targeted adjustment: a drag started at image point ([u], [v]). */
+    fun onTargetedStart(
+        u: Float,
+        v: Float,
+    ) = Unit
+
+    /** Targeted adjustment: the finger moved up by [fraction] of the canvas height (down < 0). */
+    fun onTargetedDrag(fraction: Float) = Unit
+
+    fun onTargetedEnd() = Unit
 }
+
+/** What one finger does on the canvas while a tool needs the image itself. */
+enum class PickMode { None, Eyedropper, Targeted }
 
 /**
  * The photo canvas: a SurfaceView the native engine renders into on its own render
@@ -47,6 +75,8 @@ interface CanvasGestureListener {
  * - One finger held still for 250 ms: the original is shown until it lifts (compare).
  * - Swipe mode (Light panel option): one finger moving vertically picks the parameter,
  *   horizontally changes it ([CanvasGestureListener]).
+ * - Pick modes ([PickMode]): the white-balance eyedropper (the finger's image point, the
+ *   pick on lift) and the HSL targeted adjustment (vertical drag on a colour).
  *
  * Other one-finger gestures are left free for the tools of later stages (brushes, handles).
  */
@@ -93,6 +123,16 @@ class CanvasView(
 
     /** Swipe mode: one finger adjusts the selected parameter instead of doing nothing. */
     var swipeMode = false
+
+    /** Eyedropper / targeted adjustment: one finger picks on the image (no compare, no swipe). */
+    var pickMode = PickMode.None
+        set(value) {
+            if (field != value) endOneFinger()
+            field = value
+        }
+
+    private val imagePoint = FloatArray(2)
+    private var lastY = 0f
 
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
     private val swipeStepPx = SWIPE_STEP_DP * resources.displayMetrics.density
@@ -215,18 +255,19 @@ class CanvasView(
             }
 
             MotionEvent.ACTION_MOVE -> {
-                if (twoFingers && event.pointerCount >= 2) {
-                    moveTwoFingers(event)
-                } else if (event.pointerCount == 1) {
-                    moveOneFinger(event.x, event.y)
-                }
+                move(event)
             }
 
             MotionEvent.ACTION_POINTER_UP -> {
                 if (event.pointerCount == 2 && twoFingers) endTwoFingers(event, tracker)
             }
 
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+            MotionEvent.ACTION_UP -> {
+                twoFingers = false
+                endOneFinger(lifted = true, x = event.x, y = event.y)
+            }
+
+            MotionEvent.ACTION_CANCEL -> {
                 twoFingers = false
                 endOneFinger()
             }
@@ -234,10 +275,41 @@ class CanvasView(
         return true
     }
 
+    /** The image point under view (x, y), normalised to 0..1 (unclamped). */
+    private fun toImage(
+        x: Float,
+        y: Float,
+    ): FloatArray {
+        transform.viewToImage(x, y, imagePoint)
+        imagePoint[0] /= transform.imageWidth
+        imagePoint[1] /= transform.imageHeight
+        return imagePoint
+    }
+
     private fun beginOneFinger(
         x: Float,
         y: Float,
     ) {
+        when (pickMode) {
+            PickMode.Eyedropper -> {
+                oneFinger = OneFinger.Eyedropper
+                val p = toImage(x, y)
+                gestureListener?.onEyedropperMove(x, y, p[0], p[1])
+                return
+            }
+
+            PickMode.Targeted -> {
+                oneFinger = OneFinger.Targeted
+                lastY = y
+                val p = toImage(x, y)
+                gestureListener?.onTargetedStart(p[0], p[1])
+                return
+            }
+
+            PickMode.None -> {
+                Unit
+            }
+        }
         oneFinger = OneFinger.Pending
         downX = x
         downY = y
@@ -281,6 +353,10 @@ class CanvasView(
                 lastX = x
             }
 
+            OneFinger.Eyedropper, OneFinger.Targeted -> {
+                movePick(x, y)
+            }
+
             OneFinger.SwipeSelect -> {
                 val steps = ((y - downY) / swipeStepPx).toInt()
                 if (steps != selectSteps) {
@@ -296,9 +372,41 @@ class CanvasView(
         }
     }
 
-    private fun endOneFinger() {
+    private fun movePick(
+        x: Float,
+        y: Float,
+    ) {
+        if (oneFinger == OneFinger.Eyedropper) {
+            val p = toImage(x, y)
+            gestureListener?.onEyedropperMove(x, y, p[0], p[1])
+        } else {
+            val h = height.takeIf { it > 0 } ?: return
+            gestureListener?.onTargetedDrag((lastY - y) / h)
+            lastY = y
+        }
+    }
+
+    /** [lifted]: the finger went up (an eyedropper pick), not a cancel. */
+    private fun endOneFinger(
+        lifted: Boolean = false,
+        x: Float = 0f,
+        y: Float = 0f,
+    ) {
         mainHandler.removeCallbacks(holdRunnable)
         when (oneFinger) {
+            OneFinger.Eyedropper -> {
+                if (lifted) {
+                    val p = toImage(x, y)
+                    gestureListener?.onEyedropperEnd(p[0], p[1])
+                } else {
+                    gestureListener?.onEyedropperEnd(null, null)
+                }
+            }
+
+            OneFinger.Targeted -> {
+                gestureListener?.onTargetedEnd()
+            }
+
             OneFinger.Hold -> {
                 renderer?.setShowOriginal(false)
                 gestureListener?.onHoldChanged(false)
@@ -315,7 +423,15 @@ class CanvasView(
         oneFinger = OneFinger.None
     }
 
-    private enum class OneFinger { None, Pending, Hold, Free, SwipeAdjust, SwipeSelect }
+    private enum class OneFinger { None, Pending, Hold, Free, SwipeAdjust, SwipeSelect, Eyedropper, Targeted }
+
+    private fun move(event: MotionEvent) {
+        if (twoFingers && event.pointerCount >= 2) {
+            moveTwoFingers(event)
+        } else if (event.pointerCount == 1) {
+            moveOneFinger(event.x, event.y)
+        }
+    }
 
     private fun startTwoFingers(event: MotionEvent) {
         stopMotion()

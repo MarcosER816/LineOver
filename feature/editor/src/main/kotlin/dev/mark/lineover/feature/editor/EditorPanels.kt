@@ -59,18 +59,7 @@ internal fun ColumnScope.PanelContent(
     val close = { onIntent(EditorIntent.ClosePanel) }
     when (val panel = state.panel) {
         is EditorPanel.Tool -> {
-            if (LightParam.forTool(panel.id) != null) {
-                // Phone: the low detent shows the selected slider, the high one all of them.
-                LightPanel(
-                    state,
-                    onIntent,
-                    showAll = wide || panelState == null || panelState.detent == LoPanelDetent.Expanded,
-                    onShowAll = panelState?.let { { it.detent = LoPanelDetent.Expanded } },
-                    onClose = close,
-                )
-            } else {
-                ToolRegistry[panel.id]?.let { ToolPanel(it, close) }
-            }
+            ToolPanelContent(panel.id, state, wide, onIntent, panelState, close)
         }
 
         EditorPanel.Layers -> {
@@ -91,6 +80,38 @@ internal fun ColumnScope.PanelContent(
                 wide -> CategoryToolList(state, onIntent)
                 else -> Unit
             }
+        }
+    }
+}
+
+/** The panel of a tool: built tools (Light, Color) or the placeholder of a reserved one. */
+@Composable
+private fun ToolPanelContent(
+    id: String,
+    state: EditorState,
+    wide: Boolean,
+    onIntent: (EditorIntent) -> Unit,
+    panelState: LoPanelState?,
+    close: () -> Unit,
+) {
+    when {
+        LightParam.forTool(id) != null -> {
+            // Phone: the low detent shows the selected slider, the high one all of them.
+            LightPanel(
+                state,
+                onIntent,
+                showAll = wide || panelState == null || panelState.detent == LoPanelDetent.Expanded,
+                onShowAll = panelState?.let { { it.detent = LoPanelDetent.Expanded } },
+                onClose = close,
+            )
+        }
+
+        id in COLOR_TOOLS -> {
+            ColorPanel(id, state, onIntent, onClose = close)
+        }
+
+        else -> {
+            ToolRegistry[id]?.let { ToolPanel(it, close) }
         }
     }
 }

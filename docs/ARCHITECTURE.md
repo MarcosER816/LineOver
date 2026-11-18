@@ -184,10 +184,31 @@ Native **C++17, OpenGL ES 3**, in `:core:engine-native`; Kotlin reaches it throu
 - Auto: 0.5 % / 99.5 % luminance percentiles of the preview → Exposure (high to 1.0), then
   Blacks (low to 0.002).
 
+### Color tools (Stage 6)
+
+- `color_ops.h/.cpp`, `reference.py` and the GLSL bodies change together. Full order of the
+  background ops (`editOps` in `:core:model`): **White balance** → Light (Highlights/Shadows
+  … Brightness) → Vibrance → Saturation → HSL → Invert → Posterize → Threshold.
+- White balance: a 3 x 3 working-space matrix, Bradford CAT from the (T, tint) white to D65.
+  The white is D65 plus the Planckian-locus offset (Krystek 1985) of T from 6504 K, plus
+  tint x 0.05/150 duv along the locus normal; 6504 K / tint 0 is exact identity.
+  Highlights/Shadows' coefficients still come from the source preview: after a white
+  balance change the base is computed on the unbalanced luminance (small, documented).
+- Vibrance, Saturation, HSL in OKLCh (Rec.2020 → XYZ → OKLab, sign-preserving cube root);
+  HSL bands are raised cosines between the OKLCh hues of the classic HSV band centres
+  (a partition of unity) and every hue effect fades in from grey over chroma 0..0.03.
+- Invert / Posterize / Threshold on transfer-encoded values (sRGB curve extended by symmetry).
+- Nothing clips: out-of-gamut and HDR values pass through until the display transform.
+- Graph JSON: number arrays (the mixer's bands) are op fields written after the scalars.
+- Eyedropper / targeted adjustment: `Engine::samplePatch` averages 5 x 5 preview pixels at an
+  image point and runs the ops that come before the tool (on the render thread, called off
+  the main thread); `colorops::solveNeutral` and `targetedWeights` turn it into (T, tint) or
+  band weights. The loupe reads 9 x 9 original preview pixels.
+
 `core/engine-native/src/main/cpp`:
 
 ```
-include/lineover/   public C++ API (portable): color, ops, light, graph, tiling, tile_store
+include/lineover/   public C++ API (portable): color, ops, light, color_ops, graph, tiling, tile_store
 src/                portable engine core                         -> lo_engine (static)
 third_party/zstd    zstd 1.5.7 sources (BSD), spilled tiles      -> lo_zstd (static)
 android/            render thread, EGL, GL pipeline, C API (lo_api.h), JNI -> liblineover_engine.so

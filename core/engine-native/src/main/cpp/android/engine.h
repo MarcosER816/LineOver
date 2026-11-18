@@ -83,6 +83,14 @@ public:
     void setPreview(std::vector<float> working, int width, int height);
     // Auto (percentile stretch) of the preview; false before a preview was set.
     bool autoLight(float* exposure, float* blacks);
+    // The average working-space RGB of the 5 x 5 preview pixels around image point (u, v)
+    // (0..1, oriented image), run through the ops that come before the first op of type
+    // `before` (all ops if there is none). The eyedropper samples before White balance,
+    // the targeted adjustment before the HSL mixer. False without a preview.
+    bool samplePatch(float u, float v, OpType before, float rgb[3]);
+    // The n x n source preview pixels around (u, v), RGBA working space, top row first
+    // (the eyedropper loupe). n <= 15.
+    bool sampleGrid(float u, float v, int n, float* rgba);
     // A decoded tile of `key` (working space).
     void submitTile(const TileKey& key, std::shared_ptr<const Tile> tile);
     // The tile of `key` cannot be decoded: it is not requested again for this image.

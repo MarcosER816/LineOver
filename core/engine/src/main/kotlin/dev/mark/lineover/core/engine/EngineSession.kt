@@ -20,6 +20,14 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
+/** Native op type ids (lo::OpType) the sampling API refers to. */
+enum class NativeOp(
+    val id: Int,
+) {
+    WhiteBalance(8),
+    HslMixer(11),
+}
+
 /** How the canvas compares the edit with the original (native order). */
 enum class CompareMode { Off, Split, SideBySide }
 
@@ -43,6 +51,7 @@ data class EngineBudgets(
  * zoomed in. Every call is main-safe except [open] (suspends on IO) and [close] (joins
  * threads; call off the main thread when possible).
  */
+@Suppress("TooManyFunctions") // the editor's one facade of the native engine
 class EngineSession private constructor(
     private val native: NativeEngine,
     private val reader: SourceReader,
@@ -106,6 +115,24 @@ class EngineSession private constructor(
 
     /** Auto (Light): the percentile stretch of the preview as (exposure EV, blacks). */
     fun autoLight(): Pair<Float, Float>? = if (closed) null else native.autoLight()?.let { it[0] to it[1] }
+
+    /**
+     * Working-space RGB averaged over the 5 x 5 preview pixels at image point ([u], [v])
+     * (0..1, oriented image), run through the ops before the first [before] op (the
+     * eyedropper samples before White balance, targeted adjustment before the HSL mixer).
+     */
+    fun sample(
+        u: Float,
+        v: Float,
+        before: NativeOp,
+    ): FloatArray? = if (closed) null else native.sample(u, v, before.id)
+
+    /** The n x n original preview pixels around (u, v) for the eyedropper loupe. */
+    fun sampleGrid(
+        u: Float,
+        v: Float,
+        n: Int,
+    ): FloatArray? = if (closed) null else native.sampleGrid(u, v, n)
 
     /** Hold to compare: the original while true. */
     fun setShowOriginal(original: Boolean) {

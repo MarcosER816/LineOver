@@ -6,6 +6,7 @@
 #include <string>
 
 #include "engine.h"
+#include "lineover/color_ops.h"
 #include "lineover/tiling.h"
 
 struct lo_engine {
@@ -179,6 +180,20 @@ void lo_engine_get_stats(lo_engine* engine, lo_engine_stats* out) {
     out->updates = s.updates;
     out->histogram = s.histogram ? 1 : 0;
 }
+
+int lo_engine_sample(lo_engine* engine, float u, float v, int before_op_type, float* rgb) {
+    return engine->engine->samplePatch(u, v, static_cast<lo::OpType>(before_op_type), rgb) ? 1 : 0;
+}
+
+int lo_engine_sample_grid(lo_engine* engine, float u, float v, int n, float* rgba) {
+    return engine->engine->sampleGrid(u, v, n, rgba) ? 1 : 0;
+}
+
+int lo_white_balance_for_neutral(const float* rgb, float* kelvin, float* tint) {
+    return lo::colorops::solveNeutral(rgb, kelvin, tint) ? 1 : 0;
+}
+
+void lo_hsl_targeted_weights(const float* rgb, float* weights) { lo::colorops::targetedWeights(rgb, weights); }
 
 int lo_engine_auto_light(lo_engine* engine, float* exposure, float* blacks) {
     return engine->engine->autoLight(exposure, blacks) ? 1 : 0;

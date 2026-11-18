@@ -67,6 +67,9 @@ public:
     void releaseReadback();
     // Synchronous float readback (test hook).
     bool readFloat(GLuint texture, int width, int height, float* out);
+    // Float readback of a region (x, y in texture rows from the bottom-left = row 0 of
+    // the uploaded data).
+    bool readRegion(GLuint texture, int x, int y, int width, int height, float* out);
 
 private:
     GLuint programFor(const std::string& declarations, const std::string& body, std::string* error);
