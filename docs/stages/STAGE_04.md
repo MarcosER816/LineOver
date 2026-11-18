@@ -103,7 +103,24 @@ Plan B used: no.
 ## Proof
 
 - CI run and APK artifact: see the Stage 4 report
-- Memory log (emulator, `EngineOpenTest`, tag `LineOverMemory`): see the Stage 4 report
+- Memory log (emulator API 36, SwiftShader, `EngineOpenTest`, tag `LineOverMemory`, CI run
+  44224222792):
+
+  ```
+  after open (preview only): native heap 261 MB, GPU 0 MB      (includes the test's own 200 MB
+                                                                 generator bitmap, being freed)
+  100 % at (4080, 3060): native heap 89 MB (CPU tiles 64 MB in 16, spilled 8),  GPU 48 MB in 24 -> 137 MB
+  100 % at (1000, 1000): native heap 89 MB (CPU tiles 64 MB in 16, spilled 8),  GPU 48 MB in 24 -> 137 MB
+  100 % at (7000, 1500): native heap 89 MB (CPU tiles 64 MB in 16, spilled 27), GPU 84 MB in 42 -> 173 MB
+  100 % at (1500, 5000): native heap 89 MB (CPU tiles 64 MB in 16, spilled 27), GPU 84 MB in 42 -> 173 MB
+  100 % at (7000, 5500): native heap 88 MB (CPU tiles 63 MB in 16, spilled 40), GPU 107 MB in 54 -> 196 MB
+  Ultra HDR 4000x3000: native heap 84 MB, GPU 30 MB -> 114 MB
+  ```
+  Peak 261 MB native + GPU (limit 1.2 GB). The test now counts the after-open value too.
+- GPU vs reference: passed on API 34 and 36 with `halfFloat=true` (RGBA16F renderable on
+  SwiftShader; the SRGB8 fallback was not needed).
+- Frame timing (SwiftShader, correctness only): 134 frames in a 2 s pan, P95 frame interval
+  19.9 ms, canvas surface sRGB (the emulator has no P3).
 - GPU vs reference and frame timing: emulator reports (tags `LineOverEngineTest`, `LineOverPerf`)
 
 ## Phone checklist
