@@ -35,4 +35,59 @@ sealed interface OpParams {
     ) : OpParams {
         override val isIdentity: Boolean get() = stops == 0f
     }
+
+    /** Exposure: RGB × 2^[ev] (ev in −5..5). Stage 5. */
+    @Serializable
+    @SerialName("exposure")
+    data class Exposure(
+        val ev: Float,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = ev == 0f
+    }
+
+    /** Contrast (−100..100): an S-curve in log space around mid grey 0.18. */
+    @Serializable
+    @SerialName("contrast")
+    data class Contrast(
+        val amount: Float,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = amount == 0f
+    }
+
+    /** Brightness (−100..100): a midtone gamma. */
+    @Serializable
+    @SerialName("brightness")
+    data class Brightness(
+        val amount: Float,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = amount == 0f
+    }
+
+    /** Whites (−100..100): moves the white endpoint by up to ±1 stop. */
+    @Serializable
+    @SerialName("whites")
+    data class Whites(
+        val amount: Float,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = amount == 0f
+    }
+
+    /** Blacks (−100..100): moves the black endpoint by up to ±1 stop. */
+    @Serializable
+    @SerialName("blacks")
+    data class Blacks(
+        val amount: Float,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = amount == 0f
+    }
+
+    /** Highlights and Shadows (−100..100 each) on an edge-aware (guided-filter) base. */
+    @Serializable
+    @SerialName("highlights_shadows")
+    data class HighlightsShadows(
+        val highlights: Float,
+        val shadows: Float,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = highlights == 0f && shadows == 0f
+    }
 }

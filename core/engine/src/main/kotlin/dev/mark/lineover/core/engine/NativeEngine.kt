@@ -21,6 +21,11 @@ internal class NativeEngine(
     /** True while sharp tiles in view are still loading (called from the render thread). */
     val loading: StateFlow<Boolean> = loadingFlow.asStateFlow()
 
+    private val histogramFlow = MutableStateFlow<Histogram?>(null)
+
+    /** The latest histogram of the edited preview, while enabled (at most 30 Hz). */
+    val histogram: StateFlow<Histogram?> = histogramFlow.asStateFlow()
+
     @Volatile private var handle: Long
 
     init {
@@ -116,8 +121,35 @@ internal class NativeEngine(
             level = v[11].toInt(),
             p95FrameIntervalUs = v[12],
             p95DrawUs = v[13],
+            p95UpdateUs = v[14],
+            lastUpdateUs = v[15],
+            updates = v[16],
+            histogramSupported = v[17] != 0L,
         )
     }
+
+    /** Auto (percentile stretch): (exposure EV, blacks) or null before a preview. */
+    fun autoLight(): FloatArray? = nativeAutoLight(h())
+
+    fun setShowOriginal(original: Boolean) = nativeSetShowOriginal(h(), original)
+
+    /** [mode]: 0 off, 1 split (original left of [split] × width), 2 side by side. */
+    fun setCompare(
+        mode: Int,
+        split: Float,
+    ) = nativeSetCompare(h(), mode, split)
+
+    fun setClipping(clipping: Boolean) = nativeSetClipping(h(), clipping)
+
+    fun setHistogramEnabled(enabled: Boolean) = nativeSetHistogramEnabled(h(), enabled)
+
+    /** Test hook: the histogram compute pass over [input] into [out] (1024 counts). */
+    fun gpuHistogramSelfTest(
+        input: FloatArray,
+        width: Int,
+        height: Int,
+        out: IntArray,
+    ): String? = nativeGpuHistogramSelfTest(h(), input, width, height, out)
 
     /** CPU full-resolution render of a decoded tile into [out]; its (width, height) or null. */
     fun renderTileCpu(
@@ -147,6 +179,43 @@ internal class NativeEngine(
     private fun onLoadingChanged(loading: Boolean) {
         loadingFlow.value = loading
     }
+
+    /** Called by the native render thread with a fresh array of 1024 counts. */
+    @Suppress("unused")
+    private fun onHistogram(bins: IntArray) {
+        histogramFlow.value = Histogram(bins)
+    }
+
+    private external fun nativeAutoLight(engine: Long): FloatArray?
+
+    private external fun nativeSetShowOriginal(
+        engine: Long,
+        original: Boolean,
+    )
+
+    private external fun nativeSetCompare(
+        engine: Long,
+        mode: Int,
+        split: Float,
+    )
+
+    private external fun nativeSetClipping(
+        engine: Long,
+        clipping: Boolean,
+    )
+
+    private external fun nativeSetHistogramEnabled(
+        engine: Long,
+        enabled: Boolean,
+    )
+
+    private external fun nativeGpuHistogramSelfTest(
+        engine: Long,
+        input: FloatArray,
+        width: Int,
+        height: Int,
+        out: IntArray,
+    ): String?
 
     private external fun nativeCreate(
         cacheDir: String,
@@ -256,7 +325,7 @@ internal class NativeEngine(
     ): String?
 
     private companion object {
-        const val STATS = 14
+        const val STATS = 18
     }
 }
 
@@ -276,4 +345,9 @@ data class EngineStats(
     val level: Int,
     val p95FrameIntervalUs: Long,
     val p95DrawUs: Long,
+    /** Preview update latency, setGraph -> the new preview presented (P95 / last), µs. */
+    val p95UpdateUs: Long = 0,
+    val lastUpdateUs: Long = 0,
+    val updates: Long = 0,
+    val histogramSupported: Boolean = false,
 )

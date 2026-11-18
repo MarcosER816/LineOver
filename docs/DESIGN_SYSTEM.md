@@ -29,6 +29,8 @@ There is no light theme.
 | `maskOverlay` | `#FF3B5C` at 45 % | Mask overlay on the canvas |
 | `clipHi` | `#FF2D55` | Highlight clipping warning |
 | `clipLo` | `#2D7BFF` | Shadow clipping warning |
+| `histogramRed` / `histogramGreen` / `histogramBlue` | `#FF5A5F` / `#3DDC97` / `#5B9DFF` at 55 % | Histogram channels |
+| `histogramLuma` | `textPrimary` | Histogram luminance outline |
 | `canvasSurround` | `#121212` / `#777777` | Area around the image: dark (default) or mid grey |
 
 Gradient and wheel tokens (only for tracks that show what a value does):

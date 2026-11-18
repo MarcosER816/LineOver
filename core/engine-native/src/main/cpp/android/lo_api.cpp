@@ -174,6 +174,43 @@ void lo_engine_get_stats(lo_engine* engine, lo_engine_stats* out) {
     out->level = s.level;
     out->p95_frame_interval_us = s.p95FrameIntervalUs;
     out->p95_draw_us = s.p95DrawUs;
+    out->p95_update_us = s.p95UpdateUs;
+    out->last_update_us = s.lastUpdateUs;
+    out->updates = s.updates;
+    out->histogram = s.histogram ? 1 : 0;
+}
+
+int lo_engine_auto_light(lo_engine* engine, float* exposure, float* blacks) {
+    return engine->engine->autoLight(exposure, blacks) ? 1 : 0;
+}
+
+void lo_engine_set_show_original(lo_engine* engine, int original) { engine->engine->setShowOriginal(original != 0); }
+
+void lo_engine_set_compare(lo_engine* engine, int mode, float split) {
+    const int m = mode < LO_COMPARE_OFF || mode > LO_COMPARE_SIDE_BY_SIDE ? LO_COMPARE_OFF : mode;
+    engine->engine->setCompare(static_cast<lo::android::CompareMode>(m), split);
+}
+
+void lo_engine_set_clipping(lo_engine* engine, int clipping) { engine->engine->setClipping(clipping != 0); }
+
+void lo_engine_set_histogram_callback(lo_engine* engine, void (*on_histogram)(void*, const uint32_t*), void* user) {
+    if (on_histogram == nullptr) {
+        engine->engine->setHistogramListener(nullptr);
+        return;
+    }
+    engine->engine->setHistogramListener([on_histogram, user](const std::uint32_t* bins) { on_histogram(user, bins); });
+}
+
+void lo_engine_set_histogram_enabled(lo_engine* engine, int enabled) { engine->engine->setHistogramEnabled(enabled != 0); }
+
+int lo_engine_gpu_histogram_self_test(lo_engine* engine, const float* in, int width, int height, uint32_t* out, char* error,
+                                      size_t error_len) {
+    std::string failure;
+    if (!engine->engine->gpuHistogramSelfTest(in, width, height, out, &failure)) {
+        copyError(failure, error, error_len);
+        return 0;
+    }
+    return 1;
 }
 
 void lo_engine_set_callbacks(lo_engine* engine, void (*on_loading)(void*, int), void (*on_thread_exit)(void*), void* user) {

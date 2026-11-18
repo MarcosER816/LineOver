@@ -20,6 +20,9 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
+/** How the canvas compares the edit with the original (native order). */
+enum class CompareMode { Off, Split, SideBySide }
+
 /** Memory the engine may use for one image (rule: under 1.2 GB native + GPU for 50 MP). */
 data class EngineBudgets(
     val cpuTileBytes: Long = DEFAULT_CPU,
@@ -53,6 +56,9 @@ class EngineSession private constructor(
 
     /** True while sharp tiles of the current view are still loading. */
     val loading: StateFlow<Boolean> get() = native.loading
+
+    /** The edited preview's histogram while [setHistogramEnabled] (at most 30 Hz). */
+    val histogram: StateFlow<Histogram?> get() = native.histogram
 
     init {
         loaders.forEach { it.start() }
@@ -97,6 +103,29 @@ class EngineSession private constructor(
     fun setGraph(graph: EditGraph): String? = if (closed) "closed" else native.setGraph(EditGraphJson.encode(graph))
 
     fun stats(): EngineStats = native.stats()
+
+    /** Auto (Light): the percentile stretch of the preview as (exposure EV, blacks). */
+    fun autoLight(): Pair<Float, Float>? = if (closed) null else native.autoLight()?.let { it[0] to it[1] }
+
+    /** Hold to compare: the original while true. */
+    fun setShowOriginal(original: Boolean) {
+        if (!closed) native.setShowOriginal(original)
+    }
+
+    fun setCompare(
+        mode: CompareMode,
+        split: Float,
+    ) {
+        if (!closed) native.setCompare(mode.ordinal, split)
+    }
+
+    fun setClipping(clipping: Boolean) {
+        if (!closed) native.setClipping(clipping)
+    }
+
+    fun setHistogramEnabled(enabled: Boolean) {
+        if (!closed) native.setHistogramEnabled(enabled)
+    }
 
     /** One line for logcat: native heap + engine tile memory + GPU textures. */
     fun memoryReport(): String {

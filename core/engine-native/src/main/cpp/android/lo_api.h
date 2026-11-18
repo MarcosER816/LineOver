@@ -36,7 +36,17 @@ typedef struct {
     int level;
     uint32_t p95_frame_interval_us;
     uint32_t p95_draw_us;
+    uint32_t p95_update_us; /* setGraph -> new preview presented */
+    uint32_t last_update_us;
+    uint64_t updates;
+    int histogram; /* GLES 3.1 compute available */
 } lo_engine_stats;
+
+/* Compare modes (lo::android::CompareMode). */
+enum { LO_COMPARE_OFF = 0, LO_COMPARE_SPLIT = 1, LO_COMPARE_SIDE_BY_SIDE = 2 };
+
+/* Histogram size: 4 channels (R, G, B, L) x 256 bins, channel-major. */
+enum { LO_HISTOGRAM_SIZE = 1024 };
 
 lo_engine* lo_engine_create(const char* cache_dir, size_t cpu_budget, size_t gpu_budget, char* error, size_t error_len);
 void lo_engine_destroy(lo_engine* engine);
@@ -65,6 +75,16 @@ void lo_engine_get_stats(lo_engine* engine, lo_engine_stats* out);
 void lo_engine_set_callbacks(lo_engine* engine, void (*on_loading)(void* user, int loading), void (*on_thread_exit)(void* user),
                              void* user);
 
+/* Light tools: Auto from the preview's luminance percentiles (0 before a preview). */
+int lo_engine_auto_light(lo_engine* engine, float* exposure, float* blacks);
+void lo_engine_set_show_original(lo_engine* engine, int original);
+void lo_engine_set_compare(lo_engine* engine, int mode, float split);
+void lo_engine_set_clipping(lo_engine* engine, int clipping);
+/* `on_histogram` runs on the render thread with LO_HISTOGRAM_SIZE counts, at most 30 Hz
+ * while enabled. */
+void lo_engine_set_histogram_callback(lo_engine* engine, void (*on_histogram)(void* user, const uint32_t* bins), void* user);
+void lo_engine_set_histogram_enabled(lo_engine* engine, int enabled);
+
 /* Full-resolution CPU render of a decoded tile (export path). Returns the pixel count
  * written to `out` (RGBA float, capacity `capacity` floats) or 0 when the tile is not decoded. */
 int lo_engine_render_tile_cpu(lo_engine* engine, int level, int tx, int ty, float* out, size_t capacity, int* width,
@@ -74,6 +94,11 @@ int lo_engine_render_tile_cpu(lo_engine* engine, int level, int tx, int ty, floa
  * transform into `out` (RGBA8, premultiplied). */
 int lo_engine_gpu_self_test(lo_engine* engine, const float* in, int width, int height, const char* graph, uint8_t* out,
                             char* error, size_t error_len);
+
+/* Test hook: the histogram compute pass over `in` (width x height working RGBA float)
+ * into `out` (LO_HISTOGRAM_SIZE counts). */
+int lo_engine_gpu_histogram_self_test(lo_engine* engine, const float* in, int width, int height, uint32_t* out, char* error,
+                                      size_t error_len);
 
 #ifdef __cplusplus
 }

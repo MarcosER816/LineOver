@@ -125,13 +125,35 @@ private fun buildTools(): List<ToolSpec> =
 
             strip(Auto, "auto.auto", "Auto", 11, PanelType.Action, LoIcons.AutoAwesome, "auto fix", "auto enhance", "one tap", "magic")
 
-            strip(Light, "light.exposure", "Exposure", 5, PanelType.Sliders, LoIcons.Exposure, "ev", "brighten", "darken", "stops")
-            strip(Light, "light.contrast", "Contrast", 5, PanelType.Sliders, LoIcons.Contrast, "punch")
-            strip(Light, "light.highlights", "Highlights", 5, PanelType.Sliders, LoIcons.WbSunny, "bright areas", "recover sky")
-            strip(Light, "light.shadows", "Shadows", 5, PanelType.Sliders, LoIcons.DarkMode, "dark areas", "lift shadows")
-            strip(Light, "light.whites", "Whites", 5, PanelType.Sliders, LoIcons.BrightnessHigh, "white point")
-            strip(Light, "light.blacks", "Blacks", 5, PanelType.Sliders, LoIcons.BrightnessLow, "black point")
-            strip(Light, "light.brightness", "Brightness", 5, PanelType.Sliders, LoIcons.Brightness6, "lightness", "midtones")
+            strip(
+                Light,
+                "light.exposure",
+                "Exposure",
+                5,
+                PanelType.Sliders,
+                LoIcons.Exposure,
+                "ev",
+                "brighten",
+                "darken",
+                "stops",
+                done = true,
+            )
+            strip(Light, "light.contrast", "Contrast", 5, PanelType.Sliders, LoIcons.Contrast, "punch", done = true)
+            strip(
+                Light,
+                "light.highlights",
+                "Highlights",
+                5,
+                PanelType.Sliders,
+                LoIcons.WbSunny,
+                "bright areas",
+                "recover sky",
+                done = true,
+            )
+            strip(Light, "light.shadows", "Shadows", 5, PanelType.Sliders, LoIcons.DarkMode, "dark areas", "lift shadows", done = true)
+            strip(Light, "light.whites", "Whites", 5, PanelType.Sliders, LoIcons.BrightnessHigh, "white point", done = true)
+            strip(Light, "light.blacks", "Blacks", 5, PanelType.Sliders, LoIcons.BrightnessLow, "black point", done = true)
+            strip(Light, "light.brightness", "Brightness", 5, PanelType.Sliders, LoIcons.Brightness6, "lightness", "midtones", done = true)
             strip(Light, "light.curves_point", "Curves (point)", 7, PanelType.Curve, LoIcons.ShowChart, "tone curve", "rgb curve")
             strip(Light, "light.curves_parametric", "Curves (parametric)", 7, PanelType.Curve, LoIcons.SsidChart, "region curve")
             strip(Light, "light.levels", "Levels", 7, PanelType.Curve, LoIcons.Equalizer, "input levels", "gamma")
@@ -144,6 +166,7 @@ private fun buildTools(): List<ToolSpec> =
                 5,
                 PanelType.Overlay,
                 LoIcons.BarChart,
+                done = true,
             )
             other(
                 Light,
@@ -156,6 +179,7 @@ private fun buildTools(): List<ToolSpec> =
                 LoIcons.Warning,
                 "blown highlights",
                 "clipped shadows",
+                done = true,
             )
 
             strip(
@@ -478,11 +502,12 @@ private fun buildTools(): List<ToolSpec> =
                 "history.before_after",
                 "Before / after",
                 "topbar/before-after",
-                8,
+                5,
                 PanelType.Action,
                 LoIcons.Compare,
                 "compare",
                 "original",
+                done = true,
             )
             shell(
                 "history.project_file",
@@ -599,11 +624,12 @@ private class ToolListBuilder {
         panelType: PanelType,
         @DrawableRes icon: Int,
         vararg synonyms: String,
+        done: Boolean = false,
     ) {
         val position = positions.getOrDefault(category, 0) + 1
         positions[category] = position
         val slot = "cat/${category.label}/${position.toString().padStart(2, '0')}"
-        tools += ToolSpec(id, name, category, ToolPlace.Strip, slot, stage, panelType, icon, synonyms.toList())
+        tools += ToolSpec(id, name, category, ToolPlace.Strip, slot, stage, panelType, icon, synonyms.toList(), done)
     }
 
     @Suppress("LongParameterList")
@@ -617,8 +643,9 @@ private class ToolListBuilder {
         panelType: PanelType,
         @DrawableRes icon: Int,
         vararg synonyms: String,
+        done: Boolean = false,
     ) {
-        tools += ToolSpec(id, name, category, place, slot, stage, panelType, icon, synonyms.toList())
+        tools += ToolSpec(id, name, category, place, slot, stage, panelType, icon, synonyms.toList(), done)
     }
 
     @Suppress("LongParameterList")

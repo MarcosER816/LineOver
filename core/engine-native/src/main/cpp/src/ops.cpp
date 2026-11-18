@@ -52,6 +52,31 @@ bool OpList::isIdentity() const {
     return true;
 }
 
+void OpList::cpuRefRegion(const float* in, float* out, const OpRegion& region) const {
+    if (in != out) std::memcpy(out, in, region.pixels() * 4 * sizeof(float));
+    for (const auto& op : ops_) op->cpuRefRegion(out, out, region);
+}
+
+void sampleGuided(const GuidedCoefficients& c, float u, float v, float* a, float* b) {
+    // Same arithmetic as lo_guided() in gpu_pipeline.cpp.
+    const float px = u * static_cast<float>(c.width) - 0.5f;
+    const float py = v * static_cast<float>(c.height) - 0.5f;
+    const float fx = std::floor(px), fy = std::floor(py);
+    const float tx = px - fx, ty = py - fy;
+    const int x0 = static_cast<int>(fx), y0 = static_cast<int>(fy);
+    auto at = [&](int x, int y, int k) {
+        x = x < 0 ? 0 : (x >= c.width ? c.width - 1 : x);
+        y = y < 0 ? 0 : (y >= c.height ? c.height - 1 : y);
+        return c.ab[2 * (static_cast<std::size_t>(y) * c.width + x) + k];
+    };
+    auto mix = [](float p, float q, float t) { return p * (1.f - t) + q * t; };
+    for (int k = 0; k < 2; ++k) {
+        const float top = mix(at(x0, y0, k), at(x0 + 1, y0, k), tx);
+        const float bottom = mix(at(x0, y0 + 1, k), at(x0 + 1, y0 + 1, k), tx);
+        (k == 0 ? *a : *b) = mix(top, bottom, ty);
+    }
+}
+
 void OpList::cpuRef(const float* in, float* out, std::size_t pixels) const {
     if (in != out) std::memcpy(out, in, pixels * 4 * sizeof(float));
     for (const auto& op : ops_) op->cpuRef(out, out, pixels);

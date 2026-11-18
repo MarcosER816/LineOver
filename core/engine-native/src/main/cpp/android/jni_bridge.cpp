@@ -28,6 +28,7 @@ lo_engine* handle(jlong value) { return reinterpret_cast<lo_engine*>(value); }
 struct Callbacks {
     jobject target = nullptr;  // global ref
     jmethodID onLoading = nullptr;
+    jmethodID onHistogram = nullptr;
     bool attached = false;
 };
 
@@ -46,6 +47,21 @@ void onLoading(void* user, int loading) {
     if (env == nullptr) return;
     env->CallVoidMethod(callbacks->target, callbacks->onLoading, static_cast<jboolean>(loading != 0));
     if (env->ExceptionCheck()) env->ExceptionClear();
+}
+
+void onHistogram(void* user, const uint32_t* bins) {
+    auto* callbacks = static_cast<Callbacks*>(user);
+    JNIEnv* env = renderThreadEnv(callbacks);
+    if (env == nullptr) return;
+    jintArray array = env->NewIntArray(LO_HISTOGRAM_SIZE);
+    if (array == nullptr) {
+        env->ExceptionClear();
+        return;
+    }
+    env->SetIntArrayRegion(array, 0, LO_HISTOGRAM_SIZE, reinterpret_cast<const jint*>(bins));
+    env->CallVoidMethod(callbacks->target, callbacks->onHistogram, array);
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    env->DeleteLocalRef(array);
 }
 
 void onThreadExit(void* user) {
@@ -100,7 +116,9 @@ JNIEXPORT jlong LO_NATIVE(nativeCreate)(JNIEnv* env, jobject self, jstring cache
     auto* callbacks = new Callbacks();
     callbacks->target = env->NewGlobalRef(self);
     callbacks->onLoading = env->GetMethodID(env->GetObjectClass(self), "onLoadingChanged", "(Z)V");
+    callbacks->onHistogram = env->GetMethodID(env->GetObjectClass(self), "onHistogram", "([I)V");
     lo_engine_set_callbacks(engine, onLoading, onThreadExit, callbacks);
+    lo_engine_set_histogram_callback(engine, onHistogram, callbacks);
     return reinterpret_cast<jlong>(engine);
 }
 
@@ -176,14 +194,52 @@ JNIEXPORT void LO_NATIVE(nativeSetSurround)(JNIEnv*, jobject, jlong engine, jflo
 JNIEXPORT void LO_NATIVE(nativeStats)(JNIEnv* env, jobject, jlong engine, jlongArray out) {
     lo_engine_stats s;
     lo_engine_get_stats(handle(engine), &s);
-    const jlong values[14] = {static_cast<jlong>(s.cpu_tile_bytes), static_cast<jlong>(s.cpu_tiles),
+    const jlong values[18] = {static_cast<jlong>(s.cpu_tile_bytes), static_cast<jlong>(s.cpu_tiles),
                               static_cast<jlong>(s.spilled_tiles),  static_cast<jlong>(s.spill_bytes),
                               static_cast<jlong>(s.gpu_bytes),      static_cast<jlong>(s.gpu_tiles),
                               static_cast<jlong>(s.pending_tiles),  static_cast<jlong>(s.frames),
                               static_cast<jlong>(s.tiles_decoded),  s.half_float,
                               s.display_p3,                         s.level,
-                              static_cast<jlong>(s.p95_frame_interval_us), static_cast<jlong>(s.p95_draw_us)};
-    env->SetLongArrayRegion(out, 0, 14, values);
+                              static_cast<jlong>(s.p95_frame_interval_us), static_cast<jlong>(s.p95_draw_us),
+                              static_cast<jlong>(s.p95_update_us),  static_cast<jlong>(s.last_update_us),
+                              static_cast<jlong>(s.updates),        s.histogram};
+    env->SetLongArrayRegion(out, 0, 18, values);
+}
+
+JNIEXPORT jfloatArray LO_NATIVE(nativeAutoLight)(JNIEnv* env, jobject, jlong engine) {
+    float exposure = 0.f, blacks = 0.f;
+    if (lo_engine_auto_light(handle(engine), &exposure, &blacks) == 0) return nullptr;
+    const jfloat values[2] = {exposure, blacks};
+    jfloatArray result = env->NewFloatArray(2);
+    if (result != nullptr) env->SetFloatArrayRegion(result, 0, 2, values);
+    return result;
+}
+
+JNIEXPORT void LO_NATIVE(nativeSetShowOriginal)(JNIEnv*, jobject, jlong engine, jboolean original) {
+    lo_engine_set_show_original(handle(engine), original ? 1 : 0);
+}
+
+JNIEXPORT void LO_NATIVE(nativeSetCompare)(JNIEnv*, jobject, jlong engine, jint mode, jfloat split) {
+    lo_engine_set_compare(handle(engine), mode, split);
+}
+
+JNIEXPORT void LO_NATIVE(nativeSetClipping)(JNIEnv*, jobject, jlong engine, jboolean clipping) {
+    lo_engine_set_clipping(handle(engine), clipping ? 1 : 0);
+}
+
+JNIEXPORT void LO_NATIVE(nativeSetHistogramEnabled)(JNIEnv*, jobject, jlong engine, jboolean enabled) {
+    lo_engine_set_histogram_enabled(handle(engine), enabled ? 1 : 0);
+}
+
+JNIEXPORT jstring LO_NATIVE(nativeGpuHistogramSelfTest)(JNIEnv* env, jobject, jlong engine, jfloatArray input, jint width,
+                                                        jint height, jintArray out) {
+    std::vector<float> in(static_cast<std::size_t>(env->GetArrayLength(input)));
+    env->GetFloatArrayRegion(input, 0, static_cast<jsize>(in.size()), in.data());
+    std::vector<std::uint32_t> bins(LO_HISTOGRAM_SIZE);
+    char error[256] = {0};
+    const int ok = lo_engine_gpu_histogram_self_test(handle(engine), in.data(), width, height, bins.data(), error, sizeof(error));
+    if (ok) env->SetIntArrayRegion(out, 0, LO_HISTOGRAM_SIZE, reinterpret_cast<const jint*>(bins.data()));
+    return errorOrNull(env, ok, error);
 }
 
 JNIEXPORT jintArray LO_NATIVE(nativeRenderTileCpu)(JNIEnv* env, jobject, jlong engine, jint level, jint tx, jint ty,

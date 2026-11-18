@@ -34,6 +34,18 @@ namespace {
 // the canvas keeps moving while tiles stream in).
 constexpr int kMaxUploadsPerFrame = 3;
 constexpr int kMaxOpPassesPerFrame = 6;
+// The histogram follows the edit at most 30 times a second.
+constexpr auto kHistogramInterval = std::chrono::milliseconds(33);
+// While a histogram readback is in flight the loop polls its fence this often.
+constexpr auto kFencePoll = std::chrono::milliseconds(2);
+constexpr std::size_t kUpdateCapacity = 120;
+
+std::uint32_t p95Of(std::vector<std::uint32_t> v) {
+    v.erase(std::remove(v.begin(), v.end(), 0u), v.end());
+    if (v.empty()) return 0;
+    std::sort(v.begin(), v.end());
+    return v[(v.size() - 1) * 95 / 100];
+}
 
 }  // namespace
 
@@ -74,6 +86,9 @@ bool Engine::start(std::string* error) {
         if (failure.empty() && !gpu_.init(&failure)) failure = "GPU pipeline: " + failure;
         if (failure.empty()) {
             halfFloatSnapshot_ = gpu_.halfFloat();
+            computeSnapshot_ = gpu_.computeSupported();
+            if (!gpu_.computeSupported()) LOGW("no GLES 3.1 compute: histogram off (%s)", gpu_.computeError().c_str());
+            guidedTexture_ = createGuidedTexture(nullptr);
             if (!gpu_.halfFloat()) LOGW("RGBA16F is not colour-renderable: using the SRGB8_ALPHA8 fallback");
             LOGI("render thread up: %s", reinterpret_cast<const char*>(glGetString(GL_RENDERER)));
         }
@@ -86,6 +101,8 @@ bool Engine::start(std::string* error) {
                 dropGpuTiles();
                 if (previewSource_ != 0) glDeleteTextures(1, &previewSource_);
                 if (previewResult_ != 0) glDeleteTextures(1, &previewResult_);
+                if (guidedTexture_ != 0) glDeleteTextures(1, &guidedTexture_);
+                if (histogramFence_ != nullptr) glDeleteSync(histogramFence_);
                 gpu_.release();
             }
             eglMakeCurrent(display_, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
@@ -106,7 +123,14 @@ void Engine::loop() {
         bool redraw = false;
         {
             std::unique_lock<std::mutex> lock(mutex_);
-            wake_.wait(lock, [this] { return quit_ || redraw_ || !tasks_.empty(); });
+            auto ready = [this] { return quit_ || redraw_ || !tasks_.empty(); };
+            if (histogramFence_ != nullptr) {
+                wake_.wait_for(lock, kFencePoll, ready);
+            } else if (histogramDirty_ && histogramEnabled_ && previewSource_ != 0 && gpu_.computeSupported()) {
+                wake_.wait_until(lock, lastHistogram_ + kHistogramInterval, ready);
+            } else {
+                wake_.wait(lock, ready);
+            }
             if (quit_) return;
             tasks.swap(tasks_);
             redraw = redraw_;
@@ -114,6 +138,7 @@ void Engine::loop() {
         }
         for (auto& task : tasks) task();
         if (redraw) frame();
+        serviceHistogram();
     }
 }
 
@@ -160,8 +185,19 @@ void Engine::openImage(int width, int height) {
 }
 
 void Engine::setPreview(std::vector<float> working, int width, int height) {
+    // Image analysis for the Light tools, here on the caller's (background) thread.
+    auto guided = std::make_shared<const GuidedCoefficients>(guidedCoefficients(working.data(), width, height));
+    float low = 0.f, high = 0.f;
+    const std::size_t pixels = static_cast<std::size_t>(width) * height;
+    // About a million samples are plenty for 0.5 % / 99.5 %.
+    luminancePercentiles(working.data(), pixels, 0.005f, 0.995f, &low, &high, std::max<std::size_t>(1, pixels / 1000000));
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        guided_ = std::move(guided);
+        guidedChanged_ = true;
+        havePercentiles_ = true;
+        lowPercentile_ = low;
+        highPercentile_ = high;
         pendingPreview_ = std::move(working);
         pendingPreviewW_ = width;
         pendingPreviewH_ = height;
@@ -201,6 +237,60 @@ bool Engine::takeRequest(int timeoutMs, TileKey* out) {
     return true;
 }
 
+bool Engine::autoLight(float* exposure, float* blacks) {
+    float low, high;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (!havePercentiles_) return false;
+        low = lowPercentile_;
+        high = highPercentile_;
+    }
+    const AutoLight result = lo::autoLight(low, high);
+    *exposure = result.exposure;
+    *blacks = result.blacks;
+    return true;
+}
+
+void Engine::setShowOriginal(bool original) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        showOriginal_ = original;
+    }
+    requestRedraw();
+}
+
+void Engine::setCompare(CompareMode mode, float split) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        compareMode_ = mode;
+        split_ = std::clamp(split, 0.f, 1.f);
+    }
+    requestRedraw();
+}
+
+void Engine::setClipping(bool clipping) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        clipping_ = clipping;
+    }
+    requestRedraw();
+}
+
+void Engine::setHistogramListener(std::function<void(const std::uint32_t*)> listener) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    histogramListener_ = std::move(listener);
+}
+
+void Engine::setHistogramEnabled(bool enabled) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        histogramEnabled_ = enabled;
+        // Turning it on shows the current preview's histogram straight away.
+        if (enabled) histogramDirty_ = true;
+    }
+    wake_.notify_all();
+}
+
 bool Engine::setGraph(const std::string& json, std::string* error) {
     Graph graph;
     if (!parseGraph(json, &graph, error)) return false;
@@ -211,6 +301,8 @@ bool Engine::setGraph(const std::string& json, std::string* error) {
         std::lock_guard<std::mutex> lock(mutex_);
         ops_ = std::move(ops);
         ++graphVersion_;
+        graphSetAt_ = std::chrono::steady_clock::now();
+        graphSetVersion_ = graphVersion_;
     }
     requestRedraw();
     return true;
@@ -314,16 +406,14 @@ EngineStats Engine::stats() {
     s.halfFloat = halfFloatSnapshot_;
     s.displayP3 = displayP3Snapshot_;
     s.level = level_;
+    s.histogram = computeSnapshot_;
     {
         std::lock_guard<std::mutex> lock(timingMutex_);
-        auto p95 = [](std::vector<std::uint32_t> v) -> std::uint32_t {
-            v.erase(std::remove(v.begin(), v.end(), 0u), v.end());
-            if (v.empty()) return 0;
-            std::sort(v.begin(), v.end());
-            return v[(v.size() - 1) * 95 / 100];
-        };
-        s.p95FrameIntervalUs = p95(intervalsUs_);
-        s.p95DrawUs = p95(drawsUs_);
+        s.p95FrameIntervalUs = p95Of(intervalsUs_);
+        s.p95DrawUs = p95Of(drawsUs_);
+        s.p95UpdateUs = p95Of(updatesUs_);
+        s.lastUpdateUs = lastUpdateUs_;
+        s.updates = updateCount_;
     }
     return s;
 }
@@ -354,7 +444,16 @@ void Engine::imageToNdc(float out[9]) const {
     out[8] = 1.f;
 }
 
-bool Engine::ensureResult(GLuint source, GLuint* result, int width, int height, std::uint64_t* version) {
+void Engine::tileRectNormalised(const TileKey& key, float rect[4]) const {
+    const LevelInfo info = levelInfo(imageWidth_, imageHeight_, key.level);
+    const Rect r = tileRect(info, key.tx, key.ty);
+    rect[0] = static_cast<float>(r.x) / info.width;
+    rect[1] = static_cast<float>(r.y) / info.height;
+    rect[2] = static_cast<float>(r.w) / info.width;
+    rect[3] = static_cast<float>(r.h) / info.height;
+}
+
+bool Engine::ensureResult(GLuint source, GLuint* result, int width, int height, std::uint64_t* version, const float rect[4]) {
     std::shared_ptr<const OpList> ops;
     std::uint64_t graphVersion;
     {
@@ -371,7 +470,12 @@ bool Engine::ensureResult(GLuint source, GLuint* result, int width, int height, 
     }
     if (*result == 0) *result = createTexture(width, height, gpu_.halfFloat(), nullptr);
     std::string error;
-    if (!gpu_.runOps(*ops, source, *result, width, height, &error)) {
+    OpPassInputs inputs;
+    std::copy(rect, rect + 4, inputs.rect);
+    inputs.guided = guidedTexture_;
+    inputs.guidedWidth = guidedW_;
+    inputs.guidedHeight = guidedH_;
+    if (!gpu_.runOps(*ops, source, *result, width, height, inputs, &error)) {
         LOGW("op pass failed: %s", error.c_str());
         return false;
     }
@@ -423,6 +527,12 @@ void Engine::frame() {
     std::vector<float> preview;
     int previewW = 0, previewH = 0;
     bool previewChanged;
+    std::shared_ptr<const GuidedCoefficients> guided;
+    bool showOriginal, clipping;
+    CompareMode compare;
+    float split;
+    std::chrono::steady_clock::time_point graphSetAt;
+    std::uint64_t graphSetVersion;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         imageW = imageWidth_;
@@ -439,6 +549,25 @@ void Engine::frame() {
             previewH = pendingPreviewH_;
             previewChanged_ = false;
         }
+        if (guidedChanged_) {
+            guided = guided_;
+            guidedChanged_ = false;
+        }
+        showOriginal = showOriginal_;
+        clipping = clipping_;
+        compare = compareMode_;
+        split = split_;
+        graphSetAt = graphSetAt_;
+        graphSetVersion = graphSetVersion_;
+    }
+    if (guided) {
+        // New coefficients: every result depending on them is recomputed.
+        if (guidedTexture_ != 0) glDeleteTextures(1, &guidedTexture_);
+        guidedTexture_ = createGuidedTexture(guided.get());
+        guidedW_ = guided->width > 0 ? guided->width : 1;
+        guidedH_ = guided->height > 0 ? guided->height : 1;
+        previewVersion_ = 0;
+        for (auto& [key, tile] : gpuTiles_) tile.graphVersion = 0;
     }
     if (gpuGeneration_ != generation) {
         dropGpuTiles();
@@ -458,7 +587,12 @@ void Engine::frame() {
         previewVersion_ = 0;
     }
     bool more = false;
-    if (previewSource_ != 0 && !ensureResult(previewSource_, &previewResult_, previewW_, previewH_, &previewVersion_)) more = true;
+    if (previewSource_ != 0) {
+        static constexpr float kWhole[4] = {0.f, 0.f, 1.f, 1.f};
+        const std::uint64_t before = previewVersion_;
+        if (!ensureResult(previewSource_, &previewResult_, previewW_, previewH_, &previewVersion_, kWhole)) more = true;
+        if (previewVersion_ != before) histogramDirty_ = true;
+    }
 
     // Sharp tiles: only when the preview is magnified on screen.
     std::vector<TileKey> visible;
@@ -518,7 +652,16 @@ void Engine::frame() {
         const bool hadResult = tile.result != 0;
         if (passes < kMaxOpPassesPerFrame) {
             const std::uint64_t before = tile.graphVersion;
-            ensureResult(tile.source, &tile.result, tile.width, tile.height, &tile.graphVersion);
+            float rect[4];
+            {
+                const LevelInfo info = levelInfo(imageW, imageH, key.level);
+                const Rect r = tileRect(info, key.tx, key.ty);
+                rect[0] = static_cast<float>(r.x) / info.width;
+                rect[1] = static_cast<float>(r.y) / info.height;
+                rect[2] = static_cast<float>(r.w) / info.width;
+                rect[3] = static_cast<float>(r.h) / info.height;
+            }
+            ensureResult(tile.source, &tile.result, tile.width, tile.height, &tile.graphVersion, rect);
             if (tile.graphVersion != before) ++passes;
             if (!hadResult && tile.result != 0) gpuBytes_ += textureBytes(tile.width, tile.height);
             if (hadResult && tile.result == 0) gpuBytes_ -= textureBytes(tile.width, tile.height);
@@ -563,21 +706,42 @@ void Engine::frame() {
             std::lock_guard<std::mutex> lock(mutex_);
             imageToNdc(ndc);
         }
-        if (previewSource_ != 0 && imageW > 0) {
-            const float rect[4] = {0.f, 0.f, static_cast<float>(imageW), static_cast<float>(imageH)};
-            gpu_.drawImage(previewResult_ != 0 ? previewResult_ : previewSource_, rect, ndc, output_, shaderEncodes_);
-        }
-        if (level >= 0) {
-            const LevelInfo info = levelInfo(imageW, imageH, level);
-            const float span = static_cast<float>(1 << level);
-            for (const TileKey& key : drawable) {
-                const GpuTile& tile = gpuTiles_[key];
-                const Rect r = tileRect(info, key.tx, key.ty);
-                // The tile's rect in original pixels (edge tiles are clipped to the image).
-                const float rect[4] = {r.x * span, r.y * span, std::min(r.w * span, imageW - r.x * span),
-                                       std::min(r.h * span, imageH - r.y * span)};
-                gpu_.drawImage(tile.result != 0 ? tile.result : tile.source, rect, ndc, output_, shaderEncodes_);
+        if (showOriginal || compare == CompareMode::Off) {
+            drawScene(showOriginal, ndc, imageW, imageH, level, drawable, clipping && !showOriginal);
+        } else if (compare == CompareMode::Split) {
+            drawScene(false, ndc, imageW, imageH, level, drawable, clipping);
+            const int splitPx = static_cast<int>(split * static_cast<float>(viewW) + 0.5f);
+            if (splitPx > 0) {
+                glEnable(GL_SCISSOR_TEST);
+                glScissor(0, 0, splitPx, viewH);
+                glClear(GL_COLOR_BUFFER_BIT);
+                drawScene(true, ndc, imageW, imageH, level, drawable, false);
+                glDisable(GL_SCISSOR_TEST);
             }
+        } else {
+            // Side by side: each half shows the view as if it were half as wide, so the
+            // image centre of the full view sits in the middle of each half.
+            const int half = viewW / 2;
+            float halfNdc[9];
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                const int savedW = viewWidth_;
+                const Affine saved = transform_;
+                viewWidth_ = std::max(1, half);
+                transform_.e -= static_cast<float>(viewW) / 4.f;
+                imageToNdc(halfNdc);
+                viewWidth_ = savedW;
+                transform_ = saved;
+            }
+            glEnable(GL_SCISSOR_TEST);
+            glViewport(0, 0, half, viewH);
+            glScissor(0, 0, half, viewH);
+            drawScene(true, halfNdc, imageW, imageH, level, drawable, false);
+            glViewport(half, 0, viewW - half, viewH);
+            glScissor(half, 0, viewW - half, viewH);
+            drawScene(false, halfNdc, imageW, imageH, level, drawable, clipping);
+            glDisable(GL_SCISSOR_TEST);
+            glViewport(0, 0, viewW, viewH);
         }
         eglSwapBuffers(display_, window_);
         const auto now = std::chrono::steady_clock::now();
@@ -593,21 +757,121 @@ void Engine::frame() {
         }
         timingNext_ = (timingNext_ + 1) % kTimingCapacity;
         lastFrameStart_ = frameStart;
+        // Preview update latency: the first frame presenting the preview of the graph set.
+        if (graphSetVersion > measuredVersion_ && previewSource_ != 0 && previewVersion_ >= graphSetVersion) {
+            measuredVersion_ = graphSetVersion;
+            const std::uint32_t latency = us(now - graphSetAt);
+            if (updatesUs_.size() < kUpdateCapacity) {
+                updatesUs_.push_back(latency);
+            } else {
+                updatesUs_[updateNext_] = latency;
+            }
+            updateNext_ = (updateNext_ + 1) % kUpdateCapacity;
+            lastUpdateUs_ = latency;
+            ++updateCount_;
+            if (updateCount_ % 30 == 0) {
+                LOGI("preview update: last %u us, p95 %u us over %zu (target 16000)", latency, p95Of(updatesUs_), updatesUs_.size());
+            }
+        }
     }
     ++frames_;
     if (more) requestRedraw();
+}
+
+void Engine::drawScene(bool original, const float ndc[9], int imageW, int imageH, int level,
+                       const std::vector<TileKey>& drawable, bool clipping) {
+    DisplayOptions options;
+    options.clipping = clipping;
+    if (previewSource_ != 0 && imageW > 0) {
+        const float rect[4] = {0.f, 0.f, static_cast<float>(imageW), static_cast<float>(imageH)};
+        const GLuint texture = !original && previewResult_ != 0 ? previewResult_ : previewSource_;
+        gpu_.drawImage(texture, rect, ndc, output_, shaderEncodes_, options);
+    }
+    if (level < 0) return;
+    const LevelInfo info = levelInfo(imageW, imageH, level);
+    const float span = static_cast<float>(1 << level);
+    for (const TileKey& key : drawable) {
+        const GpuTile& tile = gpuTiles_[key];
+        const Rect r = tileRect(info, key.tx, key.ty);
+        // The tile's rect in original pixels (edge tiles are clipped to the image).
+        const float rect[4] = {r.x * span, r.y * span, std::min(r.w * span, imageW - r.x * span),
+                               std::min(r.h * span, imageH - r.y * span)};
+        const GLuint texture = !original && tile.result != 0 ? tile.result : tile.source;
+        gpu_.drawImage(texture, rect, ndc, output_, shaderEncodes_, options);
+    }
+}
+
+void Engine::serviceHistogram() {
+    if (!gpu_.computeSupported()) return;
+    if (histogramFence_ != nullptr) {
+        // Read back only once the GPU is done: the render thread never waits for it.
+        const GLenum status = glClientWaitSync(histogramFence_, 0, 0);
+        if (status != GL_ALREADY_SIGNALED && status != GL_CONDITION_SATISFIED) return;
+        glDeleteSync(histogramFence_);
+        histogramFence_ = nullptr;
+        std::uint32_t bins[GpuPipeline::kHistogramSize];
+        if (!gpu_.readHistogram(bins)) return;
+        std::function<void(const std::uint32_t*)> listener;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            listener = histogramListener_;
+        }
+        if (listener) listener(bins);
+        return;
+    }
+    if (!histogramDirty_ || !histogramEnabled_ || previewSource_ == 0) return;
+    const auto now = std::chrono::steady_clock::now();
+    if (now < lastHistogram_ + kHistogramInterval) return;
+    const GLuint texture = previewResult_ != 0 ? previewResult_ : previewSource_;
+    if (!gpu_.dispatchHistogram(texture, previewW_, previewH_)) return;
+    histogramFence_ = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    glFlush();
+    histogramDirty_ = false;
+    lastHistogram_ = now;
+}
+
+bool Engine::gpuHistogramSelfTest(const float* in, int width, int height, std::uint32_t* out, std::string* error) {
+    if (!gpu_.computeSupported()) {
+        *error = "no GLES 3.1 compute: " + gpu_.computeError();
+        return false;
+    }
+    std::string failure;
+    const bool ok = runSync([&] {
+        eglMakeCurrent(display_, pbuffer_, pbuffer_, context_);
+        const GLuint source = createTexture(width, height, gpu_.halfFloat(), in);
+        bool passed = gpu_.dispatchHistogram(source, width, height);
+        glFinish();
+        passed = passed && gpu_.readHistogram(out);
+        const std::string glError = glErrorString();
+        if (!glError.empty()) {
+            failure = "GL error " + glError;
+            passed = false;
+        }
+        glDeleteTextures(1, &source);
+        if (window_ != EGL_NO_SURFACE) eglMakeCurrent(display_, window_, window_, context_);
+        return passed;
+    });
+    if (!ok) *error = failure.empty() ? "histogram pass failed" : failure;
+    return ok;
 }
 
 bool Engine::renderTileCpu(const TileKey& key, std::vector<float>* out, int* width, int* height) {
     const std::shared_ptr<const Tile> tile = store_.get(key);
     if (!tile) return false;
     std::shared_ptr<const OpList> ops;
+    std::shared_ptr<const GuidedCoefficients> guided;
+    OpRegion region;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         ops = ops_;
+        guided = guided_;
+        tileRectNormalised(key, region.rect);
     }
+    region.width = tile->width;
+    region.height = tile->height;
+    region.coefficients = guided.get();
     out->resize(tile->pixels.size());
-    ops->cpuRef(tile->pixels.data(), out->data(), tile->pixels.size() / 4);
+    ops->cpuRefRegion(tile->pixels.data(), out->data(), region);
     *width = tile->width;
     *height = tile->height;
     return true;
@@ -623,7 +887,14 @@ bool Engine::gpuSelfTest(const float* in, int width, int height, const std::stri
         eglMakeCurrent(display_, pbuffer_, pbuffer_, context_);
         const GLuint source = createTexture(width, height, gpu_.halfFloat(), in);
         const GLuint result = createTexture(width, height, gpu_.halfFloat(), nullptr);
-        bool passed = gpu_.runOps(*ops, source, result, width, height, &failure);
+        // The test image is its own preview: coefficients from it, as the canvas does.
+        const GuidedCoefficients coefficients = guidedCoefficients(in, width, height);
+        OpPassInputs inputs;
+        inputs.guided = createGuidedTexture(&coefficients);
+        inputs.guidedWidth = width;
+        inputs.guidedHeight = height;
+        bool passed = gpu_.runOps(*ops, source, result, width, height, inputs, &failure);
+        glDeleteTextures(1, &inputs.guided);
         if (passed) {
             GLuint target = 0, fbo = 0;
             glGenTextures(1, &target);

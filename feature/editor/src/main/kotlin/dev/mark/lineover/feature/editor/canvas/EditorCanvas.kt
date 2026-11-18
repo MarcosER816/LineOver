@@ -4,7 +4,10 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import android.view.Surface
+import dev.mark.lineover.core.engine.CompareMode
 import dev.mark.lineover.core.engine.EngineSession
+import dev.mark.lineover.core.engine.EngineStats
+import dev.mark.lineover.core.engine.Histogram
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.Project
 import kotlinx.coroutines.flow.StateFlow
@@ -33,6 +36,25 @@ interface EditorCanvas :
 
     /** Null when accepted, otherwise why not. */
     fun setGraph(graph: EditGraph): String?
+
+    /** The edited preview's histogram while enabled (null until the first one). */
+    val histogram: StateFlow<Histogram?>
+
+    fun setHistogramEnabled(enabled: Boolean)
+
+    fun setClipping(clipping: Boolean)
+
+    /** [split]: where the original ends in split mode, as a fraction of the view width. */
+    fun setCompare(
+        mode: CompareMode,
+        split: Float,
+    )
+
+    /** Auto (Light): (exposure EV, blacks) from the preview's percentiles, null if unknown. */
+    fun autoLight(): Pair<Float, Float>?
+
+    /** Engine counters for the debug overlay (null without an engine). */
+    fun stats(): EngineStats?
 }
 
 /** Opens the engine for a project (a fake in JVM tests, where there is no native engine). */
@@ -105,6 +127,23 @@ private class EngineCanvas(
         )
 
     override fun setGraph(graph: EditGraph): String? = session.setGraph(graph)
+
+    override val histogram: StateFlow<Histogram?> get() = session.histogram
+
+    override fun setHistogramEnabled(enabled: Boolean) = session.setHistogramEnabled(enabled)
+
+    override fun setClipping(clipping: Boolean) = session.setClipping(clipping)
+
+    override fun setCompare(
+        mode: CompareMode,
+        split: Float,
+    ) = session.setCompare(mode, split)
+
+    override fun setShowOriginal(original: Boolean) = session.setShowOriginal(original)
+
+    override fun autoLight(): Pair<Float, Float>? = session.autoLight()
+
+    override fun stats(): EngineStats? = session.stats()
 
     override fun close() = session.close()
 

@@ -16,6 +16,10 @@ import com.github.takahirom.roborazzi.captureRoboImage
 import com.github.takahirom.roborazzi.captureScreenRoboImage
 import dev.mark.lineover.core.designsystem.LineOverTheme
 import dev.mark.lineover.core.designsystem.LoColors
+import dev.mark.lineover.core.engine.CompareMode
+import dev.mark.lineover.core.engine.Histogram
+import dev.mark.lineover.core.model.LightAdjustments
+import dev.mark.lineover.core.model.LightParam
 import dev.mark.lineover.core.model.ToolCategory
 import dev.mark.lineover.core.ui.tools.ToolRegistry
 import org.junit.Rule
@@ -105,8 +109,52 @@ abstract class EditorScreenshots(
             base(ToolCategory.Favorites).copy(favorites = listOf("light.exposure", "retouch.spot_healing", "color.hsl_color_mixer")),
         )
 
+    // A tool that is still reserved (Light tools have real panels since Stage 5).
     @Test
-    fun toolPanelPlaceholder() = shot("tool_panel", base().copy(panel = EditorPanel.Tool("light.exposure")))
+    fun toolPanelPlaceholder() = shot("tool_panel", base(ToolCategory.Color).copy(panel = EditorPanel.Tool("color.white_balance")))
+
+    /** Stage 5: the Light panel (collapsed on phones: the selected slider; all of them when wide). */
+    @Test
+    fun lightPanel() =
+        shot("light_panel", base().copy(panel = EditorPanel.Tool("light.shadows"), lightParam = LightParam.Shadows, light = SAMPLE_LIGHT))
+
+    @Test
+    fun lightPanelSwipeMode() =
+        shot(
+            "light_panel_swipe",
+            base().copy(
+                panel = EditorPanel.Tool("light.exposure"),
+                light = SAMPLE_LIGHT,
+                swipeMode = true,
+                swiping = true,
+            ),
+        )
+
+    /** Histogram (drawn from engine counts), clipping badge and the swipe HUD over the canvas. */
+    @Test
+    fun lightOverlays() =
+        shot(
+            "light_overlays",
+            base().copy(
+                canvas = FakeEditorCanvas().apply { histogram.value = sampleHistogram() },
+                overlays = setOf(EditorState.HISTOGRAM_TOOL, EditorState.CLIPPING_TOOL),
+                light = SAMPLE_LIGHT,
+                swipeMode = true,
+                swiping = true,
+            ),
+        )
+
+    @Test
+    fun compareHold() = shot("compare_hold", base().copy(showingOriginal = true))
+
+    @Test
+    fun compareSplit() = shot("compare_split", base().copy(compare = CompareMode.Split, split = 0.4f))
+
+    @Test
+    fun compareSideBySide() = shot("compare_side_by_side", base().copy(compare = CompareMode.SideBySide))
+
+    @Test
+    fun renderStats() = shot("render_stats", base().copy(debuggable = true, renderStats = true))
 
     @Test
     fun layersSheet() = shot("sheet_layers", base().copy(panel = EditorPanel.Layers))
@@ -167,6 +215,29 @@ abstract class EditorScreenshots(
             check(ToolRegistry.strip(category).isNotEmpty()) { "$category is empty" }
         }
     }
+}
+
+internal val SAMPLE_LIGHT =
+    LightAdjustments()
+        .with(LightParam.Exposure, 0.35f)
+        .with(LightParam.Contrast, 18f)
+        .with(LightParam.Highlights, -42f)
+        .with(LightParam.Shadows, 37f)
+        .with(LightParam.Blacks, -8f)
+
+/** Smooth, deterministic counts standing in for an engine histogram. */
+internal fun sampleHistogram(): Histogram {
+    val bins = IntArray(Histogram.SIZE)
+    val centres = floatArrayOf(150f, 110f, 90f, 115f)
+    for (c in 0 until Histogram.CHANNELS) {
+        for (i in 0 until Histogram.BINS) {
+            val d = (i - centres[c]) / 45f
+            bins[c * Histogram.BINS + i] =
+                (1000 * kotlin.math.exp(-d * d) + 120 * kotlin.math.exp(-((i - 20) / 12f).let { it * it })).toInt()
+        }
+    }
+    bins[Histogram.BINS - 1] = 2500 // clipped highlights in red
+    return Histogram(bins)
 }
 
 /** A stand-in for the GL canvas in screenshots: a "photo" made of design tokens. */

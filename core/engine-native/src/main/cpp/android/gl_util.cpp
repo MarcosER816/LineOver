@@ -21,6 +21,15 @@ std::vector<GLubyte> encodeFallback(const float* pixels, std::size_t count) {
     return bytes;
 }
 
+// Half floats converted here (round to nearest even, like numpy's float16) rather than
+// by the driver, whose float -> half rounding is not specified: the histogram and the
+// GPU tests then see exactly the values the Python reference rounds to.
+std::vector<std::uint16_t> toHalf(const float* pixels, std::size_t count) {
+    std::vector<std::uint16_t> halves(count);
+    for (std::size_t i = 0; i < count; ++i) halves[i] = color::floatToHalf(pixels[i]);
+    return halves;
+}
+
 GLuint compile(GLenum type, const std::string& source, std::string* error) {
     GLuint shader = glCreateShader(type);
     const char* text = source.c_str();
@@ -67,6 +76,25 @@ GLuint linkProgram(const std::string& vertex, const std::string& fragment, std::
     return program;
 }
 
+GLuint linkCompute(const std::string& source, std::string* error) {
+    GLuint shader = compile(GL_COMPUTE_SHADER, source, error);
+    if (shader == 0) return 0;
+    GLuint program = glCreateProgram();
+    glAttachShader(program, shader);
+    glLinkProgram(program);
+    glDeleteShader(shader);
+    GLint ok = GL_FALSE;
+    glGetProgramiv(program, GL_LINK_STATUS, &ok);
+    if (ok != GL_TRUE) {
+        char log[1024] = {0};
+        glGetProgramInfoLog(program, sizeof(log) - 1, nullptr, log);
+        *error = std::string("compute link failed: ") + log;
+        glDeleteProgram(program);
+        return 0;
+    }
+    return program;
+}
+
 GLuint createTexture(int width, int height, bool halfFloat, const void* floatPixels) {
     GLuint texture = 0;
     glGenTextures(1, &texture);
@@ -76,7 +104,12 @@ GLuint createTexture(int width, int height, bool halfFloat, const void* floatPix
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     if (halfFloat) {
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_FLOAT, floatPixels);
+        std::vector<std::uint16_t> halves;
+        if (floatPixels != nullptr) {
+            halves = toHalf(static_cast<const float*>(floatPixels), static_cast<std::size_t>(width) * height * 4);
+        }
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA16F, width, height, 0, GL_RGBA, GL_HALF_FLOAT,
+                     floatPixels != nullptr ? halves.data() : nullptr);
     } else {
         // Fallback when RGBA16F is not colour-renderable (some emulators): SRGB8_ALPHA8.
         // Never used on the phone; documented in STAGE_04.
@@ -93,11 +126,32 @@ GLuint createTexture(int width, int height, bool halfFloat, const void* floatPix
 void uploadFloat(GLuint texture, int width, int height, bool halfFloat, const float* pixels) {
     glBindTexture(GL_TEXTURE_2D, texture);
     if (halfFloat) {
-        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_FLOAT, pixels);
+        const std::vector<std::uint16_t> halves = toHalf(pixels, static_cast<std::size_t>(width) * height * 4);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_HALF_FLOAT, halves.data());
     } else {
         const std::vector<GLubyte> bytes = encodeFallback(pixels, static_cast<std::size_t>(width) * height * 4);
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, bytes.data());
     }
+}
+
+GLuint createGuidedTexture(const GuidedCoefficients* coefficients) {
+    GLuint texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    // Read with texelFetch only (RG32F is not filterable on GLES).
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    if (coefficients != nullptr && !coefficients->ab.empty()) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RG32F, coefficients->width, coefficients->height, 0, GL_RG, GL_FLOAT,
+                     coefficients->ab.data());
+    } else {
+        const float identity[2] = {1.f, 0.f};  // base = L: what cpuRef does without coefficients
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RG32F, 1, 1, 0, GL_RG, GL_FLOAT, identity);
+    }
+    return texture;
 }
 
 bool hasExtension(const char* extensions, const char* name) {
