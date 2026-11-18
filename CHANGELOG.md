@@ -2,6 +2,23 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 7 — Curves and grading (0.7.0)
+
+### Added
+
+- Curves (Light → Curves (point)): RGB, Red, Green, Blue and Luma curves. Tap the graph to
+  add a point, drag to move it, drag it off the graph to delete it. A magnifier and the
+  in / out values show while you drag, and the photo's histogram sits behind the curve. The
+  curve can't fold back on itself unless you switch on "Free curve".
+- Parametric curve (Highlights, Lights, Darks, Shadows with movable split points) and Levels
+  (per channel black / gamma / white / output range, with Auto).
+- Color Grading: Shadows, Midtones, Highlights and Global wheels (drag for hue and amount,
+  the outer ring for brightness; double tap resets), Blending and Balance. Split toning is
+  its two-wheel shortcut.
+- Color Balance, Selective Color, Channel Mixer (with monochrome), Black & White (6 colour
+  sliders and a tint), Photo Filter (Warming / Cooling / Sepia … presets), Gradient Map
+  (presets and editable stops) and Calibration (red / green / blue primaries).
+
 ## Stage 6 — Color basics (0.6.0)
 
 ### Added

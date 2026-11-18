@@ -1,6 +1,6 @@
 # Tool catalog
 
-Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 18 done.**
+Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 30 done.**
 
 - **id**: stable identifier (`<group>.<tool>`), used in code, favourites and project files. Never renamed.
 - **UI slot**: where the tool lives. Slots are reserved now and are never moved (rule R9); a stage only *fills* slots.
@@ -83,9 +83,9 @@ The Favorites strip shows the tools the user pinned; it has no tools of its own.
 | `light.whites` | Whites | Light | `cat/Light/05` | 5 | done |
 | `light.blacks` | Blacks | Light | `cat/Light/06` | 5 | done |
 | `light.brightness` | Brightness | Light | `cat/Light/07` | 5 | done |
-| `light.curves_point` | Curves (point) | Light | `cat/Light/08` | 7 | reserved |
-| `light.curves_parametric` | Curves (parametric) | Light | `cat/Light/09` | 7 | reserved |
-| `light.levels` | Levels | Light | `cat/Light/10` | 7 | reserved |
+| `light.curves_point` | Curves (point) | Light | `cat/Light/08` | 7 | done |
+| `light.curves_parametric` | Curves (parametric) | Light | `cat/Light/09` | 7 | done |
+| `light.levels` | Levels | Light | `cat/Light/10` | 7 | done |
 
 ## Light: canvas overlays
 
@@ -105,15 +105,15 @@ The Favorites strip shows the tools the user pinned; it has no tools of its own.
 | `color.invert` | Invert | Color | `cat/Color/05` | 6 | done |
 | `color.posterize` | Posterize | Color | `cat/Color/06` | 6 | done |
 | `color.threshold` | Threshold | Color | `cat/Color/07` | 6 | done |
-| `color.color_grading` | Color Grading | Color | `cat/Color/08` | 7 | reserved |
-| `color.split_toning` | Split toning | Color | `cat/Color/09` | 7 | reserved |
-| `color.color_balance` | Color Balance | Color | `cat/Color/10` | 7 | reserved |
-| `color.selective_color` | Selective Color | Color | `cat/Color/11` | 7 | reserved |
-| `color.channel_mixer` | Channel Mixer | Color | `cat/Color/12` | 7 | reserved |
-| `color.black_and_white` | Black & White | Color | `cat/Color/13` | 7 | reserved |
-| `color.photo_filter` | Photo Filter | Color | `cat/Color/14` | 7 | reserved |
-| `color.gradient_map` | Gradient Map | Color | `cat/Color/15` | 7 | reserved |
-| `color.calibration` | Calibration | Color | `cat/Color/16` | 7 | reserved |
+| `color.color_grading` | Color Grading | Color | `cat/Color/08` | 7 | done |
+| `color.split_toning` | Split toning | Color | `cat/Color/09` | 7 | done |
+| `color.color_balance` | Color Balance | Color | `cat/Color/10` | 7 | done |
+| `color.selective_color` | Selective Color | Color | `cat/Color/11` | 7 | done |
+| `color.channel_mixer` | Channel Mixer | Color | `cat/Color/12` | 7 | done |
+| `color.black_and_white` | Black & White | Color | `cat/Color/13` | 7 | done |
+| `color.photo_filter` | Photo Filter | Color | `cat/Color/14` | 7 | done |
+| `color.gradient_map` | Gradient Map | Color | `cat/Color/15` | 7 | done |
+| `color.calibration` | Calibration | Color | `cat/Color/16` | 7 | done |
 
 ## Effects
 

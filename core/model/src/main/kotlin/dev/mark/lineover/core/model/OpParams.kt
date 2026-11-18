@@ -154,4 +154,135 @@ sealed interface OpParams {
     ) : OpParams {
         override val isIdentity: Boolean get() = false
     }
+
+    // ---- Stage 7: curves and grading. Flags are 0/1 floats (the engine reads numbers). ----
+
+    /** Point curves: [x0, y0, x1, y1, …] per channel (empty = identity); [free] = 1 allows inversions. */
+    @Serializable
+    @SerialName("curves")
+    data class Curves(
+        val free: Float,
+        val rgb: List<Float>,
+        val red: List<Float>,
+        val green: List<Float>,
+        val blue: List<Float>,
+        val luma: List<Float>,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = listOf(rgb, red, green, blue, luma).all { MonotoneCurve.isIdentity(it) }
+    }
+
+    /** Parametric curve: region amounts (-100..100) and the three split points (0..1). */
+    @Serializable
+    @SerialName("parametric_curve")
+    data class ParametricCurve(
+        val highlights: Float,
+        val lights: Float,
+        val darks: Float,
+        val shadows: Float,
+        val split1: Float,
+        val split2: Float,
+        val split3: Float,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = highlights == 0f && lights == 0f && darks == 0f && shadows == 0f
+    }
+
+    /** Levels: 4 rows (master, red, green, blue) × (in black, gamma, in white, out black, out white). */
+    @Serializable
+    @SerialName("levels")
+    data class Levels(
+        val values: List<Float>,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = values == GradeAdjustments.LEVELS_IDENTITY
+    }
+
+    /** Color Grading: wheels (hue°, saturation 0..100, luminance -100..100), blending, balance. */
+    @Serializable
+    @SerialName("color_grading")
+    data class ColorGrading(
+        val blending: Float,
+        val balance: Float,
+        val shadows: List<Float>,
+        val midtones: List<Float>,
+        val highlights: List<Float>,
+        val global: List<Float>,
+    ) : OpParams {
+        override val isIdentity: Boolean
+            get() = listOf(shadows, midtones, highlights, global).all { it[1] == 0f && it[2] == 0f }
+    }
+
+    /** Color Balance: (cyan-red, magenta-green, yellow-blue) per tone range; [preserve] = 1 keeps luminosity. */
+    @Serializable
+    @SerialName("color_balance")
+    data class ColorBalance(
+        val preserve: Float,
+        val shadows: List<Float>,
+        val midtones: List<Float>,
+        val highlights: List<Float>,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = (shadows + midtones + highlights).all { it == 0f }
+    }
+
+    /** Selective Color: 9 families × (C, M, Y, K); [relative] = 1 for relative mode. */
+    @Serializable
+    @SerialName("selective_color")
+    data class SelectiveColor(
+        val relative: Float,
+        val values: List<Float>,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = values.all { it == 0f }
+    }
+
+    /** Channel Mixer: 3×3 percent matrix and constants; [monochrome] = 1 uses the first row. */
+    @Serializable
+    @SerialName("channel_mixer")
+    data class ChannelMixer(
+        val monochrome: Float,
+        val matrix: List<Float>,
+        val constant: List<Float>,
+    ) : OpParams {
+        override val isIdentity: Boolean
+            get() = monochrome == 0f && matrix == GradeAdjustments.MIXER_IDENTITY && constant.all { it == 0f }
+    }
+
+    /** Black & White: 6 band mixes (reds … magentas, -100..100) and a tint. */
+    @Serializable
+    @SerialName("black_and_white")
+    data class BlackAndWhite(
+        val tintHue: Float,
+        val tintSaturation: Float,
+        val mix: List<Float>,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = false
+    }
+
+    /** Photo Filter: OKLCh hue / saturation of the filter, density %, [preserve] = 1 keeps luminosity. */
+    @Serializable
+    @SerialName("photo_filter")
+    data class PhotoFilter(
+        val hue: Float,
+        val saturation: Float,
+        val density: Float,
+        val preserve: Float,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = density == 0f
+    }
+
+    /** Gradient Map: stops [position, OKLab L, a, b, …]. */
+    @Serializable
+    @SerialName("gradient_map")
+    data class GradientMap(
+        val stops: List<Float>,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = false
+    }
+
+    /** Calibration: hue and saturation shifts (-100..100) of the red, green and blue primaries. */
+    @Serializable
+    @SerialName("calibration")
+    data class Calibration(
+        val hue: List<Float>,
+        val saturation: List<Float>,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = (hue + saturation).all { it == 0f }
+    }
 }

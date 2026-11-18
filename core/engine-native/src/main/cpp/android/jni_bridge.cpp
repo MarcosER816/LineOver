@@ -243,6 +243,14 @@ JNIEXPORT jfloatArray JNICALL Java_dev_mark_lineover_core_engine_ColorMath_nativ
     return result;
 }
 
+JNIEXPORT jfloatArray LO_NATIVE(nativeAutoLevels)(JNIEnv* env, jobject, jlong engine) {
+    float out[6];
+    if (lo_engine_auto_levels(handle(engine), out) == 0) return nullptr;
+    jfloatArray result = env->NewFloatArray(6);
+    if (result != nullptr) env->SetFloatArrayRegion(result, 0, 6, out);
+    return result;
+}
+
 JNIEXPORT jfloatArray LO_NATIVE(nativeAutoLight)(JNIEnv* env, jobject, jlong engine) {
     float exposure = 0.f, blacks = 0.f;
     if (lo_engine_auto_light(handle(engine), &exposure, &blacks) == 0) return nullptr;

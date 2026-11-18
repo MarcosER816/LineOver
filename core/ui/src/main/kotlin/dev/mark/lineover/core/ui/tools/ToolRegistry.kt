@@ -154,9 +154,28 @@ private fun buildTools(): List<ToolSpec> =
             strip(Light, "light.whites", "Whites", 5, PanelType.Sliders, LoIcons.BrightnessHigh, "white point", done = true)
             strip(Light, "light.blacks", "Blacks", 5, PanelType.Sliders, LoIcons.BrightnessLow, "black point", done = true)
             strip(Light, "light.brightness", "Brightness", 5, PanelType.Sliders, LoIcons.Brightness6, "lightness", "midtones", done = true)
-            strip(Light, "light.curves_point", "Curves (point)", 7, PanelType.Curve, LoIcons.ShowChart, "tone curve", "rgb curve")
-            strip(Light, "light.curves_parametric", "Curves (parametric)", 7, PanelType.Curve, LoIcons.SsidChart, "region curve")
-            strip(Light, "light.levels", "Levels", 7, PanelType.Curve, LoIcons.Equalizer, "input levels", "gamma")
+            strip(
+                Light,
+                "light.curves_point",
+                "Curves (point)",
+                7,
+                PanelType.Curve,
+                LoIcons.ShowChart,
+                "tone curve",
+                "rgb curve",
+                done = true,
+            )
+            strip(
+                Light,
+                "light.curves_parametric",
+                "Curves (parametric)",
+                7,
+                PanelType.Curve,
+                LoIcons.SsidChart,
+                "region curve",
+                done = true,
+            )
+            strip(Light, "light.levels", "Levels", 7, PanelType.Curve, LoIcons.Equalizer, "input levels", "gamma", done = true)
             other(
                 Light,
                 ToolPlace.CanvasOverlay,
@@ -224,11 +243,21 @@ private fun buildTools(): List<ToolSpec> =
             strip(Color, "color.invert", "Invert", 6, PanelType.Action, LoIcons.InvertColors, "negative", done = true)
             strip(Color, "color.posterize", "Posterize", 6, PanelType.Sliders, LoIcons.Wallpaper, done = true)
             strip(Color, "color.threshold", "Threshold", 6, PanelType.Sliders, LoIcons.Tonality, done = true)
-            strip(Color, "color.color_grading", "Color Grading", 7, PanelType.ColorWheels, LoIcons.Colors, "colour wheels", "grade")
-            strip(Color, "color.split_toning", "Split toning", 7, PanelType.ColorWheels, LoIcons.Gradient, "duotone")
-            strip(Color, "color.color_balance", "Color Balance", 7, PanelType.Sliders, LoIcons.Palette)
-            strip(Color, "color.selective_color", "Selective Color", 7, PanelType.Mixer, LoIcons.FormatColorFill)
-            strip(Color, "color.channel_mixer", "Channel Mixer", 7, PanelType.Mixer, LoIcons.Equalizer, "rgb channels")
+            strip(
+                Color,
+                "color.color_grading",
+                "Color Grading",
+                7,
+                PanelType.ColorWheels,
+                LoIcons.Colors,
+                "colour wheels",
+                "grade",
+                done = true,
+            )
+            strip(Color, "color.split_toning", "Split toning", 7, PanelType.ColorWheels, LoIcons.Gradient, "duotone", done = true)
+            strip(Color, "color.color_balance", "Color Balance", 7, PanelType.Sliders, LoIcons.Palette, done = true)
+            strip(Color, "color.selective_color", "Selective Color", 7, PanelType.Mixer, LoIcons.FormatColorFill, done = true)
+            strip(Color, "color.channel_mixer", "Channel Mixer", 7, PanelType.Mixer, LoIcons.Equalizer, "rgb channels", done = true)
             strip(
                 Color,
                 "color.black_and_white",
@@ -241,6 +270,7 @@ private fun buildTools(): List<ToolSpec> =
                 "monochrome",
                 "grayscale",
                 "greyscale",
+                done = true,
             )
             strip(
                 Color,
@@ -251,9 +281,20 @@ private fun buildTools(): List<ToolSpec> =
                 LoIcons.PhotoFilter,
                 "warming filter",
                 "cooling filter",
+                done = true,
             )
-            strip(Color, "color.gradient_map", "Gradient Map", 7, PanelType.Gallery, LoIcons.BlurLinear)
-            strip(Color, "color.calibration", "Calibration", 7, PanelType.Sliders, LoIcons.Science, "camera calibration", "primaries")
+            strip(Color, "color.gradient_map", "Gradient Map", 7, PanelType.Gallery, LoIcons.BlurLinear, done = true)
+            strip(
+                Color,
+                "color.calibration",
+                "Calibration",
+                7,
+                PanelType.Sliders,
+                LoIcons.Science,
+                "camera calibration",
+                "primaries",
+                done = true,
+            )
 
             strip(Effects, "effects.texture", "Texture", 10, PanelType.Sliders, LoIcons.Texture)
             strip(Effects, "effects.clarity", "Clarity", 10, PanelType.Sliders, LoIcons.Deblur, "local contrast", "structure")

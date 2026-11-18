@@ -77,6 +77,8 @@ void lo_engine_set_callbacks(lo_engine* engine, void (*on_loading)(void* user, i
 
 /* Light tools: Auto from the preview's luminance percentiles (0 before a preview). */
 int lo_engine_auto_light(lo_engine* engine, float* exposure, float* blacks);
+/* Levels Auto: per-channel encoded 0.1 / 99.9 % percentiles (lowR, highR, lowG, highG, lowB, highB). */
+int lo_engine_auto_levels(lo_engine* engine, float* out6);
 void lo_engine_set_show_original(lo_engine* engine, int original);
 void lo_engine_set_compare(lo_engine* engine, int mode, float split);
 void lo_engine_set_clipping(lo_engine* engine, int clipping);

@@ -747,3 +747,411 @@ def color_self_check() -> None:
     # The GPU cases of the step ops keep every pixel away from a step (see generate.py).
     assert discontinuity_margin(chart, "posterize", 12.0) > 1e-5
     assert discontinuity_margin(scene_rec2020(), "threshold", 0.5) > 1e-3
+
+
+# ---------------------------------------------------------------------------
+# Stage 7: Curves and grading.
+#
+# Tone ops (curves, parametric curve, levels, colour balance, selective colour, colour
+# grading) work on transfer-encoded values (`encode`, the sRGB curve extended by
+# symmetry); curves extend with slope 1 outside 0..1, so nothing clips. Curves are
+# Fritsch-Carlson monotone cubics sampled into a 4096-entry LUT read with linear
+# interpolation (the engine uploads the same LUT as a texture).
+# ---------------------------------------------------------------------------
+
+LUT_SIZE = 4096
+
+
+def monotone_tangents(xs: np.ndarray, ys: np.ndarray) -> np.ndarray:
+    """Fritsch-Carlson tangents (sequential limiting, as the engine computes them)."""
+    n = len(xs)
+    d = np.diff(ys) / np.diff(xs)
+    m = np.zeros(n)
+    m[0] = d[0]
+    m[-1] = d[-1]
+    for k in range(1, n - 1):
+        m[k] = 0.0 if d[k - 1] * d[k] <= 0.0 else 0.5 * (d[k - 1] + d[k])
+    for k in range(n - 1):
+        if d[k] == 0.0:
+            m[k] = 0.0
+            m[k + 1] = 0.0
+            continue
+        a = m[k] / d[k]
+        b = m[k + 1] / d[k]
+        s = a * a + b * b
+        if s > 9.0:
+            t = 3.0 / np.sqrt(s)
+            m[k] = t * a * d[k]
+            m[k + 1] = t * b * d[k]
+    return m
+
+
+def spline_eval(points, x: np.ndarray) -> np.ndarray:
+    """The monotone cubic through `points` [(x, y), ...] (x increasing) at x; flat outside."""
+    pts = np.asarray(points, dtype=np.float64).reshape(-1, 2)
+    xs, ys = pts[:, 0], pts[:, 1]
+    m = monotone_tangents(xs, ys)
+    x = np.asarray(x, dtype=np.float64)
+    k = np.clip(np.searchsorted(xs, x, side="right") - 1, 0, len(xs) - 2)
+    h = xs[k + 1] - xs[k]
+    t = np.clip((x - xs[k]) / h, 0.0, 1.0)
+    t2, t3 = t * t, t * t * t
+    out = (2 * t3 - 3 * t2 + 1) * ys[k] + (t3 - 2 * t2 + t) * h * m[k] + (-2 * t3 + 3 * t2) * ys[k + 1] + (t3 - t2) * h * m[k + 1]
+    out = np.where(x <= xs[0], ys[0], out)
+    return np.where(x >= xs[-1], ys[-1], out)
+
+
+def curve_lut(points) -> np.ndarray:
+    return spline_eval(points, np.arange(LUT_SIZE) / (LUT_SIZE - 1.0))
+
+
+def lut_apply(lut: np.ndarray, e: np.ndarray) -> np.ndarray:
+    """LUT on 0..1 with linear interpolation; slope 1 outside (no clipping)."""
+    c = np.clip(e, 0.0, 1.0)
+    p = c * (LUT_SIZE - 1)
+    i = np.minimum(np.floor(p).astype(np.int64), LUT_SIZE - 2)
+    f = p - i
+    return lut[i] * (1.0 - f) + lut[i + 1] * f + (e - c)
+
+
+IDENTITY_CURVE = [(0.0, 0.0), (1.0, 1.0)]
+
+
+def curves(image: np.ndarray, rgb=None, red=None, green=None, blue=None, luma=None) -> np.ndarray:
+    """Point curves on encoded values: R, G, B per channel, then RGB, then Luma (on encoded
+    luminance; RGB scaled by the linear luminance ratio)."""
+    out = image.astype(np.float64).copy()
+    e = encode(out[..., :3])
+    for c, pts in enumerate((red, green, blue)):
+        if pts:
+            e[..., c] = lut_apply(curve_lut(pts), e[..., c])
+    if rgb:
+        e = lut_apply(curve_lut(rgb), e)
+    out[..., :3] = decode(e)
+    if luma:
+        y = luminance(out[..., :3])
+        y2 = decode(lut_apply(curve_lut(luma), encode(y)))
+        ratio = np.where(np.abs(y) > LUMA_EPS, y2 / np.where(np.abs(y) > LUMA_EPS, y, 1.0), 1.0)
+        out[..., :3] *= ratio[..., None]
+    return out.astype(np.float32)
+
+
+PARAMETRIC_REACH = 0.45  # a region's centre moves up to 45 % of the region width
+
+
+def parametric_points(highlights, lights, darks, shadows, s1=0.25, s2=0.5, s3=0.75):
+    """The 9 curve points of the parametric curve: region centres moved within their region
+    (so the curve stays monotone), region edges fixed."""
+    edges = [0.0, s1, s2, s3, 1.0]
+    amounts = [shadows, darks, lights, highlights]
+    pts = [(0.0, 0.0)]
+    for i, a in enumerate(amounts):
+        lo, hi = edges[i], edges[i + 1]
+        c = 0.5 * (lo + hi)
+        pts.append((c, c + a / 100.0 * PARAMETRIC_REACH * (hi - lo)))
+        pts.append((hi, hi))
+    return pts
+
+
+def parametric_curve(image, highlights, lights, darks, shadows, s1=0.25, s2=0.5, s3=0.75):
+    return curves(image, rgb=parametric_points(highlights, lights, darks, shadows, s1, s2, s3))
+
+
+def _spow(v, p):
+    return np.sign(v) * np.power(np.abs(v), p)
+
+
+def _levels_channel(e, in_black, gamma, in_white, out_black, out_white):
+    t = (e - in_black) / max(in_white - in_black, 0.01)
+    return out_black + (out_white - out_black) * _spow(t, 1.0 / max(gamma, 0.01))
+
+
+LEVELS_IDENTITY = [0.0, 1.0, 1.0, 0.0, 1.0]
+
+
+def levels(image: np.ndarray, values) -> np.ndarray:
+    """Levels on encoded values: rows master, red, green, blue of (in black, gamma, in white,
+    out black, out white); per-channel rows first, then the master row."""
+    v = np.asarray(values, dtype=np.float64).reshape(4, 5)
+    out = image.astype(np.float64).copy()
+    e = encode(out[..., :3])
+    for c in range(3):
+        e[..., c] = _levels_channel(e[..., c], *v[c + 1])
+    e = _levels_channel(e, *v[0])
+    out[..., :3] = decode(e)
+    return out.astype(np.float32)
+
+
+def tint_direction(hue_degrees: float) -> np.ndarray:
+    """A luminance-neutral-ish working-space direction for a hue (OKLCh), max |v| = 1."""
+    r = np.radians(hue_degrees)
+    rgb = from_oklab(np.array([0.7, 0.1 * np.cos(r), 0.1 * np.sin(r)])) - 0.7 ** 3
+    return rgb / np.max(np.abs(rgb))
+
+
+def _tone_weights(ye, mid, width):
+    t = _smoothstep(mid - width, mid + width, ye)
+    return (1 - t) ** 2, 2 * t * (1 - t), t * t
+
+
+def color_grading(image, shadows, midtones, highlights, global_, blending=50.0, balance=0.0):
+    """Color Grading as CDL in encoded (log-like) space: shadows = offset, midtones = power,
+    highlights = slope, global = offset everywhere. Each wheel is (hue deg, saturation 0..100,
+    luminance -100..100). Balance moves the shadow/highlight split, Blending widens the
+    overlap. Split toning is this with the shadow and highlight wheels only."""
+    out = image.astype(np.float64).copy()
+    e = encode(out[..., :3])
+    ye = encode(luminance(out[..., :3]))
+    width = 0.15 + 0.35 * blending / 100.0
+    ws, wm, wh = _tone_weights(ye, 0.5 - 0.25 * balance / 100.0, width)
+    sh, mi, hi, gl = (np.asarray(w, dtype=np.float64) for w in (shadows, midtones, highlights, global_))
+    vs, vm, vh, vg = (tint_direction(w[0]) for w in (sh, mi, hi, gl))
+    slope = 1.0 + wh[..., None] * (0.6 * hi[1] / 100.0 * vh + 0.5 * hi[2] / 100.0)
+    offset = ws[..., None] * (0.08 * sh[1] / 100.0 * vs + 0.1 * sh[2] / 100.0) + (0.05 * gl[1] / 100.0 * vg + 0.1 * gl[2] / 100.0)
+    power = 1.0 / np.maximum(1.0 + wm[..., None] * (0.6 * mi[1] / 100.0 * vm + 0.5 * mi[2] / 100.0), 0.05)
+    out[..., :3] = decode(_spow(e * slope + offset, power))
+    return out.astype(np.float32)
+
+
+def color_balance(image, shadows, midtones, highlights, preserve=True):
+    """Color Balance: per tone range (cyan-red, magenta-green, yellow-blue) in -100..100,
+    added in encoded space; preserve luminosity adds back the lost linear luminance as grey."""
+    out = image.astype(np.float64).copy()
+    y0 = luminance(out[..., :3])
+    e = encode(out[..., :3])
+    ws, wm, wh = _tone_weights(encode(y0), 0.5, 0.3)
+    d = 0.15 * (ws[..., None] * np.asarray(shadows) + wm[..., None] * np.asarray(midtones) + wh[..., None] * np.asarray(highlights)) / 100.0
+    out[..., :3] = decode(e + d)
+    if preserve:
+        # Additive (grey) correction: exact, and well conditioned even where the shift
+        # takes the luminance near zero (a ratio would explode there).
+        out[..., :3] += (y0 - luminance(out[..., :3]))[..., None]
+    return out.astype(np.float32)
+
+
+SELECTIVE_FAMILIES = ["reds", "yellows", "greens", "cyans", "blues", "magentas", "whites", "neutrals", "blacks"]
+
+
+def _selective_amounts(e):
+    c = np.clip(e, 0.0, 1.0)
+    r, g, b = c[..., 0], c[..., 1], c[..., 2]
+    mx, mn = c.max(axis=-1), c.min(axis=-1)
+    z = np.zeros_like(r)
+    return [
+        np.maximum(z, r - np.maximum(g, b)),
+        np.maximum(z, np.minimum(r, g) - b),
+        np.maximum(z, g - np.maximum(r, b)),
+        np.maximum(z, np.minimum(g, b) - r),
+        np.maximum(z, b - np.maximum(r, g)),
+        np.maximum(z, np.minimum(r, b) - g),
+        np.maximum(z, 2 * mn - 1),
+        np.maximum(z, 1 - np.abs(mx + mn - 1) - (mx - mn)),
+        np.maximum(z, 1 - 2 * mx),
+    ]
+
+
+def selective_color(image, values, relative=True):
+    """Selective Color: 9 families x (cyan, magenta, yellow, black) in -100..100. Inks are
+    1 - encoded value; relative mode scales the change by the ink already there."""
+    v = np.asarray(values, dtype=np.float64).reshape(9, 4) / 100.0
+    out = image.astype(np.float64).copy()
+    e = encode(out[..., :3])
+    ink = 1.0 - e
+    delta = np.zeros_like(e)
+    for f, a in enumerate(_selective_amounts(e)):
+        scale = ink if relative else 1.0
+        delta += a[..., None] * scale * (v[f, :3] + v[f, 3])
+    out[..., :3] = decode(1.0 - (ink + delta))
+    return out.astype(np.float32)
+
+
+def channel_mixer(image, matrix, constant, monochrome=False):
+    """Channel Mixer on linear working values: out = M in + k (percent); monochrome uses the
+    first row for all three outputs."""
+    m = np.asarray(matrix, dtype=np.float64).reshape(3, 3) / 100.0
+    if monochrome:
+        m = np.repeat(m[:1], 3, axis=0)
+    k = np.asarray(constant, dtype=np.float64) / 100.0
+    if monochrome:
+        k = np.repeat(k[:1], 3)
+    out = image.astype(np.float64).copy()
+    out[..., :3] = out[..., :3] @ m.T + k
+    return out.astype(np.float32)
+
+
+BW_CENTRES = np.array([29.2, 109.8, 142.5, 194.8, 264.1, 328.4])  # reds .. magentas (OKLCh)
+
+
+def _band_weights(h, centres):
+    n = len(centres)
+    h = np.asarray(h, dtype=np.float64) % 360.0
+    w = np.zeros(h.shape + (n,))
+    for i in range(n):
+        c0 = centres[i]
+        c1 = centres[(i + 1) % n] + (360.0 if i == n - 1 else 0.0)
+        d = (h - c0) % 360.0
+        inside = d < (c1 - c0)
+        a = 0.5 * (1.0 + np.cos(np.pi * np.where(inside, d / (c1 - c0), 0.0)))
+        w[..., i] += np.where(inside, a, 0.0)
+        w[..., (i + 1) % n] += np.where(inside, 1.0 - a, 0.0)
+    return w
+
+
+def black_and_white(image, mix, tint_hue=0.0, tint_saturation=0.0):
+    """Black & White: luminance moved by +-1 stop per colour band (reds, yellows, greens,
+    cyans, blues, magentas; -100..100), faded in from grey by chroma; optional tint."""
+    out = image.astype(np.float64).copy()
+    l, c, h = _lch(out[..., :3])
+    y = luminance(out[..., :3])
+    w = _band_weights(h, BW_CENTRES)
+    fade = _smoothstep(0.0, HSL_CHROMA_FADE, c)
+    grey = y * np.exp2(fade * (w @ (np.asarray(mix, dtype=np.float64) / 100.0)))
+    tint = 0.5 * tint_saturation / 100.0 * tint_direction(tint_hue)
+    out[..., :3] = grey[..., None] * (1.0 + tint)
+    return out.astype(np.float32)
+
+
+def filter_color(hue: float, saturation: float) -> np.ndarray:
+    r = np.radians(hue)
+    c = 0.15 * saturation / 100.0
+    rgb = from_oklab(np.array([0.75, c * np.cos(r), c * np.sin(r)]))
+    return rgb / np.max(rgb)
+
+
+def photo_filter(image, hue, saturation, density, preserve=True):
+    """Photo Filter: multiply by a filter colour (OKLCh hue / saturation, max channel 1) at
+    `density` %, optionally keeping the linear luminance."""
+    out = image.astype(np.float64).copy()
+    y0 = luminance(out[..., :3])
+    f = 1.0 + density / 100.0 * (filter_color(hue, saturation) - 1.0)
+    out[..., :3] *= f
+    if preserve:
+        y1 = luminance(out[..., :3])
+        ok = np.abs(y1) > LUMA_EPS
+        out[..., :3] *= np.where(ok, y0 / np.where(ok, y1, 1.0), 1.0)[..., None]
+    return out.astype(np.float32)
+
+
+def gradient_lut(stops) -> np.ndarray:
+    """4096 x 3 working-space colours: stops (position, OKLab L, a, b) interpolated in OKLab."""
+    s = np.asarray(stops, dtype=np.float64).reshape(-1, 4)
+    s = s[np.argsort(s[:, 0], kind="stable")]
+    t = np.arange(LUT_SIZE) / (LUT_SIZE - 1.0)
+    lab = np.stack([np.interp(t, s[:, 0], s[:, k]) for k in (1, 2, 3)], axis=-1)
+    return from_oklab(lab)
+
+
+def gradient_map(image, stops) -> np.ndarray:
+    """Gradient Map: encoded luminance (clamped to 0..1 for the lookup) -> gradient colour."""
+    lut = gradient_lut(stops)
+    out = image.astype(np.float64).copy()
+    ye = np.clip(encode(luminance(out[..., :3])), 0.0, 1.0)
+    p = ye * (LUT_SIZE - 1)
+    i = np.minimum(np.floor(p).astype(np.int64), LUT_SIZE - 2)
+    f = (p - i)[..., None]
+    out[..., :3] = lut[i] * (1.0 - f) + lut[i + 1] * f
+    return out.astype(np.float32)
+
+
+def calibration_matrix(hue, saturation) -> np.ndarray:
+    """Calibration: each working-space primary turned by hue x 30 deg and its chroma scaled
+    by (1 + saturation / 100) in OKLCh; columns rescaled so white stays white."""
+    cols = []
+    for i in range(3):
+        e = np.zeros(3)
+        e[i] = 1.0
+        lab = to_oklab(e)
+        c = np.hypot(lab[1], lab[2]) * (1.0 + saturation[i] / 100.0)
+        h = np.arctan2(lab[2], lab[1]) + np.radians(hue[i] / 100.0 * 30.0)
+        cols.append(from_oklab(np.array([lab[0], c * np.cos(h), c * np.sin(h)])))
+    m = np.stack(cols, axis=1)
+    k = np.linalg.solve(m, np.ones(3))
+    return m * k[None, :]
+
+
+def calibration(image, hue, saturation) -> np.ndarray:
+    out = image.astype(np.float64).copy()
+    out[..., :3] = out[..., :3] @ calibration_matrix(hue, saturation).T
+    return out.astype(np.float32)
+
+
+GRADE_SETTINGS = {
+    "curves": [
+        dict(rgb=[(0, 0), (0.25, 0.18), (0.75, 0.84), (1, 1)]),
+        dict(red=[(0, 0.05), (0.5, 0.56), (1, 1)], blue=[(0, 0), (0.5, 0.44), (1, 0.95)], luma=[(0, 0), (0.4, 0.5), (1, 1)]),
+        dict(rgb=[(0, 1), (0.5, 0.3), (1, 0.0)], green=[(0, 0), (0.1, 0.4), (0.12, 0.42), (1, 1)]),
+    ],
+    "parametric_curve": [(30.0, 10.0, -20.0, -40.0), (-60.0, -20.0, 30.0, 50.0), (100.0, -100.0, 100.0, -100.0, 0.2, 0.45, 0.8)],
+    "levels": [
+        ([0.05, 1.2, 0.9, 0, 1] + LEVELS_IDENTITY * 3,),
+        (LEVELS_IDENTITY + [0.1, 1, 1, 0, 1] + LEVELS_IDENTITY + [0, 0.8, 0.85, 0.05, 1],),
+        ([0, 0.6, 1, 0.1, 0.9] + [0, 1.3, 1, 0, 1] + [0.02, 1, 0.95, 0, 1] + LEVELS_IDENTITY,),
+    ],
+    "color_grading": [
+        ((200, 60, 0), (0, 0, 0), (40, 50, 0), (0, 0, 0), 50, 0),
+        ((180, 80, -20), (300, 30, 10), (30, 70, 20), (90, 20, -10), 80, 30),
+        ((250, 100, 0), (0, 0, -50), (60, 100, 0), (0, 0, 40), 10, -60),
+    ],
+    "color_balance": [
+        ((-30, 0, 40), (0, 0, 0), (20, 0, -30), True),
+        ((0, 50, 0), (60, -40, 20), (0, 0, 0), False),
+        ((100, -100, 100), (-100, 100, -100), (100, 100, 100), True),
+    ],
+    "selective_color": [
+        ([0, 0, 0, 0] * 9, True),
+        ([-40, 10, 20, 0, 0, 0, -30, 0, 0, 20, 0, 10, 30, 0, 0, 0, 0, 0, 40, -10, 0, 0, 0, 0, 0, 0, 0, -20, 10, 0, 0, 0, 0, 0, 0, 20], True),
+        ([-40, 10, 20, 0, 0, 0, -30, 0, 0, 20, 0, 10, 30, 0, 0, 0, 0, 0, 40, -10, 0, 0, 0, 0, 0, 0, 0, -20, 10, 0, 0, 0, 0, 0, 0, 20], False),
+    ],
+    "channel_mixer": [
+        ([100, 0, 0, 0, 100, 0, 0, 0, 100], [0, 0, 0], False),
+        ([80, 30, -10, 10, 90, 0, 0, -20, 120], [5, 0, -5], False),
+        ([30, 60, 10, 0, 0, 0, 0, 0, 0], [0, 0, 0], True),
+    ],
+    "black_and_white": [([0, 0, 0, 0, 0, 0], 0, 0), ([40, 60, -20, -30, -60, 20], 0, 0), ([-50, 30, 80, 0, -100, 100], 40, 30)],
+    "photo_filter": [(60.0, 80.0, 25.0, True), (250.0, 60.0, 60.0, False), (140.0, 100.0, 100.0, True)],
+    "gradient_map": [
+        ([0, 0.15, 0, 0, 1, 0.95, 0, 0],),
+        ([0, 0.2, 0.02, -0.08, 0.5, 0.6, 0.08, 0.02, 1, 0.97, -0.01, 0.06],),
+        ([0, 0.3, -0.05, -0.1, 0.3, 0.45, 0.12, 0.05, 0.7, 0.8, -0.04, 0.12, 1, 0.98, 0, 0],),
+    ],
+    "calibration": [((20, 0, 0), (0, 0, 0)), ((0, -30, 40), (30, 20, -20)), ((-60, 50, -40), (-50, 60, 80))],
+}
+
+GRADE_OPS = {
+    "curves": lambda img, kw: curves(img, **kw),
+    "parametric_curve": lambda img, p: parametric_curve(img, *p),
+    "levels": lambda img, p: levels(img, *p),
+    "color_grading": lambda img, p: color_grading(img, *p),
+    "color_balance": lambda img, p: color_balance(img, *p),
+    "selective_color": lambda img, p: selective_color(img, *p),
+    "channel_mixer": lambda img, p: channel_mixer(img, *p),
+    "black_and_white": lambda img, p: black_and_white(img, *p),
+    "photo_filter": lambda img, p: photo_filter(img, *p),
+    "gradient_map": lambda img, p: gradient_map(img, *p),
+    "calibration": lambda img, p: calibration(img, *p),
+}
+
+
+def grade_self_check() -> None:
+    rng = np.random.default_rng(7)
+    # Monotone data gives a monotone curve (Fritsch-Carlson), on random point sets.
+    for _ in range(300):
+        n = rng.integers(2, 9)
+        xs = np.sort(np.concatenate([[0.0, 1.0], rng.uniform(0.01, 0.99, n - 2)]))
+        xs = np.unique(np.round(xs, 3))
+        ys = np.sort(rng.uniform(0, 1, len(xs)))
+        lut = curve_lut(list(zip(xs, ys)))
+        assert np.all(np.diff(lut) >= -1e-12)
+        assert np.allclose(spline_eval(list(zip(xs, ys)), xs), ys)
+    assert np.allclose(curve_lut(IDENTITY_CURVE), np.arange(LUT_SIZE) / (LUT_SIZE - 1.0))
+    # Parametric points stay monotone for any amounts.
+    for _ in range(100):
+        a = rng.uniform(-100, 100, 4)
+        assert np.all(np.diff(np.asarray(parametric_points(*a))[:, 1]) >= 0)
+    # Calibration and the neutral settings are identities; white stays white.
+    assert np.allclose(calibration_matrix([0, 0, 0], [0, 0, 0]), np.eye(3), atol=1e-9)
+    assert np.allclose(calibration_matrix([30, -20, 10], [20, 0, -40]) @ np.ones(3), 1.0)
+    scene = scene_rec2020()
+    assert np.allclose(levels(scene, LEVELS_IDENTITY * 4), scene, atol=1e-5)
+    assert np.allclose(curves(scene, rgb=IDENTITY_CURVE), scene, atol=1e-5)
+    assert np.allclose(color_grading(scene, (0, 0, 0), (0, 0, 0), (0, 0, 0), (0, 0, 0)), scene, atol=1e-5)

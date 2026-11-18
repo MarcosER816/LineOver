@@ -60,6 +60,8 @@ class FakeEditorCanvas(
 
     override fun stats(): EngineStats? = null
 
+    override fun autoLevels(): FloatArray = floatArrayOf(0.04f, 0.92f, 0.02f, 0.96f, 0.06f, 0.9f)
+
     /** What the eyedropper solves to, null for "black". */
     var whiteBalance: Pair<Float, Float>? = 4500f to 12f
 

@@ -1,5 +1,6 @@
 #include "lineover/graph.h"
 #include "lineover/color_ops.h"
+#include "lineover/grade_ops.h"
 #include "lineover/light.h"
 
 #include <array>
@@ -364,6 +365,89 @@ std::string serializeGraph(const Graph& graph) {
     return out;
 }
 
+namespace {
+
+double scalar(const OpParams& p, const char* key, double fallback) {
+    for (const auto& x : p.params)
+        if (x.first == key) return x.second;
+    return fallback;
+}
+
+std::vector<float> numbers(const OpParams& p, const char* key) {
+    for (const auto& a : p.arrays)
+        if (a.first == key) return {a.second.begin(), a.second.end()};
+    return {};
+}
+
+template <std::size_t N>
+std::array<float, N> fixed(const OpParams& p, const char* key, float fill = 0.f) {
+    std::array<float, N> out;
+    out.fill(fill);
+    const std::vector<float> v = numbers(p, key);
+    for (std::size_t i = 0; i < N && i < v.size(); ++i) out[i] = v[i];
+    return out;
+}
+
+CurvePoints points(const OpParams& p, const char* key) {
+    const std::vector<float> v = numbers(p, key);
+    CurvePoints out;
+    for (std::size_t i = 0; i + 1 < v.size(); i += 2) out.emplace_back(v[i], v[i + 1]);
+    return out;
+}
+
+GradeWheel wheel(const OpParams& p, const char* key) {
+    const auto v = fixed<3>(p, key);
+    return {v[0], v[1], v[2]};
+}
+
+// The Stage 7 ops (grade_ops.h); false when `params` is not one of them.
+bool addGradeOp(const OpParams& params, OpList* list) {
+    const std::string& op = params.op;
+    auto f = [&](const char* key, double fallback) { return static_cast<float>(scalar(params, key, fallback)); };
+    if (op == "curves") {
+        CurveSet set{points(params, "rgb"), points(params, "red"), points(params, "green"), points(params, "blue"), points(params, "luma")};
+        list->add(makeCurves(set));
+    } else if (op == "parametric_curve") {
+        list->add(makeParametricCurve(f("highlights", 0), f("lights", 0), f("darks", 0), f("shadows", 0), f("split1", 0.25),
+                                      f("split2", 0.5), f("split3", 0.75)));
+    } else if (op == "levels") {
+        std::array<float, 20> v = fixed<20>(params, "values");
+        if (numbers(params, "values").size() < 20) {
+            for (int i = 0; i < 20; ++i) v[i] = (i % 5 == 1 || i % 5 == 2 || i % 5 == 4) ? 1.f : 0.f;
+        }
+        list->add(makeLevels(v));
+    } else if (op == "color_grading") {
+        list->add(makeColorGrading(wheel(params, "shadows"), wheel(params, "midtones"), wheel(params, "highlights"),
+                                   wheel(params, "global"), f("blending", 50), f("balance", 0)));
+    } else if (op == "color_balance") {
+        list->add(makeColorBalance(fixed<3>(params, "shadows"), fixed<3>(params, "midtones"), fixed<3>(params, "highlights"),
+                                   f("preserve", 1) > 0.5f));
+    } else if (op == "selective_color") {
+        list->add(makeSelectiveColor(fixed<36>(params, "values"), f("relative", 1) > 0.5f));
+    } else if (op == "channel_mixer") {
+        std::array<float, 9> m = fixed<9>(params, "matrix");
+        if (numbers(params, "matrix").size() < 9) m = {100, 0, 0, 0, 100, 0, 0, 0, 100};
+        list->add(makeChannelMixer(m, fixed<3>(params, "constant"), f("monochrome", 0) > 0.5f));
+    } else if (op == "black_and_white") {
+        list->add(makeBlackAndWhite(fixed<6>(params, "mix"), f("tintHue", 0), f("tintSaturation", 0)));
+    } else if (op == "photo_filter") {
+        list->add(makePhotoFilter(f("hue", 60), f("saturation", 80), f("density", 25), f("preserve", 1) > 0.5f));
+    } else if (op == "gradient_map") {
+        const std::vector<float> v = numbers(params, "stops");
+        std::vector<std::array<float, 4>> stops;
+        for (std::size_t i = 0; i + 3 < v.size(); i += 4) stops.push_back({v[i], v[i + 1], v[i + 2], v[i + 3]});
+        if (stops.size() < 2) stops = {{0.f, 0.f, 0.f, 0.f}, {1.f, 1.f, 0.f, 0.f}};
+        list->add(makeGradientMap(stops));
+    } else if (op == "calibration") {
+        list->add(makeCalibration(fixed<3>(params, "hue"), fixed<3>(params, "saturation")));
+    } else {
+        return false;
+    }
+    return true;
+}
+
+}  // namespace
+
 std::unique_ptr<OpList> buildOps(const Graph& graph, std::string* skipped) {
     auto list = std::make_unique<OpList>();
     for (const Layer& layer : graph.layers) {
@@ -413,6 +497,8 @@ std::unique_ptr<OpList> buildOps(const Graph& graph, std::string* skipped) {
                 list->add(makePosterize(static_cast<float>(param("levels", 0.0))));
             } else if (params.op == "threshold") {
                 list->add(makeThreshold(static_cast<float>(param("level", 0.5))));
+            } else if (addGradeOp(params, list.get())) {
+                // Stage 7 op (curves and grading)
             } else if (params.op == "highlights_shadows") {
                 list->add(makeHighlightsShadows(static_cast<float>(param("highlights", 0.0)),
                                                 static_cast<float>(param("shadows", 0.0))));

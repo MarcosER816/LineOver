@@ -58,6 +58,9 @@ interface EditorCanvas :
     /** Engine counters for the debug overlay (null without an engine). */
     fun stats(): EngineStats?
 
+    /** Levels → Auto: per-channel encoded percentiles of the preview (6 values) or null. */
+    fun autoLevels(): FloatArray?
+
     /**
      * Eyedropper: the white balance (K, tint) that makes the 5 x 5 patch at image point
      * ([u], [v]) neutral, sampled before white balance. Blocks: call off the main thread.
@@ -167,6 +170,8 @@ private class EngineCanvas(
     override fun autoLight(): Pair<Float, Float>? = session.autoLight()
 
     override fun stats(): EngineStats? = session.stats()
+
+    override fun autoLevels(): FloatArray? = session.autoLevels()
 
     override fun whiteBalanceAt(
         u: Float,

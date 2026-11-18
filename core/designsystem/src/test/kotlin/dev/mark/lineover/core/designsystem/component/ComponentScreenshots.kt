@@ -8,11 +8,13 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -187,6 +189,28 @@ abstract class ComponentScreenshots(
             default = { LoCurveEditorPlaceholder(Modifier.height(160.dp)) },
             active = { LoCurveEditorPlaceholder(Modifier.height(160.dp)) },
             disabled = { LoCurveEditorPlaceholder(Modifier.height(160.dp), enabled = false) },
+        )
+
+    @Test
+    fun loCurveEditor() {
+        val s = listOf(Offset(0f, 0f), Offset(0.25f, 0.18f), Offset(0.75f, 0.84f), Offset(1f, 1f))
+        val curve: (Float) -> Float = { x -> x + 0.3f * x * (1 - x) * (x - 0.5f) * 4 * 0.5f }
+        val histogram = FloatArray(64) { i -> (0.2f + 0.7f * kotlin.math.exp(-((i - 30) / 12f).let { it * it })) }
+        snap(
+            "lo_curve_editor",
+            default = { LoCurveEditor(s, curve, { null }, { _, _, _ -> }, {}, Modifier.width(200.dp)) },
+            active = { LoCurveEditor(s, curve, { null }, { _, _, _ -> }, {}, Modifier.width(200.dp), LoColors.Danger, histogram) },
+            disabled = { LoCurveEditor(s, curve, { null }, { _, _, _ -> }, {}, Modifier.width(200.dp), enabled = false) },
+        )
+    }
+
+    @Test
+    fun loGradeWheel() =
+        snap(
+            "lo_grade_wheel",
+            default = { LoGradeWheel(LoHueSat(0f, 0f), 0f, {}, {}, "Shadows", Modifier.height(170.dp)) },
+            active = { LoGradeWheel(LoHueSat(190f, 0.6f), -0.4f, {}, {}, "Shadows", Modifier.height(170.dp)) },
+            disabled = { LoGradeWheel(LoHueSat(190f, 0.6f), 0.5f, {}, {}, "Shadows", Modifier.height(170.dp), enabled = false) },
         )
 
     @Test

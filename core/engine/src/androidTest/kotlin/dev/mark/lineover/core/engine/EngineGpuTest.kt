@@ -140,6 +140,93 @@ class EngineGpuTest {
     @Test
     fun gpuThresholdMatchesTheReference() = checkColor("threshold", """{"op":"threshold","level":0.5}""", SCENE)
 
+    /** Stage 7: each curves / grading op (middle golden setting), GPU vs the reference. */
+    private fun checkGrade(
+        name: String,
+        op: String,
+        input: String,
+    ) {
+        val expected = premultiplied8(npy("grade/${name}_gpu_srgb_display_f32.npy"))
+        val graph = """{"schemaVersion":1,"layers":[{"id":"background","ops":[$op]}]}"""
+        GoldenAssert.assertMatches(gpu(graph, input), expected, "gpu_grade_${name}_srgb8", Tolerance.GPU_VS_CPU, diffDir)
+    }
+
+    @Test
+    fun gpuCurvesMatchTheReference() =
+        checkGrade(
+            "curves",
+            """{"op":"curves","free":0.0,"rgb":[],"red":[0,0.05,0.5,0.56,1,1],"green":[],"blue":[0,0,0.5,0.44,1,0.95],""" +
+                """"luma":[0,0,0.4,0.5,1,1]}""",
+            SCENE,
+        )
+
+    @Test
+    fun gpuParametricCurveMatchesTheReference() =
+        checkGrade(
+            "parametric_curve",
+            """{"op":"parametric_curve","highlights":-60.0,"lights":-20.0,"darks":30.0,"shadows":50.0,""" +
+                """"split1":0.25,"split2":0.5,"split3":0.75}""",
+            SCENE,
+        )
+
+    @Test
+    fun gpuLevelsMatchTheReference() =
+        checkGrade(
+            "levels",
+            """{"op":"levels","values":[0,1,1,0,1,0.1,1,1,0,1,0,1,1,0,1,0,0.8,0.85,0.05,1]}""",
+            SCENE,
+        )
+
+    @Test
+    fun gpuColorGradingMatchesTheReference() =
+        checkGrade(
+            "color_grading",
+            """{"op":"color_grading","blending":80.0,"balance":30.0,"shadows":[180,80,-20],"midtones":[300,30,10],""" +
+                """"highlights":[30,70,20],"global":[90,20,-10]}""",
+            CHART,
+        )
+
+    @Test
+    fun gpuColorBalanceMatchesTheReference() =
+        checkGrade(
+            "color_balance",
+            """{"op":"color_balance","preserve":0.0,"shadows":[0,50,0],"midtones":[60,-40,20],"highlights":[0,0,0]}""",
+            SCENE,
+        )
+
+    @Test
+    fun gpuSelectiveColorMatchesTheReference() =
+        checkGrade(
+            "selective_color",
+            """{"op":"selective_color","relative":1.0,"values":[-40,10,20,0,0,0,-30,0,0,20,0,10,30,0,0,0,0,0,40,-10,""" +
+                """0,0,0,0,0,0,0,-20,10,0,0,0,0,0,0,20]}""",
+            CHART,
+        )
+
+    @Test
+    fun gpuChannelMixerMatchesTheReference() =
+        checkGrade(
+            "channel_mixer",
+            """{"op":"channel_mixer","monochrome":0.0,"matrix":[80,30,-10,10,90,0,0,-20,120],"constant":[5,0,-5]}""",
+            CHART,
+        )
+
+    @Test
+    fun gpuBlackAndWhiteMatchesTheReference() =
+        checkGrade("black_and_white", """{"op":"black_and_white","tintHue":0.0,"tintSaturation":0.0,"mix":[40,60,-20,-30,-60,20]}""", CHART)
+
+    @Test
+    fun gpuPhotoFilterMatchesTheReference() =
+        checkGrade("photo_filter", """{"op":"photo_filter","hue":250.0,"saturation":60.0,"density":60.0,"preserve":0.0}""", CHART)
+
+    @Test
+    fun gpuGradientMapMatchesTheReference() =
+        checkGrade("gradient_map", """{"op":"gradient_map","stops":[0,0.2,0.02,-0.08,0.5,0.6,0.08,0.02,1,0.97,-0.01,0.06]}""", CHART)
+
+    @Test
+    fun gpuCalibrationMatchesTheReference() =
+        checkGrade("calibration", """{"op":"calibration","hue":[0,-30,40],"saturation":[30,20,-20]}""", CHART)
+
     /** The compute-shader histogram against numpy (reference.histogram_srgb): within 1 count per bin. */
     @Test
     fun gpuHistogramMatchesNumpy() {

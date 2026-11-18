@@ -110,6 +110,10 @@ private fun ToolPanelContent(
             ColorPanel(id, state, onIntent, onClose = close)
         }
 
+        id in GRADE_TOOLS -> {
+            GradePanel(id, state, onIntent, onClose = close)
+        }
+
         else -> {
             ToolRegistry[id]?.let { ToolPanel(it, close) }
         }

@@ -210,8 +210,10 @@ private fun CompactLayout(
     canvas: @Composable (Modifier) -> Unit,
 ) {
     val reducedMotion = LocalReducedMotion.current
-    // Sheets (layers, history, masks, info) open tall; a tool's panel opens at its low detent.
-    val sheetOpen = state.hasCompactPanel && state.panel !is EditorPanel.Tool
+    // Sheets (layers, history, masks, info) and the tall Stage 7 panels (curve editor, wheels)
+    // open tall; other tool panels open at their low detent.
+    val tallTool = (state.panel as? EditorPanel.Tool)?.id in GRADE_TOOLS
+    val sheetOpen = state.hasCompactPanel && (state.panel !is EditorPanel.Tool || tallTool)
     Column(Modifier.fillMaxSize()) {
         EditorTopBar(state, wide = false, onIntent = onIntent, onBack = onBack, onExport = onExport)
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {

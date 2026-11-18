@@ -134,6 +134,9 @@ class EngineSession private constructor(
         n: Int,
     ): FloatArray? = if (closed) null else native.sampleGrid(u, v, n)
 
+    /** Levels → Auto: the preview's per-channel encoded percentiles (low R, high R, low G, high G, low B, high B). */
+    fun autoLevels(): FloatArray? = if (closed) null else native.autoLevels()
+
     /** Hold to compare: the original while true. */
     fun setShowOriginal(original: Boolean) {
         if (!closed) native.setShowOriginal(original)

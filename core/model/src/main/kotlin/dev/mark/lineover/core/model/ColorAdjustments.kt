@@ -73,11 +73,19 @@ data class ColorAdjustments(
 
     fun beforeLight(): List<OpParams> = listOf(OpParams.WhiteBalance(temperature, tint)).filterNot { it.isIdentity }
 
-    fun afterLight(): List<OpParams> =
-        listOfNotNull(
+    fun afterLight(): List<OpParams> = basics() + finishing()
+
+    /** Vibrance → Saturation → HSL. */
+    fun basics(): List<OpParams> =
+        listOf(
             OpParams.Vibrance(vibrance),
             OpParams.Saturation(saturation),
             OpParams.HslMixer(hsl(HslChannel.Hue), hsl(HslChannel.Saturation), hsl(HslChannel.Luminance)),
+        ).filterNot { it.isIdentity }
+
+    /** Invert → Posterize → Threshold: the last ops. */
+    fun finishing(): List<OpParams> =
+        listOfNotNull(
             OpParams.Invert.takeIf { invert },
             OpParams.Posterize(posterize.toFloat()),
             threshold?.let { OpParams.Threshold(it) },
@@ -160,8 +168,16 @@ data class ColorAdjustments(
     }
 }
 
-/** The whole background edit: Color before Light (white balance), Light, then the rest of Color. */
+/**
+ * The whole background edit, in the engine's fixed order: Calibration → White balance →
+ * Light → Levels → Curves → Parametric curve → Vibrance → Saturation → HSL → Color
+ * Balance → Selective Color → Channel Mixer → Color Grading → Photo Filter → Black &
+ * White → Gradient Map → Invert → Posterize → Threshold.
+ */
 fun editOps(
     light: LightAdjustments,
     color: ColorAdjustments,
-): List<OpParams> = color.beforeLight() + light.toOps() + color.afterLight()
+    grade: GradeAdjustments = GradeAdjustments(),
+): List<OpParams> =
+    grade.calibrationOps() + color.beforeLight() + light.toOps() + grade.toneOps() + color.basics() + grade.gradingOps() +
+        color.finishing()

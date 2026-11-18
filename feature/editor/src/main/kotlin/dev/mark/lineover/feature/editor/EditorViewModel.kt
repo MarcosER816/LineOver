@@ -8,6 +8,7 @@ import dev.mark.lineover.core.io.prefs.CanvasSurround
 import dev.mark.lineover.core.io.project.ProjectLibrary
 import dev.mark.lineover.core.model.ColorAdjustments
 import dev.mark.lineover.core.model.EditGraph
+import dev.mark.lineover.core.model.GradeAdjustments
 import dev.mark.lineover.core.model.HslBand
 import dev.mark.lineover.core.model.HslChannel
 import dev.mark.lineover.core.model.LightAdjustments
@@ -106,6 +107,8 @@ data class EditorState(
     val split: Float = DEFAULT_SPLIT,
     /** The Color basics (Stage 6). */
     val color: ColorAdjustments = ColorAdjustments(),
+    /** Curves and grading (Stage 7). */
+    val grade: GradeAdjustments = GradeAdjustments(),
     /** What the HSL panel's sliders change. */
     val hslChannel: HslChannel = HslChannel.Hue,
     /** Eyedropper or targeted adjustment armed: one finger picks on the canvas. */
@@ -137,6 +140,9 @@ data class EditorState(
 
     val histogramShown: Boolean get() = HISTOGRAM_TOOL in overlays
 
+    /** The engine's histogram is needed: the overlay is on, or a curve / levels panel draws it. */
+    val histogramNeeded: Boolean get() = histogramShown || selectedToolId in HISTOGRAM_PANELS
+
     /** The tools in the strip of the selected category. */
     val strip: List<ToolSpec>
         get() =
@@ -155,6 +161,7 @@ data class EditorState(
         const val HISTOGRAM_TOOL = "light.histogram"
         const val CLIPPING_TOOL = "light.clipping_warnings"
         const val COMPARE_TOOL = "history.before_after"
+        val HISTOGRAM_PANELS = setOf("light.curves_point", "light.curves_parametric", "light.levels")
     }
 }
 
@@ -312,6 +319,14 @@ sealed interface EditorIntent {
     ) : EditorIntent
 
     data object TargetedEnd : EditorIntent
+
+    /** Curves and grading (Stage 7): any change of [GradeAdjustments]. */
+    class EditGrade(
+        val edit: (GradeAdjustments) -> GradeAdjustments,
+    ) : EditorIntent
+
+    /** Levels → Auto: per-channel black and white points from the preview. */
+    data object AutoLevels : EditorIntent
 }
 
 sealed interface EditorEffect {
@@ -387,7 +402,7 @@ class EditorViewModel(
             is EditorIntent.SelectCategory -> selectCategory(intent.category)
             is EditorIntent.SelectTool -> selectTool(intent.id)
             is EditorIntent.OpenPanel -> setState { copy(panel = if (panel == intent.panel) null else intent.panel, menu = null) }
-            is EditorIntent.ClosePanel -> setState { copy(panel = null, pickMode = PickMode.None, loupe = null, targeted = null) }
+            is EditorIntent.ClosePanel -> reduce { copy(panel = null, pickMode = PickMode.None, loupe = null, targeted = null) }
             is EditorIntent.SelectHistoryTab -> setState { copy(historyTab = intent.tab, panel = EditorPanel.History) }
             is EditorIntent.OpenMenu -> setState { copy(menu = intent.menu) }
             is EditorIntent.ToggleOverlay -> reduce { copy(overlays = overlays.toggle(intent.id), menu = null) }
@@ -454,6 +469,8 @@ class EditorViewModel(
             is EditorIntent.TargetedStart -> targetedStart(intent.u, intent.v)
             is EditorIntent.TargetedDrag -> targetedDrag(intent.fraction)
             is EditorIntent.TargetedEnd -> setState { copy(targeted = null) }
+            is EditorIntent.EditGrade -> reduce { withGrade(intent.edit(grade)) }
+            is EditorIntent.AutoLevels -> autoLevels()
             else -> Unit
         }
     }
@@ -461,7 +478,19 @@ class EditorViewModel(
     private fun PickMode.toggle(mode: PickMode) = if (this == mode) PickMode.None else mode
 
     private fun EditorState.withColor(next: ColorAdjustments): EditorState =
-        copy(color = next, graph = graph.withBackgroundOps(editOps(light, next)))
+        copy(color = next, graph = graph.withBackgroundOps(editOps(light, next, grade)))
+
+    private fun EditorState.withGrade(next: GradeAdjustments): EditorState =
+        copy(grade = next, graph = graph.withBackgroundOps(editOps(light, color, next)))
+
+    private fun autoLevels() {
+        val percentiles = state.value.canvas?.autoLevels()
+        if (percentiles == null) {
+            sendEffect(EditorEffect.Message("Auto needs the photo to finish loading"))
+            return
+        }
+        reduce { withGrade(grade.withAutoLevels(percentiles)) }
+    }
 
     // Sampling blocks on the render thread: off the main thread, the latest request wins.
     private var loupeJob: Job? = null
@@ -595,7 +624,7 @@ class EditorViewModel(
         }
 
     private fun EditorState.withLight(next: LightAdjustments): EditorState =
-        copy(light = next, graph = graph.withBackgroundOps(editOps(next, color)))
+        copy(light = next, graph = graph.withBackgroundOps(editOps(next, color, grade)))
 
     private fun autoLight() {
         val result = state.value.canvas?.autoLight()
@@ -634,7 +663,7 @@ class EditorViewModel(
         if (before == null || before.compare != after.compare || before.split != after.split) {
             canvas.setCompare(after.compare, after.split)
         }
-        if (before == null || before.histogramShown != after.histogramShown) canvas.setHistogramEnabled(after.histogramShown)
+        if (before == null || before.histogramNeeded != after.histogramNeeded) canvas.setHistogramEnabled(after.histogramNeeded)
     }
 
     private fun CompareMode.next(): CompareMode = CompareMode.entries[(ordinal + 1) % CompareMode.entries.size]
@@ -671,7 +700,8 @@ class EditorViewModel(
         LightParam.forTool(id)?.let { param -> setState { copy(lightParam = param) } }
         val category = tool.category?.takeIf { tool.place == ToolPlace.Strip }
         if (category != null && state.value.category != ToolCategory.Favorites) preferences.setLastCategory(category.id)
-        setState {
+        // reduce: opening a curves / levels panel switches the engine's histogram on.
+        reduce {
             val sameTool = selectedToolId == id
             copy(
                 // Opening a tool from Favorites keeps the Favorites strip in view.
