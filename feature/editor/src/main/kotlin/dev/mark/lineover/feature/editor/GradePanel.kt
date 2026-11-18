@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -19,6 +20,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -91,10 +93,12 @@ internal fun GradePanel(
     // On phones the point curves panel is short (channels in the header row, short graph)
     // so that it fits the panel's height and the photo stays visible.
     val compactCurves = !wide && toolId == CURVES_POINT
-    Column(Modifier.fillMaxWidth().testTag(EditorTags.GRADE_PANEL)) {
-        if (!compactCurves) GradeHeader(toolId, title, onIntent, onClose)
-        Column(Modifier.testTag(EditorTags.slot(toolId))) {
-            GradeControls(toolId, state, edit, if (compactCurves) ({ CloseButton(title, onClose) }) else null)
+    CompositionLocalProvider(LocalEndEdit provides { onIntent(EditorIntent.EndEdit) }) {
+        Column(Modifier.fillMaxWidth().testTag(EditorTags.GRADE_PANEL)) {
+            if (!compactCurves) GradeHeader(toolId, title, onIntent, onClose)
+            Column(Modifier.testTag(EditorTags.slot(toolId))) {
+                GradeControls(toolId, state, edit, if (compactCurves) ({ CloseButton(title, onClose) }) else null)
+            }
         }
     }
 }
@@ -150,7 +154,21 @@ internal fun Slider(
     track: LoSliderTrack = LoSliderTrack.Plain,
     fill: LoSliderFill = LoSliderFill.FromDefault,
     enabled: Boolean = true,
-) = LoSlider(value, onChange, label, valueRange = range, defaultValue = default, step = step, track = track, fill = fill, enabled = enabled)
+) = LoSlider(
+    value,
+    onChange,
+    label,
+    valueRange = range,
+    defaultValue = default,
+    step = step,
+    track = track,
+    fill = fill,
+    enabled = enabled,
+    onValueChangeFinished = LocalEndEdit.current,
+)
+
+/** Ends the current History step when a control is released (a drag is one step). */
+internal val LocalEndEdit = staticCompositionLocalOf<() -> Unit> { {} }
 
 @Composable
 private fun Segments(

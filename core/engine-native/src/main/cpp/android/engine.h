@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "gpu_pipeline.h"
+#include "lineover/thumbnail.h"
 #include "lineover/grade_ops.h"
 #include "lineover/light.h"
 #include "lineover/color.h"
@@ -87,6 +88,9 @@ public:
     // Levels → Auto: per-channel encoded 0.1 % / 99.9 % percentiles of the preview
     // (low R, high R, low G, high G, low B, high B); false before a preview.
     bool autoLevels(float out[6]);
+    // `graphJson` rendered on a <= 512 px copy of the preview (CPU reference ops, sRGB
+    // display RGBA8) for thumbnails; any thread. False before a preview or on a bad graph.
+    bool renderThumbnail(const std::string& graphJson, std::vector<std::uint8_t>* rgba, int* width, int* height);
     // The average working-space RGB of the 5 x 5 preview pixels around image point (u, v)
     // (0..1, oriented image), run through the ops that come before the first op of type
     // `before` (all ops if there is none). The eyedropper samples before White balance,
@@ -194,6 +198,7 @@ private:
     float surround_[3] = {0.0706f, 0.0706f, 0.0706f};
     std::vector<float> pendingPreview_;
     std::shared_ptr<const GuidedCoefficients> guided_;  // of the current preview
+    std::shared_ptr<const ImageF32> thumbSource_;       // the preview box-filtered to <= 512 px
     bool guidedChanged_ = false;
     bool havePercentiles_ = false;
     float lowPercentile_ = 0.f, highPercentile_ = 0.f;

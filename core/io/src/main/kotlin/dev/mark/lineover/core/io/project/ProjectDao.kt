@@ -34,6 +34,12 @@ internal interface ProjectDao {
         now: Long,
     )
 
+    @Query("UPDATE projects SET modified = :now WHERE id = :id")
+    suspend fun setModified(
+        id: Long,
+        now: Long,
+    )
+
     @Query("UPDATE projects SET thumb_path = :thumbPath WHERE id = :id")
     suspend fun setThumb(
         id: Long,

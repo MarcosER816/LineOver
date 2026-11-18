@@ -1,6 +1,6 @@
 # Tool catalog
 
-Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 30 done.**
+Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 35 done.**
 
 - **id**: stable identifier (`<group>.<tool>`), used in code, favourites and project files. Never renamed.
 - **UI slot**: where the tool lives. Slots are reserved now and are never moved (rule R9); a stage only *fills* slots.
@@ -278,12 +278,12 @@ Every AI tool downloads its model on first use (size and licence shown, SHA-256 
 
 | id | Name | Category | UI slot | Stage | Status |
 | --- | --- | --- | --- | --- | --- |
-| `history.undo_redo` | Undo / redo | — (shell) | `topbar/undo-redo` | 8 | reserved |
-| `history.history_list` | History list | — (shell) | `panel/history/list` | 8 | reserved |
-| `history.snapshots` | Snapshots | — (shell) | `panel/history/snapshots` | 8 | reserved |
-| `history.versions` | Versions | — (shell) | `panel/history/versions` | 8 | reserved |
+| `history.undo_redo` | Undo / redo | — (shell) | `topbar/undo-redo` | 8 | done |
+| `history.history_list` | History list | — (shell) | `panel/history/list` | 8 | done |
+| `history.snapshots` | Snapshots | — (shell) | `panel/history/snapshots` | 8 | done |
+| `history.versions` | Versions | — (shell) | `panel/history/versions` | 8 | done |
 | `history.before_after` | Before / after | — (shell) | `topbar/before-after` | 5 | done |
-| `history.project_file` | Project file (.loproj) | — (shell) | `home/projects` | 8 | reserved |
+| `history.project_file` | Project file (.loproj) | — (shell) | `home/projects` | 8 | done |
 
 ## Export
 

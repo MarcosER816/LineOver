@@ -45,6 +45,7 @@ import dev.mark.lineover.core.designsystem.component.LoPlaceholderTool
 import dev.mark.lineover.core.designsystem.component.LoSegmented
 import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.CanvasSurround
+import dev.mark.lineover.core.io.prefs.TapGestures
 import dev.mark.lineover.core.ui.adaptive.rememberLoWindowInfo
 import java.util.Locale
 import kotlin.math.roundToLong
@@ -219,6 +220,10 @@ private fun SectionDetail(
                 )
             }
 
+            SettingsSection.GesturesHelp -> {
+                GesturesDetail(state.tapGestures, onIntent)
+            }
+
             SettingsSection.ReducedMotion -> {
                 val on = LocalReducedMotion.current
                 Text(
@@ -234,6 +239,42 @@ private fun SectionDetail(
             }
         }
     }
+}
+
+/** Settings → Gestures: what the canvas understands, and the undo / redo taps (Stage 8). */
+@Composable
+private fun GesturesDetail(
+    taps: TapGestures,
+    onIntent: (SettingsIntent) -> Unit,
+) {
+    Text("Undo and redo taps", style = LoType.Title, color = LoColors.TextPrimary)
+    LoSegmented(
+        options = listOf("2 undo · 3 redo", "2 redo · 3 undo", "Off"),
+        selectedIndex = taps.ordinal,
+        onSelect = { onIntent(SettingsIntent.SetTapGestures(TapGestures.entries[it])) },
+        modifier = Modifier.fillMaxWidth().testTag("tap-gestures"),
+        descriptions = TapGestures.entries.map { it.title },
+    )
+    Text(
+        "Tap the photo with two or three fingers at once and lift them quickly. Fingers that move or stay down " +
+            "longer than a quarter of a second zoom or pan instead.",
+        style = LoType.Caption,
+        color = LoColors.TextSecondary,
+    )
+    Text(
+        "On HyperOS, swiping down with three fingers takes a screenshot and a three-finger tap can be taken by the " +
+            "system. If redo does not respond, turn off the three-finger gesture in Settings → Additional settings → " +
+            "Gesture shortcuts, choose \"2 redo · 3 undo\", or use the Redo button in the top bar (always there).",
+        style = LoType.Caption,
+        color = LoColors.TextSecondary,
+    )
+    Text("On the photo", style = LoType.Title, color = LoColors.TextPrimary)
+    listOf(
+        "Pinch to zoom (to 32×), drag with two fingers to pan; double tap fits or zooms to 100 %.",
+        "Hold one finger still on the photo to see the original.",
+        "Sliders: drag to change, double tap to reset, put a second finger down to see clipping.",
+        "History: every change is a step; a slider drag is one step when you lift your finger.",
+    ).forEach { Text("• $it", style = LoType.Body, color = LoColors.TextSecondary) }
 }
 
 @Composable

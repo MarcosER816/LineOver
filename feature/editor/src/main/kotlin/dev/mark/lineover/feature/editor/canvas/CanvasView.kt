@@ -57,6 +57,9 @@ interface CanvasGestureListener {
     fun onTargetedDrag(fraction: Float) = Unit
 
     fun onTargetedEnd() = Unit
+
+    /** A two- or three-finger tap (no movement, quick): undo / redo per Settings → Gestures. */
+    fun onMultiFingerTap(fingers: Int) = Unit
 }
 
 /** What one finger does on the canvas while a tool needs the image itself. */
@@ -135,6 +138,7 @@ class CanvasView(
     private var lastY = 0f
 
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private val multiTap = MultiFingerTap(MultiFingerTap.SLOP_DP * resources.displayMetrics.density)
     private val swipeStepPx = SWIPE_STEP_DP * resources.displayMetrics.density
     private var oneFinger = OneFinger.None
     private var downX = 0f
@@ -239,6 +243,8 @@ class CanvasView(
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouchEvent(event: MotionEvent): Boolean {
         doubleTap.onTouchEvent(event)
+        val tapFingers = multiTap.onTouchEvent(event)
+        if (tapFingers > 0) gestureListener?.onMultiFingerTap(tapFingers)
         val tracker = velocityTracker ?: VelocityTracker.obtain().also { velocityTracker = it }
         tracker.addMovement(event)
         when (event.actionMasked) {

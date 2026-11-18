@@ -19,6 +19,27 @@ enum class CanvasSurround(
     }
 }
 
+/**
+ * Multi-finger taps on the canvas (Settings → Gestures). A tap counts only if the fingers
+ * move less than 10 dp and lift within 250 ms, so pinch-zoom never triggers it.
+ */
+enum class TapGestures(
+    val id: String,
+    val title: String,
+) {
+    /** Two-finger tap = undo, three-finger tap = redo. */
+    Standard("standard", "Two fingers undo, three fingers redo"),
+
+    /** Two-finger tap = redo, three-finger tap = undo. */
+    Swapped("swapped", "Two fingers redo, three fingers undo"),
+    Off("off", "Off (use the top bar)"),
+    ;
+
+    companion object {
+        fun fromId(id: String?): TapGestures = entries.firstOrNull { it.id == id } ?: Standard
+    }
+}
+
 /** Small UI preferences that survive restarts. Reads are cheap; writes apply asynchronously. */
 interface AppPreferences {
     /** Last category opened in the editor (a `ToolCategory.id`), restored on the next open. */
@@ -32,6 +53,8 @@ interface AppPreferences {
 
     val surround: StateFlow<CanvasSurround>
 
+    val tapGestures: StateFlow<TapGestures>
+
     fun setLastCategory(id: String)
 
     fun setCoachMarksSeen(seen: Boolean)
@@ -39,6 +62,8 @@ interface AppPreferences {
     fun setFavorites(ids: List<String>)
 
     fun setSurround(surround: CanvasSurround)
+
+    fun setTapGestures(gestures: TapGestures)
 }
 
 /** [AppPreferences] in a SharedPreferences file (`lineover_ui`). */
@@ -51,11 +76,13 @@ class SharedAppPreferences(
     private val coachFlow = MutableStateFlow(prefs.getBoolean(KEY_COACH, false))
     private val favoritesFlow = MutableStateFlow(decode(prefs.getString(KEY_FAVORITES, null)))
     private val surroundFlow = MutableStateFlow(CanvasSurround.fromId(prefs.getString(KEY_SURROUND, null)))
+    private val tapFlow = MutableStateFlow(TapGestures.fromId(prefs.getString(KEY_TAPS, null)))
 
     override val lastCategory = lastCategoryFlow.asStateFlow()
     override val coachMarksSeen = coachFlow.asStateFlow()
     override val favorites = favoritesFlow.asStateFlow()
     override val surround = surroundFlow.asStateFlow()
+    override val tapGestures = tapFlow.asStateFlow()
 
     override fun setLastCategory(id: String) {
         lastCategoryFlow.value = id
@@ -77,12 +104,18 @@ class SharedAppPreferences(
         prefs.edit().putString(KEY_SURROUND, surround.id).apply()
     }
 
+    override fun setTapGestures(gestures: TapGestures) {
+        tapFlow.value = gestures
+        prefs.edit().putString(KEY_TAPS, gestures.id).apply()
+    }
+
     private companion object {
         const val FILE = "lineover_ui"
         const val KEY_CATEGORY = "editor.last_category"
         const val KEY_COACH = "editor.coach_marks_seen"
         const val KEY_FAVORITES = "editor.favorites"
         const val KEY_SURROUND = "canvas.surround"
+        const val KEY_TAPS = "canvas.tap_gestures"
         const val SEPARATOR = ","
 
         fun decode(value: String?): List<String> = value?.split(SEPARATOR)?.filter { it.isNotBlank() }.orEmpty()
@@ -95,11 +128,13 @@ class InMemoryAppPreferences(
     coachMarksSeen: Boolean = true,
     favorites: List<String> = emptyList(),
     surround: CanvasSurround = CanvasSurround.Dark,
+    tapGestures: TapGestures = TapGestures.Standard,
 ) : AppPreferences {
     override val lastCategory = MutableStateFlow(lastCategory)
     override val coachMarksSeen = MutableStateFlow(coachMarksSeen)
     override val favorites = MutableStateFlow(favorites)
     override val surround = MutableStateFlow(surround)
+    override val tapGestures = MutableStateFlow(tapGestures)
 
     override fun setLastCategory(id: String) {
         lastCategory.value = id
@@ -115,5 +150,9 @@ class InMemoryAppPreferences(
 
     override fun setSurround(surround: CanvasSurround) {
         this.surround.value = surround
+    }
+
+    override fun setTapGestures(gestures: TapGestures) {
+        tapGestures.value = gestures
     }
 }

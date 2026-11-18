@@ -83,6 +83,19 @@ preview and is never animated; the committed value becomes a new edit graph on r
   full-size bitmap), JPEG to `files/projects/<id>/thumb.jpg`, on `Dispatchers.IO`.
 - **Delete with undo**: the row is removed at once and the files stay for 5 s; Undo
   re-inserts the row, otherwise the files are purged on the app scope.
+- **Project files (Stage 8)**: `projectfile/` writes and reads `.loproj` ZIPs: `manifest.json`
+  (format, `schemaVersion`, app version, name, times, `SourceRef`, SHA-256 of every entry;
+  written last, so a cut-off file has none), `graph.json` (the active version's graph),
+  `document.json` (`ProjectDocument`: versions with their histories, snapshots), `original`
+  (shared files only, stored) or a reference, `paint/` (zstd tiles from Stage 18) and
+  `thumbnails/`. `ProjectMigrations` upgrades older schemas step by step before decoding and
+  refuses newer ones; schema 1 needs no step yet.
+- Each project autosaves to `files/projects/<id>/project.loproj` through `AtomicFiles`
+  (temp file, fsync, old file → `.bak`, rename). The editor writes an `editing` marker while
+  open; `recoverInterrupted()` (Home, on launch) finds markers left by a crash or a kill and
+  puts the newest intact file back (main, else a complete temp, else the backup). A file that
+  cannot be read (a newer format) is never overwritten. The edited thumbnail is saved as
+  `thumb-<time>.jpg` (Home caches by path).
 
 - **Device albums** (`gallery/DeviceGallery`): `MediaStoreGallery` queries
   `MediaStore.Images` (id, bucket, name, date) off the main thread and re-emits on a
@@ -134,7 +147,15 @@ Defined in `:core:model`, serialised with kotlinx.serialization.
   reused, so old `.loproj` files keep loading. Unknown fields are ignored on read.
 
 Every edit produces a new graph value. The **undo stack stores graph snapshots, never
-pixels**. The single exception is painting (brush, healing, clone …): a stroke is stored
+pixels** (`EditHistory`, Stage 8): at most 500 entries, each sharing unchanged layers and op
+instances with the one before (`EditGraph.sharing`). A drag of one control is one entry: the
+open top entry absorbs changes with the same key (`HistoryLabels`: "exposure.ev") until the
+control is released (`EditorIntent.EndEdit`), another control changes, or the autosave fires.
+`HistoryLabels` also names entries ("Exposure +0.7"). Versions each own an `EditHistory`;
+snapshots are named graphs; together they are the `ProjectDocument`. Undo / redo, restore and
+version switches read the sliders back from the graph (`fromOps`), so the graph is the only
+truth. Thumbnails of graphs come from the engine's CPU path on a ≤ 512 px copy of the preview
+(`renderThumbnail`, any thread). The single exception is painting (brush, healing, clone …): a stroke is stored
 as a **paint delta of compressed tiles** that the graph references.
 
 A `.loproj` project file holds the graph JSON, a reference to the original, and the paint

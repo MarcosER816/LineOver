@@ -251,6 +251,24 @@ JNIEXPORT jfloatArray LO_NATIVE(nativeAutoLevels)(JNIEnv* env, jobject, jlong en
     return result;
 }
 
+// [width, height] in the first 8 bytes (little endian), then RGBA8; null before a preview.
+JNIEXPORT jbyteArray LO_NATIVE(nativeRenderThumbnail)(JNIEnv* env, jobject, jlong engine, jstring graph) {
+    constexpr int kMaxEdge = 512;
+    std::vector<std::uint8_t> rgba(static_cast<std::size_t>(kMaxEdge) * kMaxEdge * 4);
+    int w = 0, h = 0;
+    const char* text = env->GetStringUTFChars(graph, nullptr);
+    const int ok = lo_engine_render_thumbnail(handle(engine), text, rgba.data(), static_cast<int>(rgba.size()), &w, &h);
+    env->ReleaseStringUTFChars(graph, text);
+    if (ok == 0) return nullptr;
+    const jsize size = static_cast<jsize>(w) * h * 4;
+    jbyteArray result = env->NewByteArray(size + 8);
+    if (result == nullptr) return nullptr;
+    const jint dims[2] = {w, h};
+    env->SetByteArrayRegion(result, 0, 8, reinterpret_cast<const jbyte*>(dims));
+    env->SetByteArrayRegion(result, 8, size, reinterpret_cast<const jbyte*>(rgba.data()));
+    return result;
+}
+
 JNIEXPORT jfloatArray LO_NATIVE(nativeAutoLight)(JNIEnv* env, jobject, jlong engine) {
     float exposure = 0.f, blacks = 0.f;
     if (lo_engine_auto_light(handle(engine), &exposure, &blacks) == 0) return nullptr;

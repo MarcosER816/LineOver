@@ -3,6 +3,7 @@ package dev.mark.lineover.feature.settings
 import androidx.lifecycle.viewModelScope
 import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.CanvasSurround
+import dev.mark.lineover.core.io.prefs.TapGestures
 import dev.mark.lineover.core.ui.mvi.MviViewModel
 import kotlinx.coroutines.launch
 
@@ -23,6 +24,7 @@ data class SettingsState(
     val models: List<AiModelEntry> = emptyList(),
     val versionName: String = "",
     val surround: CanvasSurround = CanvasSurround.Dark,
+    val tapGestures: TapGestures = TapGestures.Standard,
 )
 
 sealed interface SettingsIntent {
@@ -37,6 +39,10 @@ sealed interface SettingsIntent {
     data class SetSurround(
         val surround: CanvasSurround,
     ) : SettingsIntent
+
+    data class SetTapGestures(
+        val gestures: TapGestures,
+    ) : SettingsIntent
 }
 
 class SettingsViewModel(
@@ -48,10 +54,12 @@ class SettingsViewModel(
             sections = SettingsSection.entries.filter { showDebug || it != SettingsSection.Debug },
             versionName = versionName,
             surround = preferences.surround.value,
+            tapGestures = preferences.tapGestures.value,
         ),
     ) {
     init {
         viewModelScope.launch { preferences.surround.collect { setState { copy(surround = it) } } }
+        viewModelScope.launch { preferences.tapGestures.collect { setState { copy(tapGestures = it) } } }
     }
 
     override fun onIntent(intent: SettingsIntent) {
@@ -62,6 +70,8 @@ class SettingsViewModel(
             is SettingsIntent.DeleteModel -> setState { copy(models = models.filterNot { it.id == intent.id }) }
 
             is SettingsIntent.SetSurround -> preferences.setSurround(intent.surround)
+
+            is SettingsIntent.SetTapGestures -> preferences.setTapGestures(intent.gestures)
         }
     }
 }

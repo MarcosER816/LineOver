@@ -62,6 +62,18 @@ class FakeEditorCanvas(
 
     override fun autoLevels(): FloatArray = floatArrayOf(0.04f, 0.92f, 0.02f, 0.96f, 0.06f, 0.9f)
 
+    /** Thumbnails: a small bitmap whose colour shows how many ops the graph has. */
+    var thumbnails = 0
+        private set
+
+    override fun thumbnail(graph: dev.mark.lineover.core.model.EditGraph): android.graphics.Bitmap {
+        thumbnails++
+        val ops = graph.layers.sumOf { it.ops.size }
+        return android.graphics.Bitmap.createBitmap(8, 6, android.graphics.Bitmap.Config.ARGB_8888).apply {
+            eraseColor(android.graphics.Color.rgb((ops * 40).coerceAtMost(255), 90, 160))
+        }
+    }
+
     /** What the eyedropper solves to, null for "black". */
     var whiteBalance: Pair<Float, Float>? = 4500f to 12f
 

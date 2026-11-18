@@ -1,19 +1,24 @@
 package dev.mark.lineover.feature.editor
 
+import android.graphics.Bitmap
 import androidx.lifecycle.viewModelScope
 import dev.mark.lineover.core.engine.CompareMode
 import dev.mark.lineover.core.engine.RenderScheduler
 import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.CanvasSurround
+import dev.mark.lineover.core.io.prefs.TapGestures
+import dev.mark.lineover.core.io.project.DocumentLoad
 import dev.mark.lineover.core.io.project.ProjectLibrary
 import dev.mark.lineover.core.model.ColorAdjustments
 import dev.mark.lineover.core.model.EditGraph
+import dev.mark.lineover.core.model.EditHistory
 import dev.mark.lineover.core.model.GradeAdjustments
 import dev.mark.lineover.core.model.HslBand
 import dev.mark.lineover.core.model.HslChannel
 import dev.mark.lineover.core.model.LightAdjustments
 import dev.mark.lineover.core.model.LightParam
 import dev.mark.lineover.core.model.Project
+import dev.mark.lineover.core.model.ProjectDocument
 import dev.mark.lineover.core.model.ToolCategory
 import dev.mark.lineover.core.model.editOps
 import dev.mark.lineover.core.ui.mvi.MviViewModel
@@ -28,8 +33,10 @@ import dev.mark.lineover.feature.editor.canvas.EditorCanvasFactory
 import dev.mark.lineover.feature.editor.canvas.ImageSummary
 import dev.mark.lineover.feature.editor.canvas.PickMode
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
@@ -60,6 +67,35 @@ enum class HistoryTab(
     Versions("Versions", "history.versions"),
 }
 
+/** What History shows on the canvas without changing the edit until Restore. */
+sealed interface HistoryPreview {
+    data class Step(
+        val index: Int,
+    ) : HistoryPreview
+
+    data class SnapshotState(
+        val id: String,
+    ) : HistoryPreview
+}
+
+/** The naming dialog of History: a new snapshot or version, or a version's new name. */
+sealed interface NameDialog {
+    val initial: String
+
+    data class NewSnapshot(
+        override val initial: String,
+    ) : NameDialog
+
+    data class NewVersion(
+        override val initial: String,
+    ) : NameDialog
+
+    data class RenameVersion(
+        val id: String,
+        override val initial: String,
+    ) : NameDialog
+}
+
 /** Menus that drop down from a button. */
 enum class EditorMenu { More, AddLayer, AddMask }
 
@@ -88,8 +124,20 @@ data class EditorState(
     val previewUnavailable: Boolean = false,
     /** Sharp tiles have been loading for more than 300 ms: show the subtle spinner. */
     val showSpinner: Boolean = false,
-    /** The edit the engine renders (in memory until projects are saved, Stage 8). */
+    /** The edit: the active version's current graph (saved to the project's .loproj, Stage 8). */
     val graph: EditGraph = EditGraph(),
+    /** Undo / redo of the active version: graph snapshots, never pixels. */
+    val history: EditHistory = EditHistory.start(),
+    /** Versions (each with its own history) and snapshots; the active version's history is [history]. */
+    val document: ProjectDocument = ProjectDocument(),
+    /** A History row or snapshot previewed on the canvas; Restore applies it. */
+    val preview: HistoryPreview? = null,
+    val nameDialog: NameDialog? = null,
+    /** Thumbnails of the versions (History → Versions), by version id. */
+    val versionThumbnails: Map<String, Bitmap> = emptyMap(),
+    /** The saved project could not be read (e.g. a newer format): edits are not saved over it. */
+    val saveBlocked: String? = null,
+    val tapGestures: TapGestures = TapGestures.Standard,
     /** The Light sliders (Stage 5); the background layer's ops are built from them. */
     val light: LightAdjustments = LightAdjustments(),
     /** The Light parameter the collapsed panel and swipe mode adjust. */
@@ -134,6 +182,15 @@ data class EditorState(
     val surround: CanvasSurround = CanvasSurround.Dark,
 ) {
     val selectedToolId: String? get() = (panel as? EditorPanel.Tool)?.id
+
+    /** The graph on the canvas: the previewed History state, or the edit. */
+    val shownGraph: EditGraph
+        get() =
+            when (val p = preview) {
+                is HistoryPreview.Step -> history.entries.getOrNull(p.index)?.graph ?: graph
+                is HistoryPreview.SnapshotState -> document.snapshots.firstOrNull { it.id == p.id }?.graph ?: graph
+                null -> graph
+            }
 
     /** Clipping warnings are drawn: the overlay is on, or a slider's second finger is down. */
     val clippingShown: Boolean get() = CLIPPING_TOOL in overlays || clippingPreview
@@ -327,11 +384,72 @@ sealed interface EditorIntent {
 
     /** Levels → Auto: per-channel black and white points from the preview. */
     data object AutoLevels : EditorIntent
+
+    /** History (Stage 8). */
+    data object Undo : EditorIntent
+
+    data object Redo : EditorIntent
+
+    /** A slider, wheel or curve point was released: the drag becomes one History step. */
+    data object EndEdit : EditorIntent
+
+    /** Two- or three-finger tap on the canvas (Settings → Gestures maps it to undo / redo). */
+    data class MultiFingerTap(
+        val fingers: Int,
+    ) : EditorIntent
+
+    /** The app goes to the background (onStop): save now. */
+    data object SaveNow : EditorIntent
+
+    data class Preview(
+        val preview: HistoryPreview?,
+    ) : EditorIntent
+
+    /** Applies the previewed History row or snapshot. */
+    data object RestorePreview : EditorIntent
+
+    /** Undo of a Restore (from its snackbar): back to step [index]. */
+    data class JumpTo(
+        val index: Int,
+    ) : EditorIntent
+
+    data class OpenNameDialog(
+        val dialog: NameDialog?,
+    ) : EditorIntent
+
+    /** The name dialog's OK. */
+    data class ConfirmName(
+        val name: String,
+    ) : EditorIntent
+
+    data class DeleteSnapshot(
+        val id: String,
+    ) : EditorIntent
+
+    data class SwitchVersion(
+        val id: String,
+    ) : EditorIntent
+
+    data class DeleteVersion(
+        val id: String,
+    ) : EditorIntent
+
+    /** Undo of a deletion (from its snackbar): the document as it was. */
+    class RestoreDocument(
+        val document: ProjectDocument,
+        val history: EditHistory,
+    ) : EditorIntent
 }
 
 sealed interface EditorEffect {
     data class Message(
         val text: String,
+    ) : EditorEffect
+
+    /** A destructive action's snackbar: its "Undo" sends [undo]. */
+    class Undoable(
+        val text: String,
+        val undo: EditorIntent,
     ) : EditorEffect
 }
 
@@ -342,12 +460,16 @@ sealed interface EditorEffect {
  */
 @Suppress("TooManyFunctions") // MVI: the single ViewModel of the editor screen (ARCHITECTURE.md)
 class EditorViewModel(
-    projectId: Long,
+    private val projectId: Long,
     private val library: ProjectLibrary,
     private val preferences: AppPreferences,
     private val canvases: EditorCanvasFactory,
     private val renderDispatcher: CoroutineDispatcher = Dispatchers.Default,
     debuggable: Boolean = false,
+    /** Saves that must finish after the screen is gone (the app scope): onStop and close. */
+    private val saveScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val autosaveMillis: Long = AUTOSAVE_MILLIS,
 ) : MviViewModel<EditorState, EditorIntent, EditorEffect>(
         EditorState(
             debuggable = debuggable,
@@ -355,16 +477,52 @@ class EditorViewModel(
             favorites = preferences.favorites.value,
             coachStep = if (preferences.coachMarksSeen.value) null else 0,
             surround = preferences.surround.value,
+            tapGestures = preferences.tapGestures.value,
         ),
     ) {
+    private val autosave =
+        EditorAutosave(
+            projectId,
+            library,
+            saveScope,
+            renderDispatcher,
+            autosaveMillis,
+            object : EditorAutosave.Host {
+                override fun current() = state.value
+
+                override fun saveFailed(message: String) = sendEffect(EditorEffect.Message(message))
+            },
+        )
+
     init {
         viewModelScope.launch { library.markOpened(projectId) }
         viewModelScope.launch {
             library.observe(projectId).collect { project -> setState { copy(project = project, loaded = true) } }
         }
-        viewModelScope.launch { openCanvas(library.observe(projectId).filterNotNull().first()) }
+        viewModelScope.launch {
+            val project = library.observe(projectId).filterNotNull().first()
+            loadDocument(project)
+            openCanvas(project)
+        }
         viewModelScope.launch { preferences.favorites.collect { setState { copy(favorites = it) } } }
         viewModelScope.launch { preferences.surround.collect { setState { copy(surround = it) } } }
+        viewModelScope.launch { preferences.tapGestures.collect { setState { copy(tapGestures = it) } } }
+    }
+
+    /** Reads the saved edit (versions, histories, snapshots) before the canvas opens. */
+    private suspend fun loadDocument(project: Project) {
+        when (val load = library.loadDocument(project)) {
+            is DocumentLoad.Loaded -> {
+                val document = load.document
+                setState { copy(document = document, history = document.active.history).showingGraph(document.graph) }
+                autosave.loaded(if (load.fresh) null else document)
+            }
+
+            is DocumentLoad.Failed -> {
+                setState { copy(saveBlocked = load.reason) }
+                sendEffect(EditorEffect.Message("${load.reason}. Edits will not be saved."))
+            }
+        }
     }
 
     private var scheduler: RenderScheduler? = null
@@ -379,7 +537,7 @@ class EditorViewModel(
         // Edits reach the engine through the scheduler: the latest graph wins.
         val renderScheduler = RenderScheduler({ graph -> canvas.setGraph(graph) }, viewModelScope, renderDispatcher)
         scheduler = renderScheduler
-        renderScheduler.submit(state.value.graph)
+        renderScheduler.submit(state.value.shownGraph)
         syncCanvas(null, state.value)
         canvas.loading.collectLatest { loading ->
             if (loading) {
@@ -393,24 +551,245 @@ class EditorViewModel(
 
     override fun onCleared() {
         scheduler?.cancel()
-        // Closing joins the engine's threads: never on the main thread.
-        state.value.canvas?.let { canvas -> Thread({ canvas.close() }, "LineOverEngineClose").start() }
+        autosave.finish(state.value.canvas)
     }
+
+    /** Autosave: 5 s after the last change; an idle drag's step closes before the save. */
+    private fun scheduleSave() = autosave.schedule(viewModelScope) { setState { copy(history = history.close()) } }
 
     override fun onIntent(intent: EditorIntent) {
         when (intent) {
-            is EditorIntent.SelectCategory -> selectCategory(intent.category)
-            is EditorIntent.SelectTool -> selectTool(intent.id)
-            is EditorIntent.OpenPanel -> setState { copy(panel = if (panel == intent.panel) null else intent.panel, menu = null) }
-            is EditorIntent.ClosePanel -> reduce { copy(panel = null, pickMode = PickMode.None, loupe = null, targeted = null) }
-            is EditorIntent.SelectHistoryTab -> setState { copy(historyTab = intent.tab, panel = EditorPanel.History) }
-            is EditorIntent.OpenMenu -> setState { copy(menu = intent.menu) }
-            is EditorIntent.ToggleOverlay -> reduce { copy(overlays = overlays.toggle(intent.id), menu = null) }
-            is EditorIntent.ToggleFavorite -> toggleFavorite(intent.id)
-            is EditorIntent.OpenSearch, is EditorIntent.CloseSearch, is EditorIntent.Query -> search(intent)
-            is EditorIntent.NextCoachMark, is EditorIntent.DismissCoachMarks, is EditorIntent.ShowHelp -> coach(intent)
-            else -> onEditIntent(intent)
+            is EditorIntent.SelectCategory -> {
+                selectCategory(intent.category)
+            }
+
+            is EditorIntent.SelectTool -> {
+                selectTool(intent.id)
+            }
+
+            is EditorIntent.OpenPanel -> {
+                reduce { copy(panel = if (panel == intent.panel) null else intent.panel, menu = null, preview = null) }
+                refreshVersionThumbnails()
+            }
+
+            is EditorIntent.ClosePanel -> {
+                reduce {
+                    copy(
+                        panel = null,
+                        pickMode = PickMode.None,
+                        loupe = null,
+                        targeted = null,
+                        preview = null,
+                        history = history.close(),
+                    )
+                }
+            }
+
+            is EditorIntent.SelectHistoryTab -> {
+                setState { copy(historyTab = intent.tab, panel = EditorPanel.History, preview = null) }
+                refreshVersionThumbnails()
+            }
+
+            is EditorIntent.OpenMenu -> {
+                setState { copy(menu = intent.menu) }
+            }
+
+            is EditorIntent.ToggleOverlay -> {
+                reduce { copy(overlays = overlays.toggle(intent.id), menu = null) }
+            }
+
+            is EditorIntent.ToggleFavorite -> {
+                toggleFavorite(intent.id)
+            }
+
+            is EditorIntent.OpenSearch, is EditorIntent.CloseSearch, is EditorIntent.Query -> {
+                search(intent)
+            }
+
+            is EditorIntent.NextCoachMark, is EditorIntent.DismissCoachMarks, is EditorIntent.ShowHelp -> {
+                coach(intent)
+            }
+
+            else -> {
+                if (!onHistoryIntent(intent)) onEditIntent(intent)
+            }
         }
+    }
+
+    /** Undo / redo, History rows, snapshots, versions and saving (Stage 8); false if not one. */
+    @Suppress("CyclomaticComplexMethod", "LongMethod") // one branch per History intent
+    private fun onHistoryIntent(intent: EditorIntent): Boolean {
+        when (intent) {
+            is EditorIntent.Undo -> {
+                undo(fromGesture = false)
+            }
+
+            is EditorIntent.Redo -> {
+                redo(fromGesture = false)
+            }
+
+            is EditorIntent.MultiFingerTap -> {
+                multiFingerTap(intent.fingers)
+            }
+
+            is EditorIntent.EndEdit -> {
+                setState { copy(history = history.close()) }
+            }
+
+            is EditorIntent.SaveNow -> {
+                setState { copy(history = history.close()) }
+                autosave.saveNow()
+            }
+
+            is EditorIntent.Preview -> {
+                reduceHistory { copy(preview = intent.preview, history = history.close()) }
+            }
+
+            is EditorIntent.RestorePreview -> {
+                restorePreview()
+            }
+
+            is EditorIntent.JumpTo -> {
+                reduceHistory { jumpedTo(intent.index) }
+            }
+
+            is EditorIntent.OpenNameDialog -> {
+                setState { copy(nameDialog = intent.dialog) }
+            }
+
+            is EditorIntent.ConfirmName -> {
+                confirmName(intent.name.trim())
+            }
+
+            is EditorIntent.DeleteSnapshot -> {
+                deleteSnapshot(intent.id)
+            }
+
+            is EditorIntent.SwitchVersion -> {
+                reduceHistory { withActiveVersion(intent.id) }
+            }
+
+            is EditorIntent.DeleteVersion -> {
+                deleteVersion(intent.id)
+            }
+
+            is EditorIntent.RestoreDocument -> {
+                reduceHistory { copy(document = intent.document, history = intent.history).showingGraph(intent.history.current) }
+            }
+
+            else -> {
+                return false
+            }
+        }
+        return true
+    }
+
+    /** Deletes a snapshot; its snackbar's Undo puts the document back. */
+    private fun deleteSnapshot(id: String) {
+        val before = state.value
+        val name =
+            before.document.snapshots
+                .firstOrNull { it.id == id }
+                ?.name ?: return
+        reduceHistory { withoutSnapshot(id) }
+        sendEffect(EditorEffect.Undoable("Deleted snapshot \"$name\"", EditorIntent.RestoreDocument(before.documentNow(), before.history)))
+    }
+
+    private fun deleteVersion(id: String) {
+        val before = state.value
+        val name =
+            before.document.versions
+                .firstOrNull { it.id == id }
+                ?.name ?: return
+        val after = before.withoutVersion(id)
+        if (after == null) {
+            sendEffect(EditorEffect.Message("A project keeps at least one version"))
+            return
+        }
+        reduceHistory { after }
+        sendEffect(EditorEffect.Undoable("Deleted version \"$name\"", EditorIntent.RestoreDocument(before.documentNow(), before.history)))
+    }
+
+    /** setState for History changes: the canvas follows, thumbnails refresh, the autosave restarts. */
+    private fun reduceHistory(block: EditorState.() -> EditorState) {
+        reduce(block = block)
+        refreshVersionThumbnails()
+        scheduleSave()
+    }
+
+    private fun undo(fromGesture: Boolean) {
+        val label = state.value.history.undoLabel
+        val next = state.value.undone()
+        if (next == null) {
+            if (fromGesture) sendEffect(EditorEffect.Message("Nothing to undo"))
+            return
+        }
+        reduceHistory { next }
+        if (fromGesture) sendEffect(EditorEffect.Message("Undo: $label"))
+    }
+
+    private fun redo(fromGesture: Boolean) {
+        val label = state.value.history.redoLabel
+        val next = state.value.redone()
+        if (next == null) {
+            if (fromGesture) sendEffect(EditorEffect.Message("Nothing to redo"))
+            return
+        }
+        reduceHistory { next }
+        if (fromGesture) sendEffect(EditorEffect.Message("Redo: $label"))
+    }
+
+    private fun multiFingerTap(fingers: Int) {
+        val undoFingers =
+            when (state.value.tapGestures) {
+                TapGestures.Standard -> TWO_FINGERS
+                TapGestures.Swapped -> THREE_FINGERS
+                TapGestures.Off -> return
+            }
+        when (fingers) {
+            undoFingers -> undo(fromGesture = true)
+            TWO_FINGERS, THREE_FINGERS -> redo(fromGesture = true)
+        }
+    }
+
+    private fun restorePreview() {
+        val before = state.value
+        val (after, label) = before.restored() ?: return
+        reduceHistory { after }
+        val previousIndex = before.history.index
+        if (before.preview is HistoryPreview.Step) {
+            sendEffect(EditorEffect.Undoable("Restored \"$label\"", EditorIntent.JumpTo(previousIndex)))
+        } else {
+            sendEffect(EditorEffect.Undoable("Applied snapshot \"$label\"", EditorIntent.Undo))
+        }
+    }
+
+    private fun confirmName(name: String) {
+        val dialog = state.value.nameDialog ?: return
+        val chosen = name.ifEmpty { dialog.initial }.take(MAX_NAME)
+        setState { copy(nameDialog = null) }
+        when (dialog) {
+            is NameDialog.NewSnapshot -> reduceHistory { withSnapshot(chosen, clock()) }
+            is NameDialog.NewVersion -> reduceHistory { withNewVersion(chosen, clock()) }
+            is NameDialog.RenameVersion -> reduceHistory { withVersionName(dialog.id, chosen) }
+        }
+    }
+
+    private var thumbnailJob: Job? = null
+
+    /** Renders the versions' thumbnails while the Versions tab is open (off the main thread). */
+    private fun refreshVersionThumbnails() {
+        val current = state.value
+        val canvas = current.canvas ?: return
+        if (current.panel != EditorPanel.History || current.historyTab != HistoryTab.Versions) return
+        thumbnailJob?.cancel()
+        val versions = current.documentNow().versions
+        thumbnailJob =
+            viewModelScope.launch {
+                val thumbs =
+                    withContext(renderDispatcher) { versions.mapNotNull { v -> canvas.thumbnail(v.graph)?.let { v.id to it } }.toMap() }
+                setState { copy(versionThumbnails = thumbs) }
+            }
     }
 
     /** The Light tools, compare and the canvas gestures (Stage 5). */
@@ -454,7 +833,7 @@ class EditorViewModel(
     private fun onColorIntent(intent: EditorIntent) {
         when (intent) {
             is EditorIntent.SetWhiteBalance -> reduce { withColor(color.withWhiteBalance(intent.kelvin, intent.tint)) }
-            is EditorIntent.AsShot -> reduce { withColor(color.withWhiteBalance(ColorAdjustments.DEFAULT_KELVIN, 0f)) }
+            is EditorIntent.AsShot -> reduce(AS_SHOT) { withColor(color.withWhiteBalance(ColorAdjustments.DEFAULT_KELVIN, 0f)) }
             is EditorIntent.SetVibrance -> reduce { withColor(color.copy(vibrance = intent.amount.coerceIn(-RANGE, RANGE))) }
             is EditorIntent.SetSaturation -> reduce { withColor(color.copy(saturation = intent.amount.coerceIn(-RANGE, RANGE))) }
             is EditorIntent.SetHsl -> reduce { withColor(color.withHsl(intent.channel, intent.band, intent.value)) }
@@ -464,13 +843,20 @@ class EditorViewModel(
             is EditorIntent.SetInvert -> reduce { withColor(color.copy(invert = intent.on)) }
             is EditorIntent.SetPosterize -> reduce { withColor(color.copy(posterize = intent.levels.coerceIn(0, MAX_POSTERIZE))) }
             is EditorIntent.SetThreshold -> reduce { withColor(color.copy(threshold = intent.level?.coerceIn(0f, 1f))) }
+            is EditorIntent.EditGrade -> reduce { withGrade(intent.edit(grade)) }
+            is EditorIntent.AutoLevels -> autoLevels()
+            else -> onPickIntent(intent)
+        }
+    }
+
+    /** The eyedropper and the targeted adjustment (finger on the canvas). */
+    private fun onPickIntent(intent: EditorIntent) {
+        when (intent) {
             is EditorIntent.EyedropperMove -> eyedropperMove(intent)
             is EditorIntent.EyedropperEnd -> eyedropperEnd(intent)
             is EditorIntent.TargetedStart -> targetedStart(intent.u, intent.v)
             is EditorIntent.TargetedDrag -> targetedDrag(intent.fraction)
-            is EditorIntent.TargetedEnd -> setState { copy(targeted = null) }
-            is EditorIntent.EditGrade -> reduce { withGrade(intent.edit(grade)) }
-            is EditorIntent.AutoLevels -> autoLevels()
+            is EditorIntent.TargetedEnd -> setState { copy(targeted = null, history = history.close()) }
             else -> Unit
         }
     }
@@ -489,7 +875,7 @@ class EditorViewModel(
             sendEffect(EditorEffect.Message("Auto needs the photo to finish loading"))
             return
         }
-        reduce { withGrade(grade.withAutoLevels(percentiles)) }
+        reduce("Auto levels") { withGrade(grade.withAutoLevels(percentiles)) }
     }
 
     // Sampling blocks on the render thread: off the main thread, the latest request wins.
@@ -522,7 +908,9 @@ class EditorViewModel(
                 sendEffect(EditorEffect.Message("Pick something lighter: black has no colour to balance"))
             } else {
                 // One pick, then the eyedropper puts itself away (Lightroom-like).
-                reduce { withColor(color.withWhiteBalance(wb.first, wb.second)).copy(pickMode = PickMode.None) }
+                reduce(
+                    "White balance: eyedropper",
+                ) { withColor(color.withWhiteBalance(wb.first, wb.second)).copy(pickMode = PickMode.None) }
             }
         }
     }
@@ -570,7 +958,7 @@ class EditorViewModel(
             }
 
             is EditorIntent.SwipeActive -> {
-                setState { copy(swiping = intent.active && swipeMode) }
+                setState { copy(swiping = intent.active && swipeMode, history = if (intent.active) history else history.close()) }
             }
 
             is EditorIntent.SwipeSelect -> {
@@ -621,6 +1009,8 @@ class EditorViewModel(
             override fun onTargetedDrag(fraction: Float) = onIntent(EditorIntent.TargetedDrag(fraction))
 
             override fun onTargetedEnd() = onIntent(EditorIntent.TargetedEnd)
+
+            override fun onMultiFingerTap(fingers: Int) = onIntent(EditorIntent.MultiFingerTap(fingers))
         }
 
     private fun EditorState.withLight(next: LightAdjustments): EditorState =
@@ -633,7 +1023,7 @@ class EditorViewModel(
             return
         }
         val (exposure, blacks) = result
-        reduce { withLight(light.with(LightParam.Exposure, exposure).with(LightParam.Blacks, blacks)) }
+        reduce("Auto light") { withLight(light.with(LightParam.Exposure, exposure).with(LightParam.Blacks, blacks)) }
     }
 
     private fun swipeSelect(steps: Int) {
@@ -646,11 +1036,19 @@ class EditorViewModel(
         }
     }
 
-    /** setState, then hands what changed to the engine. */
-    private fun reduce(block: EditorState.() -> EditorState) {
+    /**
+     * setState, then hands what changed to the engine. A changed edit becomes a History step
+     * (a drag of one control coalesces; [label] names a one-off action) and restarts the autosave.
+     */
+    private fun reduce(
+        label: String? = null,
+        block: EditorState.() -> EditorState,
+    ) {
         val before = state.value
-        setState(block)
-        syncCanvas(before, state.value)
+        setState { block().let { if (it.graph != it.history.current) it.recordEdit(label) else it } }
+        val after = state.value
+        syncCanvas(before, after)
+        if (after.history != before.history && after.document == before.document) scheduleSave()
     }
 
     private fun syncCanvas(
@@ -658,7 +1056,7 @@ class EditorViewModel(
         after: EditorState,
     ) {
         val canvas = after.canvas ?: return
-        if (before == null || before.graph != after.graph) scheduler?.submit(after.graph)
+        if (before == null || before.shownGraph != after.shownGraph) scheduler?.submit(after.shownGraph)
         if (before == null || before.clippingShown != after.clippingShown) canvas.setClipping(after.clippingShown)
         if (before == null || before.compare != after.compare || before.split != after.split) {
             canvas.setCompare(after.compare, after.split)
@@ -749,5 +1147,12 @@ class EditorViewModel(
 
         /** The spinner appears only when sharp tiles take longer than this (Stage 4 UX). */
         const val SPINNER_DELAY_MILLIS = 300L
+
+        /** Autosave once the editor has been idle this long (and on onStop). */
+        const val AUTOSAVE_MILLIS = 5_000L
+        private const val AS_SHOT = "White balance: as shot"
+        const val TWO_FINGERS = 2
+        const val THREE_FINGERS = 3
+        const val MAX_NAME = 40
     }
 }

@@ -187,6 +187,11 @@ void Engine::openImage(int width, int height) {
     requestRedraw();
 }
 
+namespace {
+// Long edge of the thumbnail source: sharp enough for the Home grid on a 1440 px phone.
+constexpr int kThumbnailEdge = 512;
+}  // namespace
+
 void Engine::setPreview(std::vector<float> working, int width, int height) {
     // Image analysis for the Light tools, here on the caller's (background) thread.
     auto guided = std::make_shared<const GuidedCoefficients>(guidedCoefficients(working.data(), width, height));
@@ -196,9 +201,11 @@ void Engine::setPreview(std::vector<float> working, int width, int height) {
     luminancePercentiles(working.data(), pixels, 0.005f, 0.995f, &low, &high, std::max<std::size_t>(1, pixels / 1000000));
     float channels[6];
     grade::channelPercentiles(working.data(), pixels, 0.001f, 0.999f, channels, std::max<std::size_t>(1, pixels / 1000000));
+    auto thumbSource = std::make_shared<const ImageF32>(boxDownsample(working.data(), width, height, kThumbnailEdge));
     {
         std::lock_guard<std::mutex> lock(mutex_);
         guided_ = std::move(guided);
+        thumbSource_ = std::move(thumbSource);
         guidedChanged_ = true;
         havePercentiles_ = true;
         lowPercentile_ = low;
@@ -254,6 +261,22 @@ bool Engine::autoLight(float* exposure, float* blacks) {
     const AutoLight result = lo::autoLight(low, high);
     *exposure = result.exposure;
     *blacks = result.blacks;
+    return true;
+}
+
+bool Engine::renderThumbnail(const std::string& graphJson, std::vector<std::uint8_t>* rgba, int* width, int* height) {
+    std::shared_ptr<const ImageF32> source;
+    std::shared_ptr<const GuidedCoefficients> guided;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        source = thumbSource_;
+        guided = guided_;
+    }
+    if (!source || source->width == 0) return false;
+    std::string error;
+    if (!lo::renderThumbnail(*source, guided.get(), graphJson, rgba, &error)) return false;
+    *width = source->width;
+    *height = source->height;
     return true;
 }
 

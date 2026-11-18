@@ -120,6 +120,28 @@ class RealPhotoTest {
             }
         }
 
+    /** Stage 8: version / Home thumbnails are the graph on a <= 512 px copy of the preview. */
+    @Test
+    fun thumbnailsRenderTheGraph() =
+        runBlocking {
+            val session = requireNotNull(EngineSession.open(appContext, Uri.fromFile(photo("bird"))))
+            try {
+                val plain = requireNotNull(session.thumbnail(EditGraphJson.decode(graph(null))))
+                val bright = requireNotNull(session.thumbnail(EditGraphJson.decode(graph("""{"op":"exposure","ev":1.0}"""))))
+                report("thumbnail ${plain.width}x${plain.height}")
+                assertEquals(PREVIEW_EDGE / 4, maxOf(plain.width, plain.height))
+                assertEquals(plain.width, bright.width)
+
+                fun mean(b: android.graphics.Bitmap): Double {
+                    val px = IntArray(b.width * b.height).also { b.getPixels(it, 0, b.width, 0, 0, b.width, b.height) }
+                    return px.sumOf { ((it shr 16) and 0xFF) + ((it shr 8) and 0xFF) + (it and 0xFF) }.toDouble() / px.size
+                }
+                assertTrue("+1 EV is brighter: ${mean(bright)} vs ${mean(plain)}", mean(bright) > mean(plain) + 20)
+            } finally {
+                session.close()
+            }
+        }
+
     @Test
     fun fullResolutionDecodeMatchesPython() {
         for (name in PHOTOS.keys) {

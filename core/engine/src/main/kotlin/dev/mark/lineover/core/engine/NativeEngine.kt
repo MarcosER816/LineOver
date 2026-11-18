@@ -145,6 +145,9 @@ internal class NativeEngine(
     /** Levels Auto: per-channel encoded 0.1 / 99.9 % percentiles (low R, high R, …) or null. */
     fun autoLevels(): FloatArray? = nativeAutoLevels(h())
 
+    /** [graph] on a <= 512 px copy of the preview: [width, height] (8 bytes) then sRGB RGBA8. */
+    fun renderThumbnail(graph: String): ByteArray? = nativeRenderThumbnail(h(), graph)
+
     /** Auto (percentile stretch): (exposure EV, blacks) or null before a preview. */
     fun autoLight(): FloatArray? = nativeAutoLight(h())
 
@@ -206,6 +209,11 @@ internal class NativeEngine(
     private external fun nativeAutoLight(engine: Long): FloatArray?
 
     private external fun nativeAutoLevels(engine: Long): FloatArray?
+
+    private external fun nativeRenderThumbnail(
+        engine: Long,
+        graph: String,
+    ): ByteArray?
 
     private external fun nativeSample(
         engine: Long,

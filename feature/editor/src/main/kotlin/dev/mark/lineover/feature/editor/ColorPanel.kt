@@ -109,11 +109,15 @@ internal fun ColorPanel(
             }
 
             "color.vibrance" -> {
-                LoSlider(color.vibrance, { onIntent(EditorIntent.SetVibrance(it)) }, "Vibrance", slot, valueRange = -100f..100f)
+                LoSlider(color.vibrance, {
+                    onIntent(EditorIntent.SetVibrance(it))
+                }, "Vibrance", slot, valueRange = -100f..100f, onValueChangeFinished = { onIntent(EditorIntent.EndEdit) })
             }
 
             "color.saturation" -> {
-                LoSlider(color.saturation, { onIntent(EditorIntent.SetSaturation(it)) }, "Saturation", slot, valueRange = -100f..100f)
+                LoSlider(color.saturation, {
+                    onIntent(EditorIntent.SetSaturation(it))
+                }, "Saturation", slot, valueRange = -100f..100f, onValueChangeFinished = { onIntent(EditorIntent.EndEdit) })
             }
 
             HSL_MIXER -> {
@@ -146,6 +150,7 @@ private fun WhiteBalanceControls(
         LoSlider(
             value = ColorAdjustments.temperaturePosition(color.temperature),
             onValueChange = { onIntent(EditorIntent.SetWhiteBalance(ColorAdjustments.kelvinAt(it), color.tint)) },
+            onValueChangeFinished = { onIntent(EditorIntent.EndEdit) },
             label = "Temperature",
             valueRange = 0f..1f,
             defaultValue = ColorAdjustments.temperaturePosition(ColorAdjustments.DEFAULT_KELVIN),
@@ -157,6 +162,7 @@ private fun WhiteBalanceControls(
         LoSlider(
             value = color.tint,
             onValueChange = { onIntent(EditorIntent.SetWhiteBalance(color.temperature, it)) },
+            onValueChangeFinished = { onIntent(EditorIntent.EndEdit) },
             label = "Tint",
             valueRange = -ColorAdjustments.TINT_RANGE..ColorAdjustments.TINT_RANGE,
             track = LoSliderTrack.Tint,
@@ -193,6 +199,7 @@ private fun HslControls(
                 LoSlider(
                     value = values[band.ordinal],
                     onValueChange = { onIntent(EditorIntent.SetHsl(channel, band, it)) },
+                    onValueChangeFinished = { onIntent(EditorIntent.EndEdit) },
                     label = band.label,
                     valueRange = -100f..100f,
                     modifier = Modifier.weight(1f).testTag(EditorTags.hslSlider(band.name)),
@@ -214,6 +221,7 @@ private fun PosterizeControls(
         LoSlider(
             value = (if (on) color.posterize else ColorAdjustments.DEFAULT_POSTERIZE).toFloat(),
             onValueChange = { onIntent(EditorIntent.SetPosterize(it.roundToInt())) },
+            onValueChangeFinished = { onIntent(EditorIntent.EndEdit) },
             label = "Levels",
             valueRange = 2f..EditorViewModel.MAX_POSTERIZE.toFloat(),
             defaultValue = ColorAdjustments.DEFAULT_POSTERIZE.toFloat(),
@@ -239,6 +247,7 @@ private fun ThresholdControls(
         LoSlider(
             value = (level ?: ColorAdjustments.DEFAULT_THRESHOLD) * PERCENT,
             onValueChange = { onIntent(EditorIntent.SetThreshold(it / PERCENT)) },
+            onValueChangeFinished = { onIntent(EditorIntent.EndEdit) },
             label = "Level",
             valueRange = 0f..PERCENT,
             defaultValue = ColorAdjustments.DEFAULT_THRESHOLD * PERCENT,

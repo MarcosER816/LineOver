@@ -83,6 +83,17 @@ sealed interface HomeIntent {
 
     data object UndoDelete : HomeIntent
 
+    /** Project menu → Save project file: asks where to save the .loproj. */
+    data class SaveProjectFile(
+        val project: Project,
+    ) : HomeIntent
+
+    /** The place chosen for the .loproj (null when cancelled). */
+    data class ProjectFileTarget(
+        val id: Long,
+        val uri: Uri?,
+    ) : HomeIntent
+
     /** The media permission state, re-read whenever Home resumes or a request returns. */
     data class MediaAccessChanged(
         val access: MediaAccess,
@@ -96,6 +107,12 @@ sealed interface HomeEffect {
 
     data class Message(
         val text: String,
+    ) : HomeEffect
+
+    /** Opens the system "create document" picker for [fileName]; the answer is [HomeIntent.ProjectFileTarget]. */
+    data class PickProjectFileTarget(
+        val projectId: Long,
+        val fileName: String,
     ) : HomeEffect
 }
 
@@ -116,6 +133,15 @@ class HomeViewModel(
         viewModelScope.launch {
             combine(library.observeRecent(), library.observeProjects()) { recent, all -> recent to all }
                 .collect { (recent, all) -> setState { copy(recent = recent, projects = all, loaded = true) } }
+        }
+        // A session that ended in a crash or a kill: its last autosave is put back (Stage 8).
+        viewModelScope.launch {
+            val recovered = library.recoverInterrupted()
+            when (recovered.size) {
+                0 -> Unit
+                1 -> sendEffect(HomeEffect.Message("Recovered your edits of \"${recovered.single().name}\""))
+                else -> sendEffect(HomeEffect.Message("Recovered your edits of ${recovered.size} projects"))
+            }
         }
     }
 
@@ -154,6 +180,10 @@ class HomeViewModel(
                 viewModelScope.launch { library.duplicate(intent.id) }
             }
 
+            is HomeIntent.SaveProjectFile, is HomeIntent.ProjectFileTarget -> {
+                projectFile(intent)
+            }
+
             is HomeIntent.Delete -> {
                 delete(intent.id)
             }
@@ -180,6 +210,27 @@ class HomeViewModel(
         albumsJob = viewModelScope.launch { gallery.observeAlbums().collect { setState { copy(albums = it) } } }
     }
 
+    /** Project menu → Save project file: where to save, then the .loproj with its original. */
+    private fun projectFile(intent: HomeIntent) {
+        when (intent) {
+            is HomeIntent.SaveProjectFile -> {
+                sendEffect(HomeEffect.PickProjectFileTarget(intent.project.id, "${intent.project.name}.loproj"))
+            }
+
+            is HomeIntent.ProjectFileTarget -> {
+                val uri = intent.uri ?: return
+                viewModelScope.launch {
+                    val ok = library.exportProjectFile(intent.id, uri)
+                    sendEffect(HomeEffect.Message(if (ok) "Project file saved" else "Could not save the project file"))
+                }
+            }
+
+            else -> {
+                Unit
+            }
+        }
+    }
+
     private fun importPicked(uris: List<Uri>) {
         if (uris.isEmpty()) return
         setState { copy(importing = true) }
@@ -204,8 +255,8 @@ class HomeViewModel(
         picked: Int,
     ) {
         when (result) {
-            ImportResult.ProjectFileNotYetSupported -> {
-                sendEffect(HomeEffect.Message("Opening .loproj project files arrives in Stage 8"))
+            is ImportResult.ProjectFileFailed -> {
+                sendEffect(HomeEffect.Message(result.reason))
             }
 
             is ImportResult.Imported -> {

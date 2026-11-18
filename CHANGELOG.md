@@ -2,6 +2,29 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 8 — History and projects (0.8.0)
+
+### Added
+
+- Undo and redo in the top bar, and on the photo: tap with two fingers to undo, three to redo
+  (Settings → Gestures can swap them or turn them off). A slider drag is one step.
+- History (top bar → History): every step with its name ("Exposure +0.7"); tap one to preview
+  it on the photo, Restore to go back to it (the later steps stay redoable until you edit).
+- Snapshots: save the current look under a name and return to it later.
+- Versions: try another look of the same photo; each version keeps its own history and the
+  versions show side by side with thumbnails.
+- Your edits are saved: 5 seconds after you stop and when you leave the app, written so that a
+  crash or a forced stop never leaves a broken project. If LineOver was closed during an
+  edit, the next start says the edits were recovered.
+- Project files: Home → a project's menu → Save project file writes a `.loproj` (the edit,
+  its history, snapshots, versions and the original photo); Open file opens one as a new
+  project.
+- Home thumbnails show the edited photo.
+
+### Changed
+
+- Settings → Gestures explains the canvas gestures and the undo / redo taps.
+
 ## Stage 7 — Curves and grading (0.7.0)
 
 ### Changed (after testing on real photos)

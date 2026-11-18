@@ -25,6 +25,32 @@ data class EditGraph(
         return copy(layers = listOf(background.copy(ops = ops)) + layers.drop(1))
     }
 
+    /**
+     * This graph with every layer and op that equals one of [previous]'s reusing
+     * [previous]'s instance (structural sharing): history entries then hold only what an
+     * edit changed, the rest is shared with the entry before.
+     */
+    fun sharing(previous: EditGraph): EditGraph {
+        if (this == previous) return previous
+        val oldLayers = previous.layers.associateBy { it.id }
+        return copy(
+            layers =
+                layers.map { layer ->
+                    val old = oldLayers[layer.id] ?: return@map layer
+                    when {
+                        old == layer -> {
+                            old
+                        }
+
+                        else -> {
+                            val pool = old.ops
+                            layer.copy(ops = layer.ops.map { op -> pool.firstOrNull { it == op } ?: op })
+                        }
+                    }
+                },
+        )
+    }
+
     companion object {
         /** Id of the bottom layer: the photo. */
         const val BACKGROUND = "background"

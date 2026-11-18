@@ -61,6 +61,9 @@ interface EditorCanvas :
     /** Levels → Auto: per-channel encoded percentiles of the preview (6 values) or null. */
     fun autoLevels(): FloatArray?
 
+    /** [graph] rendered small (<= 512 px, sRGB) for thumbnails; blocks, call off the main thread. */
+    fun thumbnail(graph: EditGraph): android.graphics.Bitmap?
+
     /**
      * Eyedropper: the white balance (K, tint) that makes the 5 x 5 patch at image point
      * ([u], [v]) neutral, sampled before white balance. Blocks: call off the main thread.
@@ -172,6 +175,8 @@ private class EngineCanvas(
     override fun stats(): EngineStats? = session.stats()
 
     override fun autoLevels(): FloatArray? = session.autoLevels()
+
+    override fun thumbnail(graph: EditGraph): android.graphics.Bitmap? = session.thumbnail(graph)
 
     override fun whiteBalanceAt(
         u: Float,

@@ -67,6 +67,13 @@ object EditorTags {
     /** The visible placeholder (or control) of a tool's reserved slot. */
     fun slot(id: String) = "slot:$id"
 
+    fun historyRow(index: Int) = "history-row:$index"
+
+    fun version(id: String) = "version:$id"
+
+    const val HISTORY_PREVIEW = "history-preview"
+    const val NAME_FIELD = "name-field"
+
     const val STRIP = "tool-strip"
     const val RAIL = "category-rail"
     const val CATEGORY_BAR = "category-bar"
@@ -135,9 +142,11 @@ internal fun EditorTopBar(
                 Spacer(Modifier.weight(1f))
             }
             Row(Modifier.horizontalScroll(rememberScrollState()), verticalAlignment = Alignment.CenterVertically) {
-                val undo = "history.undo_redo"
-                LoIconButton(LoIcons.Undo, "Undo", onClick = { onIntent(EditorIntent.SelectTool(undo)) })
-                LoIconButton(LoIcons.Redo, "Redo", onClick = { onIntent(EditorIntent.SelectTool(undo)) })
+                // The undo / redo slot itself (Stage 8); also two- and three-finger taps on the canvas.
+                Row(Modifier.testTag(EditorTags.slot("history.undo_redo"))) {
+                    LoIconButton(LoIcons.Undo, "Undo", onClick = { onIntent(EditorIntent.Undo) }, enabled = state.history.canUndo)
+                    LoIconButton(LoIcons.Redo, "Redo", onClick = { onIntent(EditorIntent.Redo) }, enabled = state.history.canRedo)
+                }
                 LoIconButton(
                     LoIcons.Compare,
                     "Compare",

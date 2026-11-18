@@ -93,15 +93,56 @@ class HomeViewModelTest {
         }
 
     @Test
-    fun projectFilesAreExplained() =
+    fun aProjectFileThatCannotBeOpenedSaysWhy() =
         runTest(dispatcher) {
             val vm = viewModel()
-            library.nextImport = ImportResult.ProjectFileNotYetSupported
+            runCurrent()
+            library.nextImport = ImportResult.ProjectFileFailed("The project's original photo is not on this device")
 
             vm.onIntent(HomeIntent.OpenDocument(Uri.parse("content://docs/trip.loproj")))
             runCurrent()
 
-            assertEquals(HomeEffect.Message("Opening .loproj project files arrives in Stage 8"), vm.effects.first())
+            assertEquals(HomeEffect.Message("The project's original photo is not on this device"), vm.effects.first())
+        }
+
+    @Test
+    fun anOpenedProjectFileOpensTheEditor() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+            runCurrent()
+            library.nextImport = ImportResult.Imported(listOf(7L), 0)
+
+            vm.onIntent(HomeIntent.OpenDocument(Uri.parse("content://docs/trip.loproj")))
+            runCurrent()
+
+            assertEquals(HomeEffect.OpenEditor(7L), vm.effects.first())
+        }
+
+    @Test
+    fun interruptedSessionsAreReportedOnLaunch() =
+        runTest(dispatcher) {
+            library.recovered = listOf(library.add("Harbour", 1L))
+            val vm = viewModel()
+            runCurrent()
+
+            assertEquals(HomeEffect.Message("Recovered your edits of \"Harbour\""), vm.effects.first())
+        }
+
+    @Test
+    fun saveProjectFileAsksWhereThenExports() =
+        runTest(dispatcher) {
+            val project = library.add("Harbour", 1L)
+            val vm = viewModel()
+            runCurrent()
+
+            vm.onIntent(HomeIntent.SaveProjectFile(project))
+            assertEquals(HomeEffect.PickProjectFileTarget(project.id, "Harbour.loproj"), vm.effects.first())
+            val target = Uri.parse("content://docs/Harbour.loproj")
+            vm.onIntent(HomeIntent.ProjectFileTarget(project.id, target))
+            runCurrent()
+
+            assertEquals(listOf(project.id to target), library.exported)
+            assertEquals(HomeEffect.Message("Project file saved"), vm.effects.first())
         }
 
     @Test
