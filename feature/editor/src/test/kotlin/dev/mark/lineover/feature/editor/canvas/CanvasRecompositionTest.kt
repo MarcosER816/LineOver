@@ -1,6 +1,5 @@
 package dev.mark.lineover.feature.editor.canvas
 
-import android.graphics.Bitmap
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
@@ -14,9 +13,10 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.mark.lineover.core.designsystem.LineOverTheme
 import dev.mark.lineover.core.io.prefs.InMemoryAppPreferences
-import dev.mark.lineover.core.io.project.PreviewImage
 import dev.mark.lineover.feature.editor.EditorScreen
 import dev.mark.lineover.feature.editor.EditorViewModel
+import dev.mark.lineover.feature.editor.FakeCanvasFactory
+import dev.mark.lineover.feature.editor.FakeEditorCanvas
 import dev.mark.lineover.feature.editor.FakeEditorLibrary
 import dev.mark.lineover.feature.editor.PhotoCanvas
 import org.junit.Assert.assertEquals
@@ -42,12 +42,12 @@ class CanvasRecompositionTest {
 
     @Test
     fun pinchPanAndRotateDoNotRecompose() {
-        val preview = PreviewImage(Bitmap.createBitmap(64, 48, Bitmap.Config.ARGB_8888), 8160, 6120)
+        val engine = FakeEditorCanvas()
         var screenCompositions = 0
         var canvasCompositions = 0
         compose.setContent {
             LineOverTheme {
-                val vm = remember { EditorViewModel(1, FakeEditorLibrary(preview = preview), InMemoryAppPreferences()) }
+                val vm = remember { EditorViewModel(1, FakeEditorLibrary(), InMemoryAppPreferences(), FakeCanvasFactory(engine)) }
                 val state by vm.state.collectAsState()
                 SideEffect { screenCompositions++ }
                 EditorScreen(
@@ -65,6 +65,7 @@ class CanvasRecompositionTest {
         compose.waitForIdle()
         val view = findCanvas(compose.activity.window.decorView)
         val before = Triple(view.transform.scale, view.transform.centerX, view.transform.rotation)
+        val transformsBefore = engine.transforms
         val screenBefore = screenCompositions
         val canvasBefore = canvasCompositions
 
@@ -74,6 +75,7 @@ class CanvasRecompositionTest {
         val after = Triple(view.transform.scale, view.transform.centerX, view.transform.rotation)
         assertNotEquals("the gesture moved the photo", before, after)
         assertTrue("zoomed in", view.transform.scale > before.first)
+        assertTrue("every move reached the engine", engine.transforms - transformsBefore >= 60)
         assertEquals("editor recompositions during the gesture", screenBefore, screenCompositions)
         assertEquals("canvas recompositions during the gesture", canvasBefore, canvasCompositions)
     }

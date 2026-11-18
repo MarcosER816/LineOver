@@ -219,6 +219,23 @@ class CanvasTransform {
     }
 
     /**
+     * The transform as an affine map of original pixels to view pixels, written as
+     * (a, b, c, d, e, f): view = (a·x + c·y + e, b·x + d·y + f). Allocation-free.
+     */
+    @Suppress("MagicNumber") // element indices
+    fun writeAffine(out: FloatArray) {
+        val r = rotation * DEG_TO_RAD
+        val cos = cos(r) * scale
+        val sin = sin(r) * scale
+        out[0] = cos
+        out[1] = sin
+        out[2] = -sin
+        out[3] = cos
+        out[4] = centerX - (cos * imageWidth - sin * imageHeight) / 2f
+        out[5] = centerY - (sin * imageWidth + cos * imageHeight) / 2f
+    }
+
+    /**
      * Column-major 3×3 matrix (for `glUniformMatrix3fv`) that maps the unit quad
      * (0..1, 0..1 = image left-top .. right-bottom) to normalized device coordinates.
      */

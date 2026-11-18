@@ -120,6 +120,18 @@ python3 tools/golden/generate.py --check
 - **Emulator = SwiftShader.** Instrumented tests prove correctness only. Performance is
   measured on the phone (`:benchmark`), never in CI.
 
+## Image engine (Stage 4)
+
+- A new op implements `lo::Op` (`gpu()` + `cpuRef()`), gets a `@SerialName`d `OpParams` in
+  `:core:model`, a Python reference in `tools/golden/reference.py`, a ctest against it and a
+  case in `EngineGpuTest` (GPU vs reference within 3/255).
+- The graph JSON is shared: change Kotlin and `graph.cpp` together; both round-trip
+  `testdata/graph/edit_graph_v1.json`.
+- zstd is vendored under `core/engine-native/src/main/cpp/third_party/zstd` (BSD); never
+  run scripts from downloaded archives to regenerate it — copy the sources.
+- Full-resolution bitmaps never exist on the Java heap: previews are ≤ 2048 px, tiles are
+  512 px regions recycled after conversion.
+
 ## Editor shell (frozen after Stage 3)
 
 - Every tool is defined once in `core/ui/.../tools/ToolRegistry.kt`; `ToolCatalogTest`

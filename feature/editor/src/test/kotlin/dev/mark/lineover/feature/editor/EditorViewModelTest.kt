@@ -1,11 +1,13 @@
 package dev.mark.lineover.feature.editor
 
 import dev.mark.lineover.core.io.prefs.InMemoryAppPreferences
+import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.ToolCategory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
@@ -25,12 +27,15 @@ class EditorViewModelTest {
     @After
     fun tearDown() = Dispatchers.resetMain()
 
-    private fun viewModel(prefs: InMemoryAppPreferences = InMemoryAppPreferences()) = EditorViewModel(1, FakeEditorLibrary(), prefs)
+    private fun viewModel(
+        prefs: InMemoryAppPreferences = InMemoryAppPreferences(),
+        canvases: FakeCanvasFactory = FakeCanvasFactory(),
+    ) = EditorViewModel(1, FakeEditorLibrary(), prefs, canvases, renderDispatcher = Dispatchers.Main)
 
     @Test
     fun opensWithTheLastUsedCategoryAndMarksTheProjectOpened() {
         val library = FakeEditorLibrary()
-        val vm = EditorViewModel(1, library, InMemoryAppPreferences(lastCategory = "retouch"))
+        val vm = EditorViewModel(1, library, InMemoryAppPreferences(lastCategory = "retouch"), FakeCanvasFactory())
         assertEquals(ToolCategory.Retouch, vm.state.value.category)
         assertEquals(1, library.opened)
         assertEquals(
@@ -51,9 +56,49 @@ class EditorViewModelTest {
 
     @Test
     fun aMissingPreviewIsReportedNotHidden() {
-        val vm = viewModel()
+        val vm = viewModel(canvases = FakeCanvasFactory(canvas = null))
         assertTrue(vm.state.value.previewUnavailable)
+        assertNull(vm.state.value.canvas)
     }
+
+    @Test
+    fun theEngineOpensAndReceivesTheGraph() {
+        val canvas = FakeEditorCanvas()
+        val vm = viewModel(canvases = FakeCanvasFactory(canvas))
+        assertEquals(canvas, vm.state.value.canvas)
+        assertEquals(
+            8160,
+            vm.state.value.image
+                ?.width,
+        )
+        assertFalse(vm.state.value.previewUnavailable)
+        assertEquals(listOf(EditGraph()), canvas.graphs)
+    }
+
+    @Test
+    fun theSpinnerShowsOnlyAfter300Ms() =
+        runTest {
+            val canvas = FakeEditorCanvas()
+            val vm = viewModel(canvases = FakeCanvasFactory(canvas))
+            canvas.loading.value = true
+            assertFalse(vm.state.value.showSpinner)
+            advanceTimeBy(EditorViewModel.SPINNER_DELAY_MILLIS + 1)
+            assertTrue(vm.state.value.showSpinner)
+            canvas.loading.value = false
+            assertFalse(vm.state.value.showSpinner)
+        }
+
+    @Test
+    fun aQuickLoadNeverShowsTheSpinner() =
+        runTest {
+            val canvas = FakeEditorCanvas()
+            val vm = viewModel(canvases = FakeCanvasFactory(canvas))
+            canvas.loading.value = true
+            advanceTimeBy(EditorViewModel.SPINNER_DELAY_MILLIS - 50)
+            canvas.loading.value = false
+            advanceTimeBy(1_000)
+            assertFalse(vm.state.value.showSpinner)
+        }
 
     @Test
     fun selectingAToolOpensItsPanelAndAgainClosesIt() {

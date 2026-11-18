@@ -1,11 +1,15 @@
 // JNI entry points for dev.mark.lineover.core.engine.LoEngine.
+#include <android/bitmap.h>
+#include <android/native_window_jni.h>
 #include <jni.h>
 
 #include <array>
 #include <string>
+#include <vector>
 
 #include "gl_smoke.h"
 #include "lineover/engine.h"
+#include "lo_api.h"
 
 namespace {
 
@@ -16,9 +20,198 @@ void throwIllegalState(JNIEnv* env, const std::string& message) {
     }
 }
 
+JavaVM* gVm = nullptr;
+
+lo_engine* handle(jlong value) { return reinterpret_cast<lo_engine*>(value); }
+
+// Loading callbacks reach the Kotlin NativeEngine on the render thread.
+struct Callbacks {
+    jobject target = nullptr;  // global ref
+    jmethodID onLoading = nullptr;
+    bool attached = false;
+};
+
+JNIEnv* renderThreadEnv(Callbacks* callbacks) {
+    JNIEnv* env = nullptr;
+    if (gVm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) == JNI_OK) return env;
+    JavaVMAttachArgs args{JNI_VERSION_1_6, "LineOverRender", nullptr};
+    if (gVm->AttachCurrentThread(&env, &args) != JNI_OK) return nullptr;
+    callbacks->attached = true;
+    return env;
+}
+
+void onLoading(void* user, int loading) {
+    auto* callbacks = static_cast<Callbacks*>(user);
+    JNIEnv* env = renderThreadEnv(callbacks);
+    if (env == nullptr) return;
+    env->CallVoidMethod(callbacks->target, callbacks->onLoading, static_cast<jboolean>(loading != 0));
+    if (env->ExceptionCheck()) env->ExceptionClear();
+}
+
+void onThreadExit(void* user) {
+    auto* callbacks = static_cast<Callbacks*>(user);
+    JNIEnv* env = renderThreadEnv(callbacks);
+    if (env != nullptr) env->DeleteGlobalRef(callbacks->target);
+    if (callbacks->attached) gVm->DetachCurrentThread();
+    delete callbacks;
+}
+
+int premultiplied(const AndroidBitmapInfo& info) {
+    return (info.flags & ANDROID_BITMAP_FLAGS_ALPHA_MASK) == ANDROID_BITMAP_FLAGS_ALPHA_PREMUL ? 1 : 0;
+}
+
+jstring errorOrNull(JNIEnv* env, int ok, const char* error) { return ok ? nullptr : env->NewStringUTF(error); }
+
+// Locks a Bitmap's pixels for the duration of `use`; false if it is not RGBA_8888 / RGBA_F16.
+template <typename Use>
+bool withPixels(JNIEnv* env, jobject bitmap, jint format, Use use) {
+    AndroidBitmapInfo info;
+    if (AndroidBitmap_getInfo(env, bitmap, &info) != ANDROID_BITMAP_RESULT_SUCCESS) return false;
+    const bool f16 = info.format == ANDROID_BITMAP_FORMAT_RGBA_F16;
+    if (!(info.format == ANDROID_BITMAP_FORMAT_RGBA_8888 || f16)) return false;
+    if (f16 != (format == LO_FORMAT_RGBAF16_LINEAR_EXTENDED_SRGB)) return false;
+    void* pixels = nullptr;
+    if (AndroidBitmap_lockPixels(env, bitmap, &pixels) != ANDROID_BITMAP_RESULT_SUCCESS) return false;
+    const bool ok = use(pixels, info);
+    AndroidBitmap_unlockPixels(env, bitmap);
+    return ok;
+}
+
 }  // namespace
 
 extern "C" {
+
+JNIEXPORT jint JNI_OnLoad(JavaVM* vm, void*) {
+    gVm = vm;
+    return JNI_VERSION_1_6;
+}
+
+#define LO_NATIVE(name) JNICALL Java_dev_mark_lineover_core_engine_NativeEngine_##name
+
+JNIEXPORT jlong LO_NATIVE(nativeCreate)(JNIEnv* env, jobject self, jstring cacheDir, jlong cpuBudget, jlong gpuBudget) {
+    const char* dir = env->GetStringUTFChars(cacheDir, nullptr);
+    char error[256] = {0};
+    lo_engine* engine = lo_engine_create(dir, static_cast<size_t>(cpuBudget), static_cast<size_t>(gpuBudget), error, sizeof(error));
+    env->ReleaseStringUTFChars(cacheDir, dir);
+    if (engine == nullptr) {
+        throwIllegalState(env, error);
+        return 0;
+    }
+    auto* callbacks = new Callbacks();
+    callbacks->target = env->NewGlobalRef(self);
+    callbacks->onLoading = env->GetMethodID(env->GetObjectClass(self), "onLoadingChanged", "(Z)V");
+    lo_engine_set_callbacks(engine, onLoading, onThreadExit, callbacks);
+    return reinterpret_cast<jlong>(engine);
+}
+
+JNIEXPORT void LO_NATIVE(nativeDestroy)(JNIEnv*, jobject, jlong engine) { lo_engine_destroy(handle(engine)); }
+
+JNIEXPORT void LO_NATIVE(nativeOpenImage)(JNIEnv*, jobject, jlong engine, jint width, jint height) {
+    lo_engine_open_image(handle(engine), width, height);
+}
+
+JNIEXPORT jboolean LO_NATIVE(nativeSetPreview)(JNIEnv* env, jobject, jlong engine, jobject bitmap, jint format) {
+    return withPixels(env, bitmap, format, [&](void* pixels, const AndroidBitmapInfo& info) {
+        return lo_engine_set_preview(handle(engine), pixels, info.stride, static_cast<int>(info.width),
+                                     static_cast<int>(info.height), format, premultiplied(info)) == 1;
+    });
+}
+
+JNIEXPORT jboolean LO_NATIVE(nativeSubmitRegion)(JNIEnv* env, jobject, jlong engine, jint level, jint tx, jint ty,
+                                                 jobject bitmap, jint format, jint regionX, jint regionY, jint rawLevelW,
+                                                 jint rawLevelH, jint orientation) {
+    const bool ok = withPixels(env, bitmap, format, [&](void* pixels, const AndroidBitmapInfo& info) {
+        return lo_engine_submit_region(handle(engine), level, tx, ty, pixels, info.stride, format, regionX, regionY,
+                                       static_cast<int>(info.width), static_cast<int>(info.height), rawLevelW, rawLevelH,
+                                       orientation, premultiplied(info)) == 1;
+    });
+    if (!ok) lo_engine_fail_tile(handle(engine), level, tx, ty);
+    return ok;
+}
+
+JNIEXPORT void LO_NATIVE(nativeFailTile)(JNIEnv*, jobject, jlong engine, jint level, jint tx, jint ty) {
+    lo_engine_fail_tile(handle(engine), level, tx, ty);
+}
+
+JNIEXPORT jboolean LO_NATIVE(nativeTakeRequest)(JNIEnv* env, jobject, jlong engine, jint timeoutMs, jintArray out) {
+    int level, tx, ty;
+    if (lo_engine_take_request(handle(engine), timeoutMs, &level, &tx, &ty) == 0) return JNI_FALSE;
+    const jint values[3] = {level, tx, ty};
+    env->SetIntArrayRegion(out, 0, 3, values);
+    return JNI_TRUE;
+}
+
+JNIEXPORT jstring LO_NATIVE(nativeSetGraph)(JNIEnv* env, jobject, jlong engine, jstring json) {
+    const char* text = env->GetStringUTFChars(json, nullptr);
+    char error[256] = {0};
+    const int ok = lo_engine_set_graph(handle(engine), text, error, sizeof(error));
+    env->ReleaseStringUTFChars(json, text);
+    return errorOrNull(env, ok, error);
+}
+
+JNIEXPORT jstring LO_NATIVE(nativeAttachSurface)(JNIEnv* env, jobject, jlong engine, jobject surface) {
+    ANativeWindow* window = ANativeWindow_fromSurface(env, surface);
+    if (window == nullptr) return env->NewStringUTF("no native window for the surface");
+    char error[256] = {0};
+    const int ok = lo_engine_attach_window(handle(engine), window, error, sizeof(error));
+    ANativeWindow_release(window);  // EGL holds its own reference
+    return errorOrNull(env, ok, error);
+}
+
+JNIEXPORT void LO_NATIVE(nativeDetachSurface)(JNIEnv*, jobject, jlong engine) { lo_engine_detach_window(handle(engine)); }
+
+JNIEXPORT void LO_NATIVE(nativeSetViewport)(JNIEnv*, jobject, jlong engine, jint width, jint height) {
+    lo_engine_set_viewport(handle(engine), width, height);
+}
+
+JNIEXPORT void LO_NATIVE(nativeSetTransform)(JNIEnv*, jobject, jlong engine, jfloat a, jfloat b, jfloat c, jfloat d, jfloat e,
+                                             jfloat f) {
+    lo_engine_set_transform(handle(engine), a, b, c, d, e, f);
+}
+
+JNIEXPORT void LO_NATIVE(nativeSetSurround)(JNIEnv*, jobject, jlong engine, jfloat r, jfloat g, jfloat b) {
+    lo_engine_set_surround(handle(engine), r, g, b);
+}
+
+JNIEXPORT void LO_NATIVE(nativeStats)(JNIEnv* env, jobject, jlong engine, jlongArray out) {
+    lo_engine_stats s;
+    lo_engine_get_stats(handle(engine), &s);
+    const jlong values[14] = {static_cast<jlong>(s.cpu_tile_bytes), static_cast<jlong>(s.cpu_tiles),
+                              static_cast<jlong>(s.spilled_tiles),  static_cast<jlong>(s.spill_bytes),
+                              static_cast<jlong>(s.gpu_bytes),      static_cast<jlong>(s.gpu_tiles),
+                              static_cast<jlong>(s.pending_tiles),  static_cast<jlong>(s.frames),
+                              static_cast<jlong>(s.tiles_decoded),  s.half_float,
+                              s.display_p3,                         s.level,
+                              static_cast<jlong>(s.p95_frame_interval_us), static_cast<jlong>(s.p95_draw_us)};
+    env->SetLongArrayRegion(out, 0, 14, values);
+}
+
+JNIEXPORT jintArray LO_NATIVE(nativeRenderTileCpu)(JNIEnv* env, jobject, jlong engine, jint level, jint tx, jint ty,
+                                                   jfloatArray out) {
+    const jsize capacity = env->GetArrayLength(out);
+    std::vector<float> pixels(static_cast<std::size_t>(capacity));
+    int width = 0, height = 0;
+    const int count = lo_engine_render_tile_cpu(handle(engine), level, tx, ty, pixels.data(), pixels.size(), &width, &height);
+    if (count == 0) return nullptr;
+    env->SetFloatArrayRegion(out, 0, count * 4, pixels.data());
+    const jint size[2] = {width, height};
+    jintArray result = env->NewIntArray(2);
+    if (result != nullptr) env->SetIntArrayRegion(result, 0, 2, size);
+    return result;
+}
+
+JNIEXPORT jstring LO_NATIVE(nativeGpuSelfTest)(JNIEnv* env, jobject, jlong engine, jfloatArray input, jint width, jint height,
+                                               jstring graph, jbyteArray out) {
+    std::vector<float> in(static_cast<std::size_t>(env->GetArrayLength(input)));
+    env->GetFloatArrayRegion(input, 0, static_cast<jsize>(in.size()), in.data());
+    std::vector<std::uint8_t> result(static_cast<std::size_t>(width) * height * 4);
+    const char* text = env->GetStringUTFChars(graph, nullptr);
+    char error[256] = {0};
+    const int ok = lo_engine_gpu_self_test(handle(engine), in.data(), width, height, text, result.data(), error, sizeof(error));
+    env->ReleaseStringUTFChars(graph, text);
+    if (ok) env->SetByteArrayRegion(out, 0, static_cast<jsize>(result.size()), reinterpret_cast<const jbyte*>(result.data()));
+    return errorOrNull(env, ok, error);
+}
 
 JNIEXPORT jstring JNICALL
 Java_dev_mark_lineover_core_engine_LoEngine_nativeVersion(JNIEnv* env, jclass) {

@@ -1,5 +1,7 @@
 package dev.mark.lineover.feature.editor
 
+import android.app.Activity
+import android.content.pm.ActivityInfo
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -18,13 +20,16 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
@@ -34,8 +39,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -62,6 +69,7 @@ import dev.mark.lineover.core.ui.adaptive.LoWindowInfo
 import dev.mark.lineover.core.ui.adaptive.rememberLoWindowInfo
 import dev.mark.lineover.core.ui.tools.ToolRegistry
 import dev.mark.lineover.feature.editor.canvas.CanvasView
+import dev.mark.lineover.feature.editor.canvas.EditorCanvasFactory
 import kotlinx.coroutines.launch
 
 @Composable
@@ -69,10 +77,12 @@ fun EditorRoute(
     projectId: Long,
     library: ProjectLibrary,
     preferences: AppPreferences,
+    canvases: EditorCanvasFactory,
     onBack: () -> Unit,
     onExport: () -> Unit,
 ) {
-    val viewModel = viewModel(key = "editor-$projectId") { EditorViewModel(projectId, library, preferences) }
+    val viewModel = viewModel(key = "editor-$projectId") { EditorViewModel(projectId, library, preferences, canvases) }
+    WideColorGamutWindow()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val toast = remember { LoToastState() }
     LaunchedEffect(viewModel) {
@@ -93,24 +103,40 @@ fun EditorRoute(
 }
 
 /**
- * The GL canvas. Only a new preview or surround colour reaches [AndroidView.update];
- * gestures stay inside [CanvasView] and never recompose.
+ * The canvas: a SurfaceView the native engine renders into. Only a new engine or surround
+ * colour reaches [AndroidView.update]; gestures stay inside [CanvasView] and never recompose.
  */
 @Composable
 internal fun PhotoCanvas(
     state: EditorState,
     modifier: Modifier,
 ) {
-    val preview = state.preview
+    val canvas = state.canvas
     val surround = state.surround.color.toArgb()
     AndroidView(
         factory = { CanvasView(it) },
         modifier = modifier,
         update = { view ->
             view.setSurround(surround)
-            view.setImage(preview?.bitmap, preview?.originalWidth ?: 0, preview?.originalHeight ?: 0)
+            view.setRenderer(canvas)
         },
+        onRelease = { view -> view.setRenderer(null) },
     )
+}
+
+/**
+ * While the editor is shown the window asks for the wide colour gamut (Display P3) on
+ * displays that have it, so the canvas surface can show P3 colours unclipped.
+ */
+@Composable
+private fun WideColorGamutWindow() {
+    val view = LocalView.current
+    DisposableEffect(view) {
+        val window = (view.context as? Activity)?.window
+        val previous = window?.colorMode
+        if (window != null && view.display?.isWideColorGamut == true) window.colorMode = ActivityInfo.COLOR_MODE_WIDE_COLOR_GAMUT
+        onDispose { if (window != null && previous != null) window.colorMode = previous }
+    }
 }
 
 val CanvasSurround.color: Color
@@ -258,6 +284,19 @@ private fun CanvasArea(
             }
         }
         CanvasBadges(state, Modifier.align(Alignment.TopStart))
+        if (state.showSpinner) {
+            // Subtle: sharp tiles are still loading (only after 300 ms, see EditorViewModel).
+            CircularProgressIndicator(
+                modifier =
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(LoSpacing.S)
+                        .size(SPINNER_SIZE)
+                        .testTag(EditorTags.SPINNER),
+                color = LoColors.TextSecondary,
+                strokeWidth = 2.dp,
+            )
+        }
         // Overlay for the on-canvas handles of later stages (crop, gradients, pins). Hidden for now.
         CanvasOverlayLayer(visible = false)
     }
@@ -301,3 +340,4 @@ private fun CanvasBadges(
 }
 
 private const val BADGE_ALPHA = 0.9f
+private val SPINNER_SIZE = 20.dp

@@ -3,14 +3,13 @@ package dev.mark.lineover.feature.editor.canvas
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
-import android.graphics.Bitmap
-import android.opengl.GLSurfaceView
 import android.view.Choreographer
 import android.view.GestureDetector
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.Surface
 import android.view.SurfaceHolder
+import android.view.SurfaceView
 import android.view.VelocityTracker
 import dev.mark.lineover.core.designsystem.MotionTokens
 import kotlin.math.exp
@@ -18,9 +17,10 @@ import kotlin.math.hypot
 import kotlin.math.ln
 
 /**
- * The photo canvas: a SurfaceView rendered with GLES on its own thread. Gestures are
- * handled here, in the MotionEvent path, and never touch Compose state, so panning,
- * zooming and rotating cause no recomposition (rule R6, 8.3 ms per frame at 120 Hz).
+ * The photo canvas: a SurfaceView the native engine renders into on its own render
+ * thread (EGL, GLES 3). Gestures are handled here, in the MotionEvent path, and never
+ * touch Compose state, so panning, zooming and rotating cause no recomposition (rule R6,
+ * 8.3 ms per frame at 120 Hz). Each gesture event hands six floats to the engine.
  *
  * - Two fingers: pan, pinch zoom (0.1×–32× around the focal point) and rotate (snaps to
  *   0/90/180/270° with a haptic tick).
@@ -32,20 +32,23 @@ import kotlin.math.ln
 @SuppressLint("ViewConstructor")
 class CanvasView(
     context: Context,
-) : GLSurfaceView(context),
+) : SurfaceView(context),
+    SurfaceHolder.Callback,
     Choreographer.FrameCallback {
     val transform = CanvasTransform()
-    private val renderer = CanvasRenderer()
+    private var renderer: CanvasRenderer? = null
+    private var surface: Surface? = null
+    private var surfaceWidth = 0
+    private var surfaceHeight = 0
     private val tracker = TwoFingerTracker()
     private val fling = FlingDecay()
-    private val matrix = FloatArray(MATRIX_SIZE)
+    private val affine = FloatArray(AFFINE_SIZE)
     private val step = FloatArray(2)
     private val target = FloatArray(3)
     private var velocityTracker: VelocityTracker? = null
     private var twoFingers = false
     private var frameScheduled = false
     private var lastFrameNanos = 0L
-    private var currentBitmap: Bitmap? = null
     private var currentSurround = 0
 
     // Double-tap animation (log-scale zoom, linear pan), driven by the same frame callback.
@@ -58,9 +61,6 @@ class CanvasView(
     private var animToX = 0f
     private var animToY = 0f
     private var animToFitted = false
-
-    /** GL frame timings (used by the frame-timing test). */
-    val frameStats: FrameStats get() = renderer.stats
 
     /** Called after every change of the transform, on the UI thread (no allocation). */
     var onTransformChanged: (() -> Unit)? = null
@@ -78,25 +78,20 @@ class CanvasView(
         )
 
     init {
-        setEGLContextClientVersion(GLES_VERSION)
-        preserveEGLContextOnPause = true
-        setRenderer(renderer)
-        renderMode = RENDERMODE_WHEN_DIRTY
+        holder.addCallback(this)
         contentDescription = "Photo canvas. Pinch to zoom, two fingers to pan and rotate, double tap to fit."
         isFocusable = false
     }
 
-    /** Shows [bitmap] (the decoded preview, long edge ≤ 2048 px) as an image of [originalWidth] × [originalHeight]. */
-    fun setImage(
-        bitmap: Bitmap?,
-        originalWidth: Int,
-        originalHeight: Int,
-    ) {
-        // Recomposition may call this again with the same preview: keep the view as it is.
-        if (bitmap === currentBitmap) return
-        currentBitmap = bitmap
-        renderer.setBitmap(bitmap)
-        if (bitmap != null) transform.setImageSize(originalWidth, originalHeight)
+    /** The engine that draws the image (null: nothing to show yet). Same renderer again is a no-op. */
+    fun setRenderer(renderer: CanvasRenderer?) {
+        if (renderer === this.renderer) return
+        this.renderer?.detach()
+        this.renderer = renderer
+        if (renderer == null) return
+        transform.setImageSize(renderer.imageWidth, renderer.imageHeight)
+        if (currentSurround != 0) renderer.setSurround(currentSurround)
+        surface?.let { attachTo(renderer, it) }
         publish()
     }
 
@@ -104,14 +99,39 @@ class CanvasView(
     fun setSurround(argb: Int) {
         if (argb == currentSurround) return
         currentSurround = argb
-        renderer.setSurround(argb)
-        requestRender()
+        renderer?.setSurround(argb)
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
-        super.surfaceCreated(holder)
         // Ask for the panel's top rate (120 Hz on the POCO F7 Ultra) while the canvas is shown.
         holder.surface.setFrameRate(TARGET_FPS, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT)
+        surface = holder.surface
+    }
+
+    override fun surfaceChanged(
+        holder: SurfaceHolder,
+        format: Int,
+        width: Int,
+        height: Int,
+    ) {
+        surfaceWidth = width
+        surfaceHeight = height
+        surface = holder.surface
+        renderer?.let { attachTo(it, holder.surface) }
+    }
+
+    override fun surfaceDestroyed(holder: SurfaceHolder) {
+        renderer?.detach()
+        surface = null
+    }
+
+    private fun attachTo(
+        renderer: CanvasRenderer,
+        surface: Surface,
+    ) {
+        renderer.attach(surface)
+        renderer.resize(surfaceWidth.takeIf { it > 0 } ?: width, surfaceHeight.takeIf { it > 0 } ?: height)
+        publish()
     }
 
     override fun onSizeChanged(
@@ -122,6 +142,7 @@ class CanvasView(
     ) {
         super.onSizeChanged(w, h, oldw, oldh)
         transform.setViewSize(w, h)
+        renderer?.resize(w, h)
         publish()
     }
 
@@ -257,16 +278,17 @@ class CanvasView(
         animating = false
     }
 
+    @Suppress("MagicNumber") // affine element indices
     private fun publish() {
-        transform.writeGlMatrix(matrix)
-        renderer.setMatrix(matrix)
-        requestRender()
+        renderer?.let {
+            transform.writeAffine(affine)
+            it.setTransform(affine[0], affine[1], affine[2], affine[3], affine[4], affine[5])
+        }
         onTransformChanged?.invoke()
     }
 
     private companion object {
-        const val GLES_VERSION = 3
-        const val MATRIX_SIZE = 9
+        const val AFFINE_SIZE = 6
         const val TARGET_FPS = 120f
         const val MILLIS_PER_SECOND = 1000
         const val NANOS_PER_SECOND = 1_000_000_000f

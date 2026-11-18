@@ -1,10 +1,11 @@
 package dev.mark.lineover.feature.editor
 
 import androidx.lifecycle.viewModelScope
+import dev.mark.lineover.core.engine.RenderScheduler
 import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.CanvasSurround
-import dev.mark.lineover.core.io.project.PreviewImage
 import dev.mark.lineover.core.io.project.ProjectLibrary
+import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.Project
 import dev.mark.lineover.core.model.ToolCategory
 import dev.mark.lineover.core.ui.mvi.MviViewModel
@@ -13,6 +14,13 @@ import dev.mark.lineover.core.ui.tools.ToolRegistry
 import dev.mark.lineover.core.ui.tools.ToolSearch
 import dev.mark.lineover.core.ui.tools.ToolSpec
 import dev.mark.lineover.core.ui.tools.toolCategoryOf
+import dev.mark.lineover.feature.editor.canvas.EditorCanvas
+import dev.mark.lineover.feature.editor.canvas.EditorCanvasFactory
+import dev.mark.lineover.feature.editor.canvas.ImageSummary
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -46,9 +54,15 @@ enum class EditorMenu { More, AddLayer, AddMask }
 data class EditorState(
     val project: Project? = null,
     val loaded: Boolean = false,
-    val preview: PreviewImage? = null,
+    /** The engine drawing the canvas, once the original is open. */
+    val canvas: EditorCanvas? = null,
+    val image: ImageSummary? = null,
     /** True when the original could not be decoded for the canvas (e.g. RAW before Stage 25). */
     val previewUnavailable: Boolean = false,
+    /** Sharp tiles have been loading for more than 300 ms: show the subtle spinner. */
+    val showSpinner: Boolean = false,
+    /** The edit; identity until the first tools (Stage 5). */
+    val graph: EditGraph = EditGraph(),
     val category: ToolCategory = DEFAULT_CATEGORY,
     val panel: EditorPanel? = null,
     val historyTab: HistoryTab = HistoryTab.History,
@@ -143,6 +157,8 @@ class EditorViewModel(
     projectId: Long,
     private val library: ProjectLibrary,
     private val preferences: AppPreferences,
+    private val canvases: EditorCanvasFactory,
+    private val renderDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) : MviViewModel<EditorState, EditorIntent, EditorEffect>(
         EditorState(
             category = toolCategoryOf(preferences.lastCategory.value) ?: EditorState.DEFAULT_CATEGORY,
@@ -156,13 +172,38 @@ class EditorViewModel(
         viewModelScope.launch {
             library.observe(projectId).collect { project -> setState { copy(project = project, loaded = true) } }
         }
-        viewModelScope.launch {
-            val project = library.observe(projectId).filterNotNull().first()
-            val preview = library.decodePreview(project)
-            setState { copy(preview = preview, previewUnavailable = preview == null) }
-        }
+        viewModelScope.launch { openCanvas(library.observe(projectId).filterNotNull().first()) }
         viewModelScope.launch { preferences.favorites.collect { setState { copy(favorites = it) } } }
         viewModelScope.launch { preferences.surround.collect { setState { copy(surround = it) } } }
+    }
+
+    private var scheduler: RenderScheduler? = null
+
+    private suspend fun openCanvas(project: dev.mark.lineover.core.model.Project) {
+        val canvas = canvases.open(project)
+        if (canvas == null) {
+            setState { copy(previewUnavailable = true) }
+            return
+        }
+        setState { copy(canvas = canvas, image = canvas.summary, previewUnavailable = false) }
+        // Edits reach the engine through the scheduler: the latest graph wins.
+        val renderScheduler = RenderScheduler({ graph -> canvas.setGraph(graph) }, viewModelScope, renderDispatcher)
+        scheduler = renderScheduler
+        renderScheduler.submit(state.value.graph)
+        canvas.loading.collectLatest { loading ->
+            if (loading) {
+                delay(SPINNER_DELAY_MILLIS)
+                setState { copy(showSpinner = true) }
+            } else {
+                setState { copy(showSpinner = false) }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        scheduler?.cancel()
+        // Closing joins the engine's threads: never on the main thread.
+        state.value.canvas?.let { canvas -> Thread({ canvas.close() }, "LineOverEngineClose").start() }
     }
 
     override fun onIntent(intent: EditorIntent) {
@@ -243,5 +284,8 @@ class EditorViewModel(
 
     companion object {
         const val FAVORITES_TOOL = "favorites.favorites"
+
+        /** The spinner appears only when sharp tiles take longer than this (Stage 4 UX). */
+        const val SPINNER_DELAY_MILLIS = 300L
     }
 }

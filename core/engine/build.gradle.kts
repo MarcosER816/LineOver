@@ -22,10 +22,16 @@ android {
 dependencies {
     // Provides liblineover_engine.so.
     implementation(project(":core:engine-native"))
+    api(project(":core:io"))
+    api(project(":core:model"))
+    api(libs.kotlinx.coroutines.core)
+
+    testImplementation(libs.kotlinx.coroutines.test)
 
     testFixturesImplementation(libs.junit)
 
     androidTestImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
 }

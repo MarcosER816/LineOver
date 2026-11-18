@@ -180,6 +180,20 @@ class CanvasTransformTest {
     }
 
     @Test
+    fun affineMatchesTheViewMapping() {
+        val t = transform()
+        t.beginGesture()
+        t.applyGesture(500f, 600f, 37f, -12f, 2.7f, 33f)
+        val a = FloatArray(6)
+        t.writeAffine(a)
+        for ((x, y) in listOf(0f to 0f, 8160f to 0f, 1234f to 4321f)) {
+            val view = t.mapToView(x, y)
+            assertEquals(view[0], a[0] * x + a[2] * y + a[4], 0.05f)
+            assertEquals(view[1], a[1] * x + a[3] * y + a[5], 0.05f)
+        }
+    }
+
+    @Test
     fun glMatrixMapsTheQuadCornersToTheirScreenPositions() {
         val t = transform()
         t.beginGesture()
