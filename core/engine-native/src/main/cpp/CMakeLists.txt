@@ -38,9 +38,13 @@ if(ANDROID)
     # loaded by dev.mark.lineover.core.engine.LoEngine.
     add_library(lineover_engine SHARED
         android/jni_bridge.cpp
-        android/gl_smoke.cpp)
+        android/gl_smoke.cpp
+        android/gl_util.cpp
+        android/gpu_pipeline.cpp
+        android/engine.cpp
+        android/lo_api.cpp)
     target_compile_options(lineover_engine PRIVATE ${LO_WARNINGS})
-    target_link_libraries(lineover_engine PRIVATE lo_engine EGL GLESv3 log)
+    target_link_libraries(lineover_engine PRIVATE lo_engine EGL GLESv3 android jnigraphics log)
 else()
     # Host build (Linux CI): golden-image helpers and ctest tests.
     include(CTest)
