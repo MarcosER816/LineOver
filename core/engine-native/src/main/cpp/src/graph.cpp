@@ -1,4 +1,5 @@
 #include "lineover/graph.h"
+#include "lineover/light.h"
 
 #include <cmath>
 #include <cstdio>
@@ -359,6 +360,19 @@ std::unique_ptr<OpList> buildOps(const Graph& graph, std::string* skipped) {
                 list->add(makeIdentity());
             } else if (params.op == "exposure_test") {
                 list->add(makeExposureTest(static_cast<float>(param("stops", 0.0))));
+            } else if (params.op == "exposure") {
+                list->add(makeExposure(static_cast<float>(param("ev", 0.0))));
+            } else if (params.op == "contrast") {
+                list->add(makeContrast(static_cast<float>(param("amount", 0.0))));
+            } else if (params.op == "brightness") {
+                list->add(makeBrightness(static_cast<float>(param("amount", 0.0))));
+            } else if (params.op == "whites") {
+                list->add(makeWhites(static_cast<float>(param("amount", 0.0))));
+            } else if (params.op == "blacks") {
+                list->add(makeBlacks(static_cast<float>(param("amount", 0.0))));
+            } else if (params.op == "highlights_shadows") {
+                list->add(makeHighlightsShadows(static_cast<float>(param("highlights", 0.0)),
+                                                static_cast<float>(param("shadows", 0.0))));
             } else if (skipped != nullptr) {
                 if (!skipped->empty()) skipped->push_back(',');
                 skipped->append(params.op);

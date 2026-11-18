@@ -1,6 +1,9 @@
 package dev.mark.lineover.feature.editor
 
 import android.view.Surface
+import dev.mark.lineover.core.engine.CompareMode
+import dev.mark.lineover.core.engine.EngineStats
+import dev.mark.lineover.core.engine.Histogram
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.feature.editor.canvas.EditorCanvas
 import dev.mark.lineover.feature.editor.canvas.EditorCanvasFactory
@@ -21,6 +24,41 @@ class FakeEditorCanvas(
         private set
     var closed = false
         private set
+    override val histogram = MutableStateFlow<Histogram?>(null)
+    var histogramEnabled = false
+        private set
+    var clipping = false
+        private set
+    var compare = CompareMode.Off to 0.5f
+        private set
+    var showingOriginal = false
+        private set
+
+    /** What Auto returns: (exposure EV, blacks), null for "no preview yet". */
+    var auto: Pair<Float, Float>? = 1.25f to 12f
+
+    override fun setHistogramEnabled(enabled: Boolean) {
+        histogramEnabled = enabled
+    }
+
+    override fun setClipping(clipping: Boolean) {
+        this.clipping = clipping
+    }
+
+    override fun setCompare(
+        mode: CompareMode,
+        split: Float,
+    ) {
+        compare = mode to split
+    }
+
+    override fun setShowOriginal(original: Boolean) {
+        showingOriginal = original
+    }
+
+    override fun autoLight(): Pair<Float, Float>? = auto
+
+    override fun stats(): EngineStats? = null
 
     override fun setGraph(graph: EditGraph): String? {
         graphs += graph

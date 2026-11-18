@@ -49,6 +49,7 @@ import dev.mark.lineover.core.designsystem.component.LoCategoryBar
 import dev.mark.lineover.core.designsystem.component.LoChip
 import dev.mark.lineover.core.designsystem.component.LoIconButton
 import dev.mark.lineover.core.designsystem.component.LoToolButton
+import dev.mark.lineover.core.engine.CompareMode
 import dev.mark.lineover.core.model.ToolCategory
 import dev.mark.lineover.core.ui.tools.ToolRegistry
 import dev.mark.lineover.core.ui.tools.categoryBarEntries
@@ -76,6 +77,13 @@ object EditorTags {
     const val COACH = "coach-marks"
     const val SPINNER = "tile-spinner"
     const val SEARCH_FIELD = "tool-search-field"
+    const val LIGHT_PANEL = "light-panel"
+    const val LIGHT_AUTO = "light-auto"
+    const val LIGHT_SWIPE = "light-swipe-mode"
+    const val BEFORE_LABEL = "before-label"
+    const val SWIPE_HUD = "swipe-hud"
+    const val SPLIT_HANDLE = "compare-split-handle"
+    const val RENDER_STATS = "render-stats"
 }
 
 /** The 56 dp top bar: Back · Undo · Redo · Compare · History · Layers · More · Export. */
@@ -116,8 +124,9 @@ internal fun EditorTopBar(
                 LoIconButton(
                     LoIcons.Compare,
                     "Compare",
-                    onClick = { onIntent(EditorIntent.SelectTool("history.before_after")) },
-                    selected = state.selectedToolId == "history.before_after",
+                    // Cycles off → split → side by side (holding the photo shows the original).
+                    onClick = { onIntent(EditorIntent.CycleCompare) },
+                    selected = state.compare != CompareMode.Off,
                 )
                 LoIconButton(
                     LoIcons.History,
@@ -184,6 +193,12 @@ private fun MoreMenu(
             onIntent(EditorIntent.SelectTool("favorites.favorites"))
         }
         MoreItem("Help", LoIcons.Help, null, "more:help") { onIntent(EditorIntent.ShowHelp) }
+        if (state.debuggable) {
+            // Debug builds only: preview update latency and frame timing on the canvas.
+            MoreItem("Render stats", LoIcons.BugReport, null, "more:render-stats", checked = state.renderStats) {
+                onIntent(EditorIntent.ToggleRenderStats)
+            }
+        }
     }
 }
 

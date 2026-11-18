@@ -2,6 +2,7 @@ package dev.mark.lineover.feature.editor
 
 import android.app.Activity
 import android.content.pm.ActivityInfo
+import android.content.pm.ApplicationInfo
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
@@ -39,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -68,6 +70,7 @@ import dev.mark.lineover.core.ui.adaptive.LoWidthClass
 import dev.mark.lineover.core.ui.adaptive.LoWindowInfo
 import dev.mark.lineover.core.ui.adaptive.rememberLoWindowInfo
 import dev.mark.lineover.core.ui.tools.ToolRegistry
+import dev.mark.lineover.feature.editor.canvas.CanvasGestureListener
 import dev.mark.lineover.feature.editor.canvas.CanvasView
 import dev.mark.lineover.feature.editor.canvas.EditorCanvasFactory
 import kotlinx.coroutines.launch
@@ -81,7 +84,12 @@ fun EditorRoute(
     onBack: () -> Unit,
     onExport: () -> Unit,
 ) {
-    val viewModel = viewModel(key = "editor-$projectId") { EditorViewModel(projectId, library, preferences, canvases) }
+    val context = LocalContext.current
+    val debuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+    val viewModel =
+        viewModel(key = "editor-$projectId") {
+            EditorViewModel(projectId, library, preferences, canvases, debuggable = debuggable)
+        }
     WideColorGamutWindow()
     val state by viewModel.state.collectAsStateWithLifecycle()
     val toast = remember { LoToastState() }
@@ -98,7 +106,7 @@ fun EditorRoute(
         onBack = onBack,
         onExport = onExport,
         toast = toast,
-        canvas = { modifier -> PhotoCanvas(state, modifier) },
+        canvas = { modifier -> PhotoCanvas(state, modifier, viewModel.gestures) },
     )
 }
 
@@ -110,15 +118,19 @@ fun EditorRoute(
 internal fun PhotoCanvas(
     state: EditorState,
     modifier: Modifier,
+    gestures: CanvasGestureListener? = null,
 ) {
     val canvas = state.canvas
     val surround = state.surround.color.toArgb()
+    val swipeMode = state.swipeMode
     AndroidView(
         factory = { CanvasView(it) },
         modifier = modifier,
         update = { view ->
             view.setSurround(surround)
             view.setRenderer(canvas)
+            view.gestureListener = gestures
+            view.swipeMode = swipeMode
         },
         onRelease = { view -> view.setRenderer(null) },
     )
@@ -201,7 +213,7 @@ private fun CompactLayout(
     Column(Modifier.fillMaxSize()) {
         EditorTopBar(state, wide = false, onIntent = onIntent, onBack = onBack, onExport = onExport)
         BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-            CanvasArea(state, canvas)
+            CanvasArea(state, onIntent, canvas)
             androidx.compose.animation.AnimatedVisibility(
                 visible = state.hasCompactPanel,
                 modifier = Modifier.align(Alignment.BottomCenter),
@@ -215,7 +227,7 @@ private fun CompactLayout(
                         modifier = Modifier.testTag(EditorTags.PANEL),
                         maxHeight = maxHeight * LoDimens.PANEL_MAX_HEIGHT_FRACTION,
                     ) {
-                        PanelContent(state, wide = false, onIntent = onIntent)
+                        PanelContent(state, wide = false, onIntent = onIntent, panelState = panelState)
                     }
                 }
             }
@@ -238,7 +250,7 @@ private fun WideLayout(
         CategoryRail(state, onIntent)
         Column(Modifier.weight(1f).fillMaxHeight()) {
             EditorTopBar(state, wide = true, onIntent = onIntent, onBack = onBack, onExport = onExport)
-            Box(Modifier.weight(1f).fillMaxWidth()) { CanvasArea(state, canvas) }
+            Box(Modifier.weight(1f).fillMaxWidth()) { CanvasArea(state, onIntent, canvas) }
             if (state.category == ToolCategory.Select) SelectionOptionsBar()
             ToolStrip(state, onIntent)
         }
@@ -260,6 +272,7 @@ private fun WideLayout(
 @Composable
 private fun CanvasArea(
     state: EditorState,
+    onIntent: (EditorIntent) -> Unit,
     canvas: @Composable (Modifier) -> Unit,
 ) {
     Box(Modifier.fillMaxSize().background(state.surround.color)) {
@@ -283,7 +296,10 @@ private fun CanvasArea(
                 )
             }
         }
+        CompareOverlay(state, onIntent)
         CanvasBadges(state, Modifier.align(Alignment.TopStart))
+        SwipeHud(state, Modifier.align(Alignment.Center))
+        if (state.renderStats) RenderStatsOverlay(state, Modifier.align(Alignment.BottomStart).padding(LoSpacing.Xs))
         if (state.showSpinner) {
             // Subtle: sharp tiles are still loading (only after 300 ms, see EditorViewModel).
             CircularProgressIndicator(
@@ -307,7 +323,10 @@ private fun CanvasOverlayLayer(visible: Boolean) {
     if (visible) Box(Modifier.fillMaxSize().testTag(EditorTags.CANVAS_OVERLAY))
 }
 
-/** The canvas overlays switched on in More (histogram, clipping, guides), as placeholders. */
+/**
+ * The canvas overlays switched on in More: the histogram and the clipping badge (Stage 5),
+ * guides as a placeholder until Stage 10.
+ */
 @Composable
 private fun CanvasBadges(
     state: EditorState,
@@ -315,7 +334,17 @@ private fun CanvasBadges(
 ) {
     val reducedMotion = LocalReducedMotion.current
     Column(modifier.padding(LoSpacing.Xs), verticalArrangement = Arrangement.spacedBy(LoSpacing.Xxs)) {
-        listOf("light.histogram", "light.clipping_warnings", "workflow.guides_grid_rulers").forEach { id ->
+        AnimatedVisibility(
+            visible = state.histogramShown,
+            enter = fadeIn(MotionTokens.enter(reducedMotion)),
+            exit = fadeOut(MotionTokens.exit(reducedMotion)),
+        ) { HistogramOverlay(state) }
+        AnimatedVisibility(
+            visible = EditorState.CLIPPING_TOOL in state.overlays,
+            enter = fadeIn(MotionTokens.enter(reducedMotion)),
+            exit = fadeOut(MotionTokens.exit(reducedMotion)),
+        ) { ClippingBadge() }
+        listOf("workflow.guides_grid_rulers").forEach { id ->
             AnimatedVisibility(
                 visible = id in state.overlays,
                 enter = fadeIn(MotionTokens.enter(reducedMotion)),

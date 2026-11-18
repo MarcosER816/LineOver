@@ -1,6 +1,6 @@
 # Tool catalog
 
-Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 1 done.**
+Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 11 done.**
 
 - **id**: stable identifier (`<group>.<tool>`), used in code, favourites and project files. Never renamed.
 - **UI slot**: where the tool lives. Slots are reserved now and are never moved (rule R9); a stage only *fills* slots.
@@ -76,13 +76,13 @@ The Favorites strip shows the tools the user pinned; it has no tools of its own.
 
 | id | Name | Category | UI slot | Stage | Status |
 | --- | --- | --- | --- | --- | --- |
-| `light.exposure` | Exposure | Light | `cat/Light/01` | 5 | reserved |
-| `light.contrast` | Contrast | Light | `cat/Light/02` | 5 | reserved |
-| `light.highlights` | Highlights | Light | `cat/Light/03` | 5 | reserved |
-| `light.shadows` | Shadows | Light | `cat/Light/04` | 5 | reserved |
-| `light.whites` | Whites | Light | `cat/Light/05` | 5 | reserved |
-| `light.blacks` | Blacks | Light | `cat/Light/06` | 5 | reserved |
-| `light.brightness` | Brightness | Light | `cat/Light/07` | 5 | reserved |
+| `light.exposure` | Exposure | Light | `cat/Light/01` | 5 | done |
+| `light.contrast` | Contrast | Light | `cat/Light/02` | 5 | done |
+| `light.highlights` | Highlights | Light | `cat/Light/03` | 5 | done |
+| `light.shadows` | Shadows | Light | `cat/Light/04` | 5 | done |
+| `light.whites` | Whites | Light | `cat/Light/05` | 5 | done |
+| `light.blacks` | Blacks | Light | `cat/Light/06` | 5 | done |
+| `light.brightness` | Brightness | Light | `cat/Light/07` | 5 | done |
 | `light.curves_point` | Curves (point) | Light | `cat/Light/08` | 7 | reserved |
 | `light.curves_parametric` | Curves (parametric) | Light | `cat/Light/09` | 7 | reserved |
 | `light.levels` | Levels | Light | `cat/Light/10` | 7 | reserved |
@@ -91,8 +91,8 @@ The Favorites strip shows the tools the user pinned; it has no tools of its own.
 
 | id | Name | Category | UI slot | Stage | Status |
 | --- | --- | --- | --- | --- | --- |
-| `light.histogram` | Histogram | Light | `canvas/overlay/histogram` | 5 | reserved |
-| `light.clipping_warnings` | Clipping warnings | Light | `canvas/overlay/clipping` | 5 | reserved |
+| `light.histogram` | Histogram | Light | `canvas/overlay/histogram` | 5 | done |
+| `light.clipping_warnings` | Clipping warnings | Light | `canvas/overlay/clipping` | 5 | done |
 
 ## Color
 
@@ -282,7 +282,7 @@ Every AI tool downloads its model on first use (size and licence shown, SHA-256 
 | `history.history_list` | History list | — (shell) | `panel/history/list` | 8 | reserved |
 | `history.snapshots` | Snapshots | — (shell) | `panel/history/snapshots` | 8 | reserved |
 | `history.versions` | Versions | — (shell) | `panel/history/versions` | 8 | reserved |
-| `history.before_after` | Before / after | — (shell) | `topbar/before-after` | 8 | reserved |
+| `history.before_after` | Before / after | — (shell) | `topbar/before-after` | 5 | done |
 | `history.project_file` | Project file (.loproj) | — (shell) | `home/projects` | 8 | reserved |
 
 ## Export

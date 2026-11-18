@@ -1,0 +1,1 @@
+{"schemaVersion":1,"layers":[{"id":"background","ops":[{"op":"highlights_shadows","highlights":-20.0,"shadows":30.0},{"op":"exposure","ev":1.5},{"op":"whites","amount":10.0},{"op":"blacks","amount":-10.0},{"op":"contrast","amount":25.0},{"op":"brightness","amount":5.0}]}]}

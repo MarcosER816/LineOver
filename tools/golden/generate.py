@@ -37,7 +37,7 @@ def build_outputs() -> dict[str, np.ndarray]:
     encoded = reference.color_samples_encoded()
     linear = reference.color_samples_linear()
 
-    return {
+    outputs = {
         # Inputs shared by all operations.
         "input/pattern_rgba8.png": pattern_u8,
         "input/pattern_rgba8_as_f32.npy": (pattern_u8.astype(np.float32) / np.float32(255.0)),
@@ -63,6 +63,22 @@ def build_outputs() -> dict[str, np.ndarray]:
             reference.exposure_test(pattern_f32, -1.0), "srgb"
         ),
     }
+    outputs.update(light_outputs())
+    return outputs
+
+
+def light_outputs() -> dict[str, np.ndarray]:
+    """Stage 5: the Light ops at three settings each, the histogram, GPU display goldens."""
+    scene = reference.scene_rec2020()
+    outputs = {"input/scene_rec2020_f32.npy": scene}
+    for name, settings in reference.LIGHT_SETTINGS.items():
+        op = reference.LIGHT_OPS[name]
+        for index, params in enumerate(settings, start=1):
+            outputs[f"light/{name}_{index}_f32.npy"] = op(scene, *params)
+        # GPU vs reference on the device: the middle setting through the sRGB display transform.
+        outputs[f"light/{name}_2_srgb_display_f32.npy"] = reference.working_to_display(op(scene, *settings[1]), "srgb")
+    outputs["histogram/scene_srgb_hist_f32.npy"] = reference.histogram_srgb(scene)
+    return outputs
 
 
 def write_file(path: Path, array: np.ndarray) -> None:
@@ -111,6 +127,7 @@ def main() -> int:
     args = parser.parse_args()
 
     reference.self_check()
+    reference.light_self_check()
     outputs = build_outputs()
 
     if args.check:

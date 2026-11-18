@@ -20,6 +20,32 @@ namespace lo {
 enum class OpType : int {
     Identity = 0,
     ExposureTest = 1,
+    Exposure = 2,
+    Contrast = 3,
+    Brightness = 4,
+    Whites = 5,
+    Blacks = 6,
+    HighlightsShadows = 7,
+};
+
+// Guided-filter coefficients of an image's log2 luminance, at preview resolution:
+// base = A * L + B (see light.h). `ab` holds A, B interleaved, row-major.
+struct GuidedCoefficients {
+    int width = 0;
+    int height = 0;
+    std::vector<float> ab;
+};
+
+// Where a buffer of pixels lies in the image, for ops that read image-wide data.
+struct OpRegion {
+    int width = 0;   // pixels of the buffer
+    int height = 0;
+    // The buffer's rect in normalised image coordinates (x, y, w, h); the preview is
+    // (0, 0, 1, 1). Pixel (i, j) has image uv = rect.xy + ((i, j) + 0.5) / size * rect.zw.
+    float rect[4] = {0.f, 0.f, 1.f, 1.f};
+    const GuidedCoefficients* coefficients = nullptr;  // null: none yet (base = L)
+
+    std::size_t pixels() const { return static_cast<std::size_t>(width) * static_cast<std::size_t>(height); }
 };
 
 // What gpu() talks to: implemented by the GL backend, and by a recorder in host tests.
@@ -28,6 +54,8 @@ public:
     virtual ~GpuOpContext() = default;
     // GLSL (ES 3.00) function body of the op: `vec4 lo_op(vec4 c) { ... }` where `c` is
     // working-space RGBA. Uniforms are declared by the op inside `declarations`.
+    // The backend also provides `vec2 lo_guided()`: the bilinearly sampled guided-filter
+    // coefficients (A, B) at the current pixel, sampled exactly as sampleGuided() does.
     virtual void setShader(const char* declarations, const char* body) = 0;
     virtual void setUniform1f(const char* name, float value) = 0;
 };
@@ -41,8 +69,18 @@ public:
     // Describes the op to the GPU backend (shader + uniforms).
     virtual void gpu(GpuOpContext& context) const = 0;
     // Reference implementation on `pixels` RGBA float pixels; in == out is allowed.
+    // Ops that read image-wide data run here as if no such data existed.
     virtual void cpuRef(const float* in, float* out, std::size_t pixels) const = 0;
+    // Reference implementation on a region of the image (tiles, the preview). Point ops
+    // only forward to cpuRef(); ops that read image-wide data override it.
+    virtual void cpuRefRegion(const float* in, float* out, const OpRegion& region) const {
+        cpuRef(in, out, region.pixels());
+    }
 };
+
+// Bilinear sample of `c` at image uv (pixel centres at (i + 0.5) / size, edges clamped).
+// Also implemented in GLSL by the backend's lo_guided().
+void sampleGuided(const GuidedCoefficients& c, float u, float v, float* a, float* b);
 
 // Leaves the image unchanged. Used to validate the pipeline end to end.
 std::unique_ptr<Op> makeIdentity();
@@ -59,6 +97,8 @@ public:
     bool isIdentity() const;
     // Applies every op's cpuRef in order (in == out is allowed).
     void cpuRef(const float* in, float* out, std::size_t pixels) const;
+    // Applies every op's cpuRefRegion in order (in == out is allowed).
+    void cpuRefRegion(const float* in, float* out, const OpRegion& region) const;
 
 private:
     std::vector<std::unique_ptr<Op>> ops_;

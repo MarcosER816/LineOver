@@ -27,6 +27,12 @@ object LoColors {
     val ClipHi = Color(0xFFFF2D55)
     val ClipLo = Color(0xFF2D7BFF)
 
+    /** Histogram channels (drawn at 55 % over the panel colour) and luminance. */
+    val HistogramRed = Color(0xFFFF5A5F)
+    val HistogramGreen = Color(0xFF3DDC97)
+    val HistogramBlue = Color(0xFF5B9DFF)
+    val HistogramLuma = TextPrimary
+
     /** Area around the canvas: dark by default, mid grey as the alternative. */
     val CanvasSurroundDark = Color(0xFF121212)
     val CanvasSurroundGrey = Color(0xFF777777)

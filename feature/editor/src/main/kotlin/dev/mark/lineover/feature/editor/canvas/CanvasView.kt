@@ -3,6 +3,8 @@ package dev.mark.lineover.feature.editor.canvas
 import android.animation.ValueAnimator
 import android.annotation.SuppressLint
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import android.view.Choreographer
 import android.view.GestureDetector
 import android.view.HapticFeedbackConstants
@@ -11,10 +13,26 @@ import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.VelocityTracker
+import android.view.ViewConfiguration
 import dev.mark.lineover.core.designsystem.MotionTokens
 import kotlin.math.exp
 import kotlin.math.hypot
 import kotlin.math.ln
+
+/** One-finger gestures the editor reacts to. Called on the UI thread, never per pixel of work. */
+interface CanvasGestureListener {
+    /** Hold to compare started (true) or ended (false). */
+    fun onHoldChanged(holding: Boolean)
+
+    /** Swipe mode: the finger moved [steps] parameters down (positive) or up. */
+    fun onSwipeSelect(steps: Int)
+
+    /** Swipe mode: the finger moved horizontally by [fraction] of the canvas width. */
+    fun onSwipeAdjust(fraction: Float)
+
+    /** Swipe mode: a swipe started (true) or ended (false), for the HUD. */
+    fun onSwipeActive(active: Boolean)
+}
 
 /**
  * The photo canvas: a SurfaceView the native engine renders into on its own render
@@ -26,10 +44,15 @@ import kotlin.math.ln
  *   0/90/180/270° with a haptic tick).
  * - Double tap: fit ↔ 100 %.
  * - Lifting the fingers while panning flings with an exponential decay.
+ * - One finger held still for 250 ms: the original is shown until it lifts (compare).
+ * - Swipe mode (Light panel option): one finger moving vertically picks the parameter,
+ *   horizontally changes it ([CanvasGestureListener]).
  *
- * One finger is left free for the tools of later stages (brushes, handles).
+ * Other one-finger gestures are left free for the tools of later stages (brushes, handles).
  */
+
 @SuppressLint("ViewConstructor")
+@Suppress("TooManyFunctions") // every canvas gesture must stay in this view (no recomposition)
 class CanvasView(
     context: Context,
 ) : SurfaceView(context),
@@ -64,6 +87,24 @@ class CanvasView(
 
     /** Called after every change of the transform, on the UI thread (no allocation). */
     var onTransformChanged: (() -> Unit)? = null
+
+    /** Hold-to-compare and swipe-mode callbacks. */
+    var gestureListener: CanvasGestureListener? = null
+
+    /** Swipe mode: one finger adjusts the selected parameter instead of doing nothing. */
+    var swipeMode = false
+
+    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private val swipeStepPx = SWIPE_STEP_DP * resources.displayMetrics.density
+    private var oneFinger = OneFinger.None
+    private var downX = 0f
+    private var downY = 0f
+    private var lastX = 0f
+    private var selectSteps = 0
+    private val holdRunnable = Runnable { startHold() }
+
+    // Not View.postDelayed: that queue waits until the view is attached.
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     private val doubleTap =
         GestureDetector(
@@ -147,6 +188,7 @@ class CanvasView(
     }
 
     override fun onDetachedFromWindow() {
+        endOneFinger()
         Choreographer.getInstance().removeFrameCallback(this)
         frameScheduled = false
         velocityTracker?.recycle()
@@ -164,14 +206,20 @@ class CanvasView(
                 stopMotion()
                 tracker.clear()
                 tracker.addMovement(event)
+                beginOneFinger(event.x, event.y)
             }
 
             MotionEvent.ACTION_POINTER_DOWN -> {
+                endOneFinger()
                 if (event.pointerCount == 2) startTwoFingers(event)
             }
 
             MotionEvent.ACTION_MOVE -> {
-                if (twoFingers && event.pointerCount >= 2) moveTwoFingers(event)
+                if (twoFingers && event.pointerCount >= 2) {
+                    moveTwoFingers(event)
+                } else if (event.pointerCount == 1) {
+                    moveOneFinger(event.x, event.y)
+                }
             }
 
             MotionEvent.ACTION_POINTER_UP -> {
@@ -180,10 +228,94 @@ class CanvasView(
 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 twoFingers = false
+                endOneFinger()
             }
         }
         return true
     }
+
+    private fun beginOneFinger(
+        x: Float,
+        y: Float,
+    ) {
+        oneFinger = OneFinger.Pending
+        downX = x
+        downY = y
+        lastX = x
+        selectSteps = 0
+        mainHandler.postDelayed(holdRunnable, HOLD_MILLIS)
+    }
+
+    private fun startHold() {
+        if (oneFinger != OneFinger.Pending) return
+        oneFinger = OneFinger.Hold
+        renderer?.setShowOriginal(true)
+        gestureListener?.onHoldChanged(true)
+    }
+
+    private fun moveOneFinger(
+        x: Float,
+        y: Float,
+    ) {
+        when (oneFinger) {
+            OneFinger.Pending -> {
+                val dx = x - downX
+                val dy = y - downY
+                if (hypot(dx, dy) <= touchSlop) return
+                mainHandler.removeCallbacks(holdRunnable)
+                oneFinger =
+                    when {
+                        !swipeMode -> OneFinger.Free
+                        kotlin.math.abs(dx) >= kotlin.math.abs(dy) -> OneFinger.SwipeAdjust
+                        else -> OneFinger.SwipeSelect
+                    }
+                lastX = x
+                if (oneFinger != OneFinger.Free) gestureListener?.onSwipeActive(true)
+                // The move that locked the axis already counts for picking.
+                if (oneFinger == OneFinger.SwipeSelect) moveOneFinger(x, y)
+            }
+
+            OneFinger.SwipeAdjust -> {
+                val w = width.takeIf { it > 0 } ?: return
+                gestureListener?.onSwipeAdjust((x - lastX) / w)
+                lastX = x
+            }
+
+            OneFinger.SwipeSelect -> {
+                val steps = ((y - downY) / swipeStepPx).toInt()
+                if (steps != selectSteps) {
+                    gestureListener?.onSwipeSelect(steps - selectSteps)
+                    selectSteps = steps
+                    performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)
+                }
+            }
+
+            else -> {
+                Unit
+            }
+        }
+    }
+
+    private fun endOneFinger() {
+        mainHandler.removeCallbacks(holdRunnable)
+        when (oneFinger) {
+            OneFinger.Hold -> {
+                renderer?.setShowOriginal(false)
+                gestureListener?.onHoldChanged(false)
+            }
+
+            OneFinger.SwipeAdjust, OneFinger.SwipeSelect -> {
+                gestureListener?.onSwipeActive(false)
+            }
+
+            else -> {
+                Unit
+            }
+        }
+        oneFinger = OneFinger.None
+    }
+
+    private enum class OneFinger { None, Pending, Hold, Free, SwipeAdjust, SwipeSelect }
 
     private fun startTwoFingers(event: MotionEvent) {
         stopMotion()
@@ -293,6 +425,8 @@ class CanvasView(
         const val MILLIS_PER_SECOND = 1000
         const val NANOS_PER_SECOND = 1_000_000_000f
         const val MIN_FLING_SPEED = 400f
+        const val HOLD_MILLIS = 250L
+        const val SWIPE_STEP_DP = 48f
 
         const val DOUBLE_TAP_SECONDS = MotionTokens.STANDARD_MILLIS / 1000f
         val EASING = MotionTokens.StandardEasing

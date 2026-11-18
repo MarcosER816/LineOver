@@ -37,9 +37,12 @@ import dev.mark.lineover.core.designsystem.LoSpacing
 import dev.mark.lineover.core.designsystem.LoType
 import dev.mark.lineover.core.designsystem.component.LoChip
 import dev.mark.lineover.core.designsystem.component.LoIconButton
+import dev.mark.lineover.core.designsystem.component.LoPanelDetent
+import dev.mark.lineover.core.designsystem.component.LoPanelState
 import dev.mark.lineover.core.designsystem.component.LoSegmented
 import dev.mark.lineover.core.designsystem.component.LoSlider
 import dev.mark.lineover.core.designsystem.component.LoSliderFill
+import dev.mark.lineover.core.model.LightParam
 import dev.mark.lineover.core.model.ToolCategory
 import dev.mark.lineover.core.ui.tools.ToolRegistry
 import dev.mark.lineover.core.ui.tools.ToolSpec
@@ -51,11 +54,23 @@ internal fun ColumnScope.PanelContent(
     state: EditorState,
     wide: Boolean,
     onIntent: (EditorIntent) -> Unit,
+    panelState: LoPanelState? = null,
 ) {
     val close = { onIntent(EditorIntent.ClosePanel) }
     when (val panel = state.panel) {
         is EditorPanel.Tool -> {
-            ToolRegistry[panel.id]?.let { ToolPanel(it, close) }
+            if (LightParam.forTool(panel.id) != null) {
+                // Phone: the low detent shows the selected slider, the high one all of them.
+                LightPanel(
+                    state,
+                    onIntent,
+                    showAll = wide || panelState == null || panelState.detent == LoPanelDetent.Expanded,
+                    onShowAll = panelState?.let { { it.detent = LoPanelDetent.Expanded } },
+                    onClose = close,
+                )
+            } else {
+                ToolRegistry[panel.id]?.let { ToolPanel(it, close) }
+            }
         }
 
         EditorPanel.Layers -> {

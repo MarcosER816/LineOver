@@ -153,7 +153,7 @@ Native **C++17, OpenGL ES 3**, in `:core:engine-native`; Kotlin reaches it throu
 | Tiles | 512 × 512, mip level L = BitmapRegionDecoder inSampleSize 2^L, oriented natively (8 EXIF cases). Only the tiles in view, at the level matching the zoom, nearest the centre first |
 | CPU tile store | Float RGBA mirrors under a budget (LRU); evicted tiles spill to `cacheDir/engine/<id>` as zstd-compressed half floats and reload on demand |
 | GPU | Dedicated render thread with its own EGL context. RGBA16F textures (preview + tiles, GPU LRU under a budget); `SRGB8_ALPHA8` fallback when RGBA16F is not renderable (emulators) |
-| Ops | `lo::Op`: `gpu()` (GLSL body + uniforms, one shader pass each) and `cpuRef()` (plain C, float, NEON-free: the golden reference). Identity and ExposureTest so far |
+| Ops | `lo::Op`: `gpu()` (GLSL body + uniforms, one shader pass each) and `cpuRef()` (plain C, float, NEON-free: the golden reference); `cpuRefRegion()` for ops that read image-wide data (the tile's rect in normalised image coordinates + guided coefficients). Identity, ExposureTest and the Light ops (Stage 5) |
 | Display | Rec.2020 → Display P3 (EGL `display_p3_passthrough`, or `display_p3` with GL encoding) or sRGB; premultiplied blend over the surround. The editor window asks for `COLOR_MODE_WIDE_COLOR_GAMUT` on P3 displays |
 | Edit graph | Kotlin `EditGraphJson` → native `parseGraph` (same JSON, round-trip checked on both sides with `testdata/graph/edit_graph_v1.json`) |
 | Scheduling | `RenderScheduler`: latest graph wins (conflated), preview renders on every change on `Dispatchers.Default` + the render thread; full resolution (`EngineSession.renderFullResolution`, CPU path) only on export |
@@ -161,10 +161,33 @@ Native **C++17, OpenGL ES 3**, in `:core:engine-native`; Kotlin reaches it throu
 | Memory | Defaults: 192 MB CPU tiles + 192 MB GPU tiles. 50 MP stays far below 1.2 GB native + GPU (`EngineOpenTest` logs it, tag `LineOverMemory`) |
 | Deprecated APIs | None. RenderScript is forbidden (R8) |
 
+### Light tools (Stage 5)
+
+- Formulas live in `light.h` / `light.cpp`, `tools/golden/reference.py` and the GLSL bodies,
+  always changed together. All work on Rec.2020 luminance Y and scale RGB by Y′/Y (chroma
+  kept); nothing is clipped. Kotlin builds them in a **fixed order** from
+  `LightAdjustments` (`:core:model`): Highlights/Shadows → Exposure → Whites → Blacks →
+  Contrast → Brightness; a slider at 0 adds no op.
+- Highlights / Shadows: self-guided filter of L = log2 Y (radius 1.5 % of the long edge,
+  eps 0.01) computed **once per image on the preview** (`setPreview`, background thread);
+  coefficients (A, B) go to an RG32F texture. Every pass samples them bilinearly at its
+  pixel's image uv (`lo_guided()` in GLSL = `sampleGuided()` in C++), which is the fast
+  guided filter's upsampling: sharp tiles and export get the same edge-aware base.
+  Running first, its input is always the source the coefficients describe.
+- Histogram: GLES 3.1 compute shader on the edited preview, 256 bins × R, G, B (sRGB display
+  values) + L; dispatched at most every 33 ms while shown, read back after a fence (the
+  render thread never waits). GLES 3.0 contexts read the preview back asynchronously (pixel pack buffer) and bin it with `lo::histogramSrgb`, the shader's C++ reference.
+- Clipping, compare (original / split / side by side) are display-pass options; the
+  original is the source texture, no extra pass.
+- Preview update latency (setGraph → frame presented) is measured on the render thread:
+  `EngineStats.p95UpdateUs`, logcat every 30 updates, debug overlay More → Render stats.
+- Auto: 0.5 % / 99.5 % luminance percentiles of the preview → Exposure (high to 1.0), then
+  Blacks (low to 0.002).
+
 `core/engine-native/src/main/cpp`:
 
 ```
-include/lineover/   public C++ API (portable): color, ops, graph, tiling, tile_store
+include/lineover/   public C++ API (portable): color, ops, light, graph, tiling, tile_store
 src/                portable engine core                         -> lo_engine (static)
 third_party/zstd    zstd 1.5.7 sources (BSD), spilled tiles      -> lo_zstd (static)
 android/            render thread, EGL, GL pipeline, C API (lo_api.h), JNI -> liblineover_engine.so

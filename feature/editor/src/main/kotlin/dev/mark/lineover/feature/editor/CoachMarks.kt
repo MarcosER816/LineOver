@@ -49,7 +49,7 @@ private fun coachMarks(wide: Boolean) =
         CoachMark(
             LoIcons.Compare,
             "Hold to compare",
-            "Hold Compare at the top to see your original. Before / after arrives with the edit history in Stage 8.",
+            "Hold the photo to see your original. Compare at the top switches split and side by side.",
         ),
         CoachMark(
             LoIcons.Tune,

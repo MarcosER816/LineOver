@@ -20,7 +20,13 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.mark.lineover.core.engine.EngineSession
+import dev.mark.lineover.core.engine.Histogram
+import dev.mark.lineover.core.model.EditGraph
+import dev.mark.lineover.core.model.LightAdjustments
+import dev.mark.lineover.core.model.LightParam
 import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -130,6 +136,54 @@ class CanvasFrameTimingTest {
         }
     }
 
+    /**
+     * Stage 5: an Exposure drag (a graph every 8 ms, all seven Light ops on) and the engine's
+     * preview update latency, setGraph -> the new preview presented (target <= 16 ms on the
+     * phone; logged here for SwiftShader, correctness only), plus a GPU histogram.
+     */
+    @Test
+    fun lightEditsUpdateThePreviewAndLogTheLatency() {
+        val file = photo()
+        val session = requireNotNull(runBlocking { EngineSession.open(instrumentation.targetContext, Uri.fromFile(file)) })
+        try {
+            lateinit var view: CanvasView
+            compose.setContent { AndroidView(factory = { CanvasView(it).also { v -> view = v } }, modifier = Modifier.fillMaxSize()) }
+            compose.waitForIdle()
+            instrumentation.runOnMainSync { view.setRenderer(SessionRenderer(session)) }
+            waitFor { session.stats().frames > 0 }
+            session.setHistogramEnabled(true)
+            var light = LightAdjustments().with(LightParam.Highlights, -40f).with(LightParam.Shadows, 40f)
+            light = light.with(LightParam.Contrast, 20f).with(LightParam.Whites, 10f).with(LightParam.Blacks, -10f)
+            light = light.with(LightParam.Brightness, 15f)
+            for (i in 1..EDITS) {
+                val ev = Math.sin(i * Math.PI * 2 / EDITS).toFloat() * 2f
+                val graph = EditGraph().withBackgroundOps(light.with(LightParam.Exposure, ev).toOps())
+                assertNull(session.setGraph(graph))
+                Thread.sleep(STEP_MILLIS.toLong())
+            }
+            // SwiftShader takes ~0.4 s per frame of seven ops on a 3 MP preview: wait for the
+            // edited frames to be presented (and timed) rather than for a fixed time.
+            waitFor { session.stats().updates > 0 }
+            waitFor { session.histogram.value != null }
+            val stats = session.stats()
+            val histogram = requireNotNull(session.histogram.value)
+            val report =
+                (
+                    "light edits: $EDITS graphs, ${stats.updates} preview updates measured, last %.2f ms, " +
+                        "P95 preview update=%.2f ms (target 16 ms on the phone; SwiftShader: correctness only), " +
+                        "histogram L pixels=${histogram.total(Histogram.LUMA)}"
+                ).format(stats.lastUpdateUs / 1000.0, stats.p95UpdateUs / 1000.0)
+            Log.i(TAG, report)
+            instrumentation.sendStatus(0, Bundle().apply { putString("stream", "$TAG: $report\n") })
+            assertTrue("preview updates were measured: $report", stats.updates > 0)
+            val preview = session.preview.bitmap
+            assertEquals((preview.width * preview.height).toLong(), histogram.total(Histogram.LUMA))
+        } finally {
+            session.close()
+            file.delete()
+        }
+    }
+
     private fun pointerAction(action: Int) = action or (1 shl MotionEvent.ACTION_POINTER_INDEX_SHIFT)
 
     @Suppress("LongParameterList")
@@ -184,5 +238,6 @@ class CanvasFrameTimingTest {
         const val MIN_FRAMES = 10
         const val TIMEOUT_MILLIS = 20_000L
         const val POLL_MILLIS = 20L
+        const val EDITS = 120
     }
 }

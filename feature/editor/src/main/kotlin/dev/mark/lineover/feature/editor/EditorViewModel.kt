@@ -1,11 +1,14 @@
 package dev.mark.lineover.feature.editor
 
 import androidx.lifecycle.viewModelScope
+import dev.mark.lineover.core.engine.CompareMode
 import dev.mark.lineover.core.engine.RenderScheduler
 import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.CanvasSurround
 import dev.mark.lineover.core.io.project.ProjectLibrary
 import dev.mark.lineover.core.model.EditGraph
+import dev.mark.lineover.core.model.LightAdjustments
+import dev.mark.lineover.core.model.LightParam
 import dev.mark.lineover.core.model.Project
 import dev.mark.lineover.core.model.ToolCategory
 import dev.mark.lineover.core.ui.mvi.MviViewModel
@@ -14,6 +17,7 @@ import dev.mark.lineover.core.ui.tools.ToolRegistry
 import dev.mark.lineover.core.ui.tools.ToolSearch
 import dev.mark.lineover.core.ui.tools.ToolSpec
 import dev.mark.lineover.core.ui.tools.toolCategoryOf
+import dev.mark.lineover.feature.editor.canvas.CanvasGestureListener
 import dev.mark.lineover.feature.editor.canvas.EditorCanvas
 import dev.mark.lineover.feature.editor.canvas.EditorCanvasFactory
 import dev.mark.lineover.feature.editor.canvas.ImageSummary
@@ -61,8 +65,26 @@ data class EditorState(
     val previewUnavailable: Boolean = false,
     /** Sharp tiles have been loading for more than 300 ms: show the subtle spinner. */
     val showSpinner: Boolean = false,
-    /** The edit; identity until the first tools (Stage 5). */
+    /** The edit the engine renders (in memory until projects are saved, Stage 8). */
     val graph: EditGraph = EditGraph(),
+    /** The Light sliders (Stage 5); the background layer's ops are built from them. */
+    val light: LightAdjustments = LightAdjustments(),
+    /** The Light parameter the collapsed panel and swipe mode adjust. */
+    val lightParam: LightParam = LightParam.Exposure,
+    /** Swipe mode: on the canvas, vertical swipes pick [lightParam], horizontal ones change it. */
+    val swipeMode: Boolean = false,
+    /** A swipe-mode gesture is in progress: the HUD shows the parameter and its value. */
+    val swiping: Boolean = false,
+    /** A second finger is down on a slider: clipping shown while it stays. */
+    val clippingPreview: Boolean = false,
+    /** Holding the canvas shows the original with a "Before" label. */
+    val showingOriginal: Boolean = false,
+    val compare: CompareMode = CompareMode.Off,
+    /** Split mode: where the original ends, as a fraction of the canvas width. */
+    val split: Float = DEFAULT_SPLIT,
+    /** Debug builds only: the render-stats overlay (More → Render stats). */
+    val debuggable: Boolean = false,
+    val renderStats: Boolean = false,
     val category: ToolCategory = DEFAULT_CATEGORY,
     val panel: EditorPanel? = null,
     val historyTab: HistoryTab = HistoryTab.History,
@@ -78,6 +100,11 @@ data class EditorState(
 ) {
     val selectedToolId: String? get() = (panel as? EditorPanel.Tool)?.id
 
+    /** Clipping warnings are drawn: the overlay is on, or a slider's second finger is down. */
+    val clippingShown: Boolean get() = CLIPPING_TOOL in overlays || clippingPreview
+
+    val histogramShown: Boolean get() = HISTOGRAM_TOOL in overlays
+
     /** The tools in the strip of the selected category. */
     val strip: List<ToolSpec>
         get() =
@@ -92,6 +119,10 @@ data class EditorState(
     companion object {
         val DEFAULT_CATEGORY = ToolCategory.Light
         const val COACH_STEPS = 3
+        const val DEFAULT_SPLIT = 0.5f
+        const val HISTOGRAM_TOOL = "light.histogram"
+        const val CLIPPING_TOOL = "light.clipping_warnings"
+        const val COMPARE_TOOL = "history.before_after"
     }
 }
 
@@ -141,6 +172,46 @@ sealed interface EditorIntent {
 
     /** More → Help: shows the coach marks again. */
     data object ShowHelp : EditorIntent
+
+    data class SetLight(
+        val param: LightParam,
+        val value: Float,
+    ) : EditorIntent
+
+    /** Light → Auto: a percentile stretch of the preview (Exposure and Blacks). */
+    data object AutoLight : EditorIntent
+
+    data class ClippingPreview(
+        val active: Boolean,
+    ) : EditorIntent
+
+    /** Compare button: off → split → side by side → off. */
+    data object CycleCompare : EditorIntent
+
+    data class SetSplit(
+        val fraction: Float,
+    ) : EditorIntent
+
+    data object ToggleSwipeMode : EditorIntent
+
+    data object ToggleRenderStats : EditorIntent
+
+    /** Canvas gestures (from CanvasView, see [EditorViewModel.gestures]). */
+    data class HoldOriginal(
+        val holding: Boolean,
+    ) : EditorIntent
+
+    data class SwipeSelect(
+        val steps: Int,
+    ) : EditorIntent
+
+    data class SwipeAdjust(
+        val fraction: Float,
+    ) : EditorIntent
+
+    data class SwipeActive(
+        val active: Boolean,
+    ) : EditorIntent
 }
 
 sealed interface EditorEffect {
@@ -151,7 +222,8 @@ sealed interface EditorEffect {
 
 /**
  * The editor of one project. Stage 3 is the shell: every tool has its slot and opens a
- * placeholder; the engine (Stage 4) brings the edits.
+ * placeholder; the engine (Stage 4) renders the edit, the Light tools (Stage 5) are the
+ * first that change it.
  */
 class EditorViewModel(
     projectId: Long,
@@ -159,8 +231,10 @@ class EditorViewModel(
     private val preferences: AppPreferences,
     private val canvases: EditorCanvasFactory,
     private val renderDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    debuggable: Boolean = false,
 ) : MviViewModel<EditorState, EditorIntent, EditorEffect>(
         EditorState(
+            debuggable = debuggable,
             category = toolCategoryOf(preferences.lastCategory.value) ?: EditorState.DEFAULT_CATEGORY,
             favorites = preferences.favorites.value,
             coachStep = if (preferences.coachMarksSeen.value) null else 0,
@@ -190,6 +264,7 @@ class EditorViewModel(
         val renderScheduler = RenderScheduler({ graph -> canvas.setGraph(graph) }, viewModelScope, renderDispatcher)
         scheduler = renderScheduler
         renderScheduler.submit(state.value.graph)
+        syncCanvas(null, state.value)
         canvas.loading.collectLatest { loading ->
             if (loading) {
                 delay(SPINNER_DELAY_MILLIS)
@@ -214,12 +289,141 @@ class EditorViewModel(
             is EditorIntent.ClosePanel -> setState { copy(panel = null) }
             is EditorIntent.SelectHistoryTab -> setState { copy(historyTab = intent.tab, panel = EditorPanel.History) }
             is EditorIntent.OpenMenu -> setState { copy(menu = intent.menu) }
-            is EditorIntent.ToggleOverlay -> setState { copy(overlays = overlays.toggle(intent.id), menu = null) }
+            is EditorIntent.ToggleOverlay -> reduce { copy(overlays = overlays.toggle(intent.id), menu = null) }
             is EditorIntent.ToggleFavorite -> toggleFavorite(intent.id)
             is EditorIntent.OpenSearch, is EditorIntent.CloseSearch, is EditorIntent.Query -> search(intent)
+            is EditorIntent.NextCoachMark, is EditorIntent.DismissCoachMarks, is EditorIntent.ShowHelp -> coach(intent)
+            else -> onEditIntent(intent)
+        }
+    }
+
+    /** The Light tools, compare and the canvas gestures (Stage 5). */
+    private fun onEditIntent(intent: EditorIntent) {
+        when (intent) {
+            is EditorIntent.SetLight -> {
+                reduce { withLight(light.with(intent.param, intent.value)) }
+            }
+
+            is EditorIntent.AutoLight -> {
+                autoLight()
+            }
+
+            is EditorIntent.ClippingPreview -> {
+                reduce { copy(clippingPreview = intent.active) }
+            }
+
+            is EditorIntent.CycleCompare -> {
+                reduce { copy(compare = compare.next(), menu = null) }
+            }
+
+            is EditorIntent.SetSplit -> {
+                reduce { copy(split = intent.fraction.coerceIn(0f, 1f)) }
+            }
+
+            is EditorIntent.ToggleSwipeMode -> {
+                setState { copy(swipeMode = !swipeMode) }
+            }
+
+            is EditorIntent.ToggleRenderStats -> {
+                setState { copy(renderStats = debuggable && !renderStats, menu = null) }
+            }
+
+            else -> {
+                onGestureIntent(intent)
+            }
+        }
+    }
+
+    private fun onGestureIntent(intent: EditorIntent) {
+        when (intent) {
+            is EditorIntent.HoldOriginal -> {
+                setState { copy(showingOriginal = intent.holding) }
+            }
+
+            is EditorIntent.SwipeActive -> {
+                setState { copy(swiping = intent.active && swipeMode) }
+            }
+
+            is EditorIntent.SwipeSelect -> {
+                swipeSelect(intent.steps)
+            }
+
+            is EditorIntent.SwipeAdjust -> {
+                reduce {
+                    val param = lightParam
+                    withLight(light.with(param, light[param] + intent.fraction * (param.max - param.min)))
+                }
+            }
+
+            else -> {
+                Unit
+            }
+        }
+    }
+
+    /** What CanvasView reports, as intents. */
+    val gestures: CanvasGestureListener =
+        object : CanvasGestureListener {
+            override fun onHoldChanged(holding: Boolean) = onIntent(EditorIntent.HoldOriginal(holding))
+
+            override fun onSwipeSelect(steps: Int) = onIntent(EditorIntent.SwipeSelect(steps))
+
+            override fun onSwipeAdjust(fraction: Float) = onIntent(EditorIntent.SwipeAdjust(fraction))
+
+            override fun onSwipeActive(active: Boolean) = onIntent(EditorIntent.SwipeActive(active))
+        }
+
+    private fun EditorState.withLight(next: LightAdjustments): EditorState =
+        copy(light = next, graph = graph.withBackgroundOps(next.toOps()))
+
+    private fun autoLight() {
+        val result = state.value.canvas?.autoLight()
+        if (result == null) {
+            sendEffect(EditorEffect.Message("Auto needs the photo to finish loading"))
+            return
+        }
+        val (exposure, blacks) = result
+        reduce { withLight(light.with(LightParam.Exposure, exposure).with(LightParam.Blacks, blacks)) }
+    }
+
+    private fun swipeSelect(steps: Int) {
+        val params = LightParam.entries
+        val next = params[(state.value.lightParam.ordinal + steps).mod(params.size)]
+        setState {
+            // The open Light panel follows the parameter being swiped.
+            val lightPanel = (panel as? EditorPanel.Tool)?.let { LightParam.forTool(it.id) } != null
+            copy(lightParam = next, panel = if (lightPanel) EditorPanel.Tool(next.toolId) else panel)
+        }
+    }
+
+    /** setState, then hands what changed to the engine. */
+    private fun reduce(block: EditorState.() -> EditorState) {
+        val before = state.value
+        setState(block)
+        syncCanvas(before, state.value)
+    }
+
+    private fun syncCanvas(
+        before: EditorState?,
+        after: EditorState,
+    ) {
+        val canvas = after.canvas ?: return
+        if (before == null || before.graph != after.graph) scheduler?.submit(after.graph)
+        if (before == null || before.clippingShown != after.clippingShown) canvas.setClipping(after.clippingShown)
+        if (before == null || before.compare != after.compare || before.split != after.split) {
+            canvas.setCompare(after.compare, after.split)
+        }
+        if (before == null || before.histogramShown != after.histogramShown) canvas.setHistogramEnabled(after.histogramShown)
+    }
+
+    private fun CompareMode.next(): CompareMode = CompareMode.entries[(ordinal + 1) % CompareMode.entries.size]
+
+    private fun coach(intent: EditorIntent) {
+        when (intent) {
             is EditorIntent.NextCoachMark -> nextCoachMark()
             is EditorIntent.DismissCoachMarks -> dismissCoachMarks()
             is EditorIntent.ShowHelp -> setState { copy(coachStep = 0, menu = null) }
+            else -> Unit
         }
     }
 
@@ -243,6 +447,7 @@ class EditorViewModel(
 
     private fun selectTool(id: String) {
         val tool = ToolRegistry[id] ?: return
+        LightParam.forTool(id)?.let { param -> setState { copy(lightParam = param) } }
         val category = tool.category?.takeIf { tool.place == ToolPlace.Strip }
         if (category != null && state.value.category != ToolCategory.Favorites) preferences.setLastCategory(category.id)
         setState {

@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "gpu_pipeline.h"
+#include "lineover/light.h"
 #include "lineover/color.h"
 #include "lineover/ops.h"
 #include "lineover/tile_store.h"
@@ -54,7 +55,15 @@ struct EngineStats {
     int level = -1;  // level of the sharp tiles in view, -1 = preview only
     std::uint32_t p95FrameIntervalUs = 0;  // over the last frames drawn to the window
     std::uint32_t p95DrawUs = 0;
+    // Preview update latency: setGraph() -> the frame showing the new preview presented.
+    std::uint32_t p95UpdateUs = 0;
+    std::uint32_t lastUpdateUs = 0;
+    std::uint64_t updates = 0;
+    bool histogram = false;  // GLES 3.1 compute (else float readback + CPU binning)
 };
+
+// How the canvas compares the edit with the original.
+enum class CompareMode : int { Off = 0, Split = 1, SideBySide = 2 };
 
 class Engine {
 public:
@@ -68,8 +77,12 @@ public:
     // Image ----------------------------------------------------------------------
     // A new image of width x height (oriented, original pixels). Drops all tiles.
     void openImage(int width, int height);
-    // The preview proxy (long edge <= 2048), already converted to working space.
+    // The preview proxy (long edge <= 2048), already converted to working space. Also
+    // computes, on the calling thread, what the Light tools need from the whole image:
+    // the guided-filter coefficients and the luminance percentiles for Auto.
     void setPreview(std::vector<float> working, int width, int height);
+    // Auto (percentile stretch) of the preview; false before a preview was set.
+    bool autoLight(float* exposure, float* blacks);
     // A decoded tile of `key` (working space).
     void submitTile(const TileKey& key, std::shared_ptr<const Tile> tile);
     // The tile of `key` cannot be decoded: it is not requested again for this image.
@@ -85,6 +98,16 @@ public:
     void setViewport(int width, int height);
     void setTransform(const Affine& imageToView);
     void setSurround(float r, float g, float b);  // sRGB-encoded 0..1
+    // Hold to compare: draws the original (no ops) while true.
+    void setShowOriginal(bool original);
+    // Split: original left of `split` (fraction of the view width); side by side: original
+    // in the left half, edit in the right, both views centred like the full view.
+    void setCompare(CompareMode mode, float split);
+    void setClipping(bool clipping);
+    // The histogram of the edited preview (channel-major R, G, B, L x 256 bins), at most
+    // 30 times a second while enabled, on the render thread.
+    void setHistogramListener(std::function<void(const std::uint32_t*)> listener);
+    void setHistogramEnabled(bool enabled);
 
     EngineStats stats();
     void setLoadingListener(std::function<void(bool)> listener);
@@ -98,6 +121,10 @@ public:
     // sRGB display transform into `out` (RGBA8). Same shaders as the canvas.
     bool gpuSelfTest(const float* in, int width, int height, const std::string& graph, std::uint8_t* out,
                      std::string* error);
+
+    // Test hook: the histogram compute pass over `in` (w x h working RGBA, uploaded as
+    // RGBA16F like the preview) into `out` (GpuPipeline::kHistogramSize counts).
+    bool gpuHistogramSelfTest(const float* in, int width, int height, std::uint32_t* out, std::string* error);
 
 private:
     struct GpuTile {
@@ -114,7 +141,12 @@ private:
     bool runSync(std::function<bool()> task);
     void requestRedraw();
     void frame();
-    bool ensureResult(GLuint source, GLuint* result, int width, int height, std::uint64_t* version);
+    bool ensureResult(GLuint source, GLuint* result, int width, int height, std::uint64_t* version, const float rect[4]);
+    void tileRectNormalised(const TileKey& key, float rect[4]) const;
+    void serviceHistogram();
+    bool histogramAvailable() const;
+    void drawScene(bool original, const float ndc[9], int imageW, int imageH, int level, const std::vector<TileKey>& drawable,
+                   bool clipping);
     void evictGpu(const std::unordered_set<TileKey, TileKeyHash>& keep);
     void dropGpuTiles();
     void imageToNdc(float out[9]) const;
@@ -149,6 +181,17 @@ private:
     Affine transform_;
     float surround_[3] = {0.0706f, 0.0706f, 0.0706f};
     std::vector<float> pendingPreview_;
+    std::shared_ptr<const GuidedCoefficients> guided_;  // of the current preview
+    bool guidedChanged_ = false;
+    bool havePercentiles_ = false;
+    float lowPercentile_ = 0.f, highPercentile_ = 0.f;
+    bool showOriginal_ = false;
+    CompareMode compareMode_ = CompareMode::Off;
+    float split_ = 0.5f;
+    bool clipping_ = false;
+    std::function<void(const std::uint32_t*)> histogramListener_;
+    // When each recent graph version arrived (setGraph), for the preview update latency.
+    std::deque<std::pair<std::uint64_t, std::chrono::steady_clock::time_point>> graphTimes_;
     int pendingPreviewW_ = 0, pendingPreviewH_ = 0;
     bool previewChanged_ = false;
     std::shared_ptr<const OpList> ops_ = std::make_shared<OpList>();
@@ -166,6 +209,13 @@ private:
     GLuint previewSource_ = 0, previewResult_ = 0;
     int previewW_ = 0, previewH_ = 0;
     std::uint64_t previewVersion_ = 0;
+    GLuint guidedTexture_ = 0;
+    int guidedW_ = 1, guidedH_ = 1;
+    // Histogram (render thread)
+    std::atomic<bool> histogramDirty_{false};
+    GLsync histogramFence_ = nullptr;
+    std::chrono::steady_clock::time_point lastHistogram_{};
+    std::uint64_t measuredVersion_ = 1;  // version 1 = the empty graph of a new engine
     std::uint64_t gpuGeneration_ = 0;
     std::unordered_map<TileKey, GpuTile, TileKeyHash> gpuTiles_;
     std::list<TileKey> gpuLru_;
@@ -181,6 +231,8 @@ private:
     std::atomic<bool> halfFloatSnapshot_{true};
     std::atomic<bool> displayP3Snapshot_{false};
     std::atomic<bool> loading_{false};
+    std::atomic<bool> histogramEnabled_{false};
+    std::atomic<bool> computeSnapshot_{false};
     std::function<void(bool)> loadingListener_;
 
     // Frame timing ring (render thread writes, stats() reads under timingMutex_)
@@ -188,6 +240,10 @@ private:
     std::mutex timingMutex_;
     std::vector<std::uint32_t> intervalsUs_;
     std::vector<std::uint32_t> drawsUs_;
+    std::vector<std::uint32_t> updatesUs_;
+    std::size_t updateNext_ = 0;
+    std::uint64_t updateCount_ = 0;
+    std::uint32_t lastUpdateUs_ = 0;
     std::size_t timingNext_ = 0;
     std::chrono::steady_clock::time_point lastFrameStart_{};
 };

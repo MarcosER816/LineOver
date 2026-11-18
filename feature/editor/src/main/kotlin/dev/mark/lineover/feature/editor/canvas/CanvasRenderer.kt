@@ -34,4 +34,7 @@ interface CanvasRenderer {
 
     /** Surround colour (ARGB, sRGB). */
     fun setSurround(argb: Int)
+
+    /** Hold to compare: draw the original while true (from the canvas gesture). */
+    fun setShowOriginal(original: Boolean) = Unit
 }

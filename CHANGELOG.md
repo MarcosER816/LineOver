@@ -2,6 +2,30 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 5 — Light (0.5.0)
+
+### Added
+
+- The first real tools, in Light: Exposure (±5 EV), Contrast, Highlights, Shadows, Whites,
+  Blacks and Brightness. Everything happens in 16-bit floating point and never clips your
+  HDR highlights; the original file is never changed.
+- Highlights and Shadows use an edge-aware base, so skies recover and shadows lift without
+  dark or bright rims around edges.
+- Light panel: the selected slider at the low height, all seven when you swipe the panel up
+  (or tap "All sliders"); double tap a slider to reset it; Auto for a quick stretch.
+- Swipe mode (the hand icon in the Light panel): on the photo, swipe up / down to pick the
+  slider and left / right to change it, with its value shown in the middle.
+- Histogram (More → Histogram): live R, G, B and luminance of your edit.
+- Clipping warnings: More → Clipping warnings, or put a second finger down while dragging a
+  slider. Blown highlights show pink-red, crushed shadows blue.
+- Before / after: hold the photo to see the original ("Before"); the Compare button at the
+  top switches between a draggable split and side by side.
+
+### Notes
+
+- Edits live while the editor is open; saving them in the project arrives with History and
+  projects (Stage 8).
+
 ## Stage 4 — Image engine (0.4.0)
 
 ### Added
