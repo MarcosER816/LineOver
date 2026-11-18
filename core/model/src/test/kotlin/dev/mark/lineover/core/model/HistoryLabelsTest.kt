@@ -42,4 +42,18 @@ class HistoryLabelsTest {
         assertEquals("exposure.ev", a)
         assertEquals("contrast.amount", c)
     }
+
+    @Test
+    fun geometryStepsAreNamedByTheirControl() {
+        fun op(g: GeometryAdjustments) = g.toOp(4000, 3000)!!
+        assertEquals("Straighten +2.5", label(graph(), graph(op(GeometryAdjustments(straighten = 2.5f)))))
+        assertEquals("Rotate 90°", label(graph(), graph(op(GeometryAdjustments(quarterTurns = 1)))))
+        assertEquals("Crop", label(graph(), graph(op(GeometryAdjustments(cropLeft = 0.1f, cropTop = 0.2f)))))
+        assertEquals("Upright Auto", label(graph(), graph(op(GeometryAdjustments(upright = UprightMode.Auto, uprightPitch = 4f)))))
+        assertEquals("Straighten 0", label(graph(op(GeometryAdjustments(straighten = 2.5f))), graph()))
+        // A straighten drag keeps one key although the composed matrix and size change every frame.
+        val a = HistoryLabels.describe(graph(), graph(op(GeometryAdjustments(straighten = 1f)))).key
+        val b = HistoryLabels.describe(graph(), graph(op(GeometryAdjustments(straighten = 12f)))).key
+        assertEquals(a, b)
+    }
 }

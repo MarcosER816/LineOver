@@ -3,6 +3,7 @@ package dev.mark.lineover.feature.editor
 import dev.mark.lineover.core.model.ColorAdjustments
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.EditHistory
+import dev.mark.lineover.core.model.GeometryAdjustments
 import dev.mark.lineover.core.model.GradeAdjustments
 import dev.mark.lineover.core.model.HistoryLabels
 import dev.mark.lineover.core.model.LightAdjustments
@@ -24,6 +25,7 @@ internal fun EditorState.showingGraph(graph: EditGraph): EditorState {
         light = LightAdjustments.fromOps(ops),
         color = ColorAdjustments.fromOps(ops),
         grade = GradeAdjustments.fromOps(ops),
+        geometry = GeometryAdjustments.fromOps(ops),
         preview = null,
     )
 }

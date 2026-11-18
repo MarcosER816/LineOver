@@ -1280,3 +1280,154 @@ def block_mean(image: np.ndarray, block: int = PHOTO_BLOCK) -> np.ndarray:
     h, w, c = image.shape
     blocks = image.reshape(h // block, block, w // block, block, c).astype(np.float64)
     return blocks.mean(axis=(1, 3)).astype(np.float32)
+
+
+# ---------------------------------------------------------------------------------------
+# Stage 9: geometry (crop / straighten / upright / perspective crop) and optics.
+#
+# The geometry op carries one 3 x 3 matrix that maps OUTPUT normalised coordinates
+# (u, v) in 0..1 (pixel centre (i + 0.5) / width) to SOURCE pixel coordinates measured from
+# the image's top-left edge (pixel centres at x + 0.5), before lens distortion. Lens
+# distortion (Brown-Conrady k1, k2) and chromatic aberration (a radial scale per channel)
+# are then applied around the source centre, radius normalised by the half diagonal, and the
+# source is sampled once with OpenCV's bicubic (Keys, a = -0.75), border constant 0.
+# ---------------------------------------------------------------------------------------
+
+GEOMETRY_CUBIC = cv2.INTER_CUBIC
+
+
+def op_matrix_from_cv(m_cv: np.ndarray, out_w: int, out_h: int) -> np.ndarray:
+    """The op's matrix for OpenCV's inverse map m_cv (dst pixel centre -> src pixel centre)."""
+    to_centres = np.array([[out_w, 0.0, -0.5], [0.0, out_h, -0.5], [0.0, 0.0, 1.0]])
+    to_edges = np.array([[1.0, 0.0, 0.5], [0.0, 1.0, 0.5], [0.0, 0.0, 1.0]])
+    return to_edges @ m_cv @ to_centres
+
+
+def geometry_maps(src_w, src_h, matrix, out_w, out_h, k1=0.0, k2=0.0, channel_scale=1.0):
+    """Source sampling positions (OpenCV pixel-centre convention) of every output pixel."""
+    i, j = np.meshgrid(np.arange(out_w, dtype=np.float64), np.arange(out_h, dtype=np.float64))
+    u = (i + 0.5) / out_w
+    v = (j + 0.5) / out_h
+    m = np.asarray(matrix, dtype=np.float64).reshape(3, 3)
+    x = m[0, 0] * u + m[0, 1] * v + m[0, 2]
+    y = m[1, 0] * u + m[1, 1] * v + m[1, 2]
+    z = m[2, 0] * u + m[2, 1] * v + m[2, 2]
+    x, y = x / z, y / z
+    cx, cy = src_w / 2.0, src_h / 2.0
+    radius = 0.5 * np.hypot(src_w, src_h)
+    qx, qy = x - cx, y - cy
+    r2 = (qx * qx + qy * qy) / (radius * radius)
+    s = (1.0 + k1 * r2 + k2 * r2 * r2) * channel_scale
+    return (cx + qx * s - 0.5).astype(np.float32), (cy + qy * s - 0.5).astype(np.float32)
+
+
+def geometry_warp(image, matrix, out_w, out_h, k1=0.0, k2=0.0, ca_red=0.0, ca_blue=0.0):
+    """Reference of the geometry warp: one bicubic resample (cv2.remap), border 0."""
+    h, w = image.shape[:2]
+    out = np.zeros((out_h, out_w, 4), dtype=np.float32)
+    for c, scale in enumerate((1.0 + ca_red, 1.0, 1.0 + ca_blue, 1.0)):
+        mx, my = geometry_maps(w, h, matrix, out_w, out_h, k1, k2, scale)
+        out[..., c] = cv2.remap(
+            np.ascontiguousarray(image[..., c].astype(np.float32)),
+            mx,
+            my,
+            GEOMETRY_CUBIC,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0,
+        )
+    return out
+
+
+def vignetting(image, amount, midpoint=50.0):
+    """Lens vignetting correction (source space, before every other op): the corners are
+    brightened (amount > 0) or darkened by up to one stop: gain = 2^(amount/100 * f^2),
+    f = clamp((r - m) / (1 - m), 0, 1), r = distance from the centre / half diagonal,
+    m = midpoint / 100 * 0.8."""
+    out = image.astype(np.float64).copy()
+    h, w = image.shape[:2]
+    j, i = np.mgrid[0:h, 0:w]
+    qx = (i + 0.5) - w / 2.0
+    qy = (j + 0.5) - h / 2.0
+    r = np.hypot(qx, qy) / (0.5 * np.hypot(w, h))
+    m = midpoint / 100.0 * 0.8
+    f = np.clip((r - m) / (1.0 - m), 0.0, 1.0)
+    out[..., :3] *= (2.0 ** (amount / 100.0 * f * f))[..., None]
+    return out.astype(np.float32)
+
+
+def _rotation_about(cx, cy, degrees, scale=1.0):
+    a = np.radians(degrees)
+    c, s = np.cos(a) * scale, np.sin(a) * scale
+    return np.array([[c, -s, cx - c * cx + s * cy], [s, c, cy - s * cx - c * cy], [0.0, 0.0, 1.0]])
+
+
+def geometry_cases(pattern, scene, chart):
+    """(name, input name, input, op params) for the warp goldens; matrices from OpenCV."""
+    cases = []
+    # 1. Straighten: rotate 10 degrees about the centre, zoom 1.15 (the inverse map).
+    h, w = pattern.shape[:2]
+    m = _rotation_about((w - 1) / 2.0, (h - 1) / 2.0, 10.0, 1 / 1.15)
+    cases.append(("rotate", "pattern", pattern, w, h, op_matrix_from_cv(m, w, h), {}))
+    # 2. Perspective crop: a quad of the scene to a 120 x 80 rectangle (getPerspectiveTransform).
+    sh, sw = scene.shape[:2]
+    quad = np.float32([[10, 6], [118, 14], [124, 90], [4, 84]])
+    rect = np.float32([[0, 0], [119, 0], [119, 79], [0, 79]])
+    m = cv2.getPerspectiveTransform(rect, quad).astype(np.float64)
+    cases.append(("perspective", "scene", scene, 120, 80, op_matrix_from_cv(m, 120, 80), {}))
+    # 3. Flip horizontally, rotate 90 degrees and crop: 60 x 80 output of the scene.
+    m = np.array([[0.0, 1.0, 20.0], [-1.0, 0.0, 87.0], [0.0, 0.0, 1.0]]) @ np.array([[-1.0, 0.0, 59.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+    cases.append(("flip_rotate_crop", "scene", scene, 60, 80, op_matrix_from_cv(m, 60, 80), {}))
+    # 4. Lens distortion (barrel correction) with the identity matrix.
+    ident = op_matrix_from_cv(np.eye(3), sw, sh)
+    cases.append(("lens", "scene", scene, sw, sh, ident, {"k1": -0.18, "k2": 0.06}))
+    # 5. Chromatic aberration: red scaled out, blue scaled in, on the colour chart.
+    ch, cw = chart.shape[:2]
+    cases.append(("chromatic", "chart", chart, cw, ch, op_matrix_from_cv(np.eye(3), cw, ch), {"caRed": 0.012, "caBlue": -0.009}))
+    return cases
+
+
+def geometry_op(matrix, out_w, out_h, extra):
+    """The geometry op as the engine reads it (graph JSON fields)."""
+    return {
+        "op": "geometry",
+        "sourceWidth": 0.0,
+        "sourceHeight": 0.0,
+        "outputWidth": float(out_w),
+        "outputHeight": float(out_h),
+        "k1": float(extra.get("k1", 0.0)),
+        "k2": float(extra.get("k2", 0.0)),
+        "caRed": float(extra.get("caRed", 0.0)),
+        "caBlue": float(extra.get("caBlue", 0.0)),
+        "matrix": [float(x) for x in np.asarray(matrix).reshape(9)],
+    }
+
+
+def homography_fixtures(count: int = 24) -> list:
+    """Random quad pairs and OpenCV's getPerspectiveTransform for them."""
+    rng = np.random.default_rng(9)
+    out = []
+    for _ in range(count):
+        src = np.float32([[0, 0], [1, 0], [1, 1], [0, 1]]) * rng.uniform(50, 400, 2).astype(np.float32)
+        src += rng.uniform(-20, 20, (4, 2)).astype(np.float32)
+        dst = src + rng.uniform(-60, 60, (4, 2)).astype(np.float32)
+        m = cv2.getPerspectiveTransform(src, dst)
+        out.append({"src": [float(x) for x in src.reshape(8)], "dst": [float(x) for x in dst.reshape(8)], "matrix": [float(x) for x in m.reshape(9)]})
+    return out
+
+
+VIGNETTING_SETTINGS = [(50.0, 50.0), (-40.0, 20.0), (100.0, 80.0)]
+
+
+def geometry_self_check(pattern, scene, chart):
+    """The remap reference equals cv2.warpPerspective for pure homographies."""
+    for name, _, image, w, h, matrix, extra in geometry_cases(pattern, scene, chart):
+        if extra:
+            continue
+        to_centres = np.array([[w, 0.0, -0.5], [0.0, h, -0.5], [0.0, 0.0, 1.0]])
+        to_edges = np.array([[1.0, 0.0, 0.5], [0.0, 1.0, 0.5], [0.0, 0.0, 1.0]])
+        m_cv = np.linalg.inv(to_edges) @ matrix @ np.linalg.inv(to_centres)
+        warped = cv2.warpPerspective(image.astype(np.float32), m_cv, (w, h), flags=GEOMETRY_CUBIC | cv2.WARP_INVERSE_MAP,
+                                     borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+        mine = geometry_warp(image, matrix, w, h)
+        worst = float(np.max(np.abs(warped - mine)))
+        assert worst < 1e-4, f"{name}: remap vs warpPerspective {worst}"

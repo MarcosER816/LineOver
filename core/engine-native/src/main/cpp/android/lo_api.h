@@ -107,10 +107,33 @@ void lo_hsl_targeted_weights(const float* rgb, float* weights);
 int lo_engine_render_tile_cpu(lo_engine* engine, int level, int tx, int ty, float* out, size_t capacity, int* width,
                               int* height);
 
+/* Geometry (Stage 9). The edited image's size (the geometry's output, else the image). */
+void lo_engine_output_size(lo_engine* engine, int* width, int* height);
+/* Export: the level-0 source tiles output tile (tx, ty) still needs decoded, as (tx, ty)
+ * pairs into `out` (capacity `capacity` ints). Returns the number of tiles (may exceed
+ * capacity / 2: then only the first ones were written). */
+int lo_engine_output_tile_sources(lo_engine* engine, int tx, int ty, int* out, size_t capacity);
+/* Export: output tile (tx, ty) rendered on the CPU (ops, then one resample through the
+ * geometry). Returns the pixel count or 0 when a source tile is missing. */
+int lo_engine_render_output_tile(lo_engine* engine, int tx, int ty, float* out, size_t capacity, int* width, int* height);
+/* Line segments of the preview (x1, y1, x2, y2 normalised, width px) into `out`; returns
+ * the segment count (may exceed capacity / 5), -1 before a preview. */
+int lo_engine_line_segments(lo_engine* engine, float* out, size_t capacity);
+/* Tilt of the dominant near-horizontal line (degrees, clockwise positive); 0 when none. */
+int lo_engine_horizon(lo_engine* engine, float* degrees);
+/* Red / blue radial scale - 1 undoing lateral chromatic aberration; 0 when undetermined. */
+int lo_engine_chromatic_aberration(lo_engine* engine, float* ca_red, float* ca_blue);
+/* The geometry op of `graph_json` applied to an RGBA8 image (the gain map) of a photo of
+ * source_width x source_height: out_width x out_height RGBA8 into `out`. 1 on success; 0
+ * when the graph has no geometry or cannot be parsed. */
+int lo_warp_rgba8(const char* graph_json, int source_width, int source_height, const uint8_t* rgba, int width, int height,
+                  int out_width, int out_height, uint8_t* out);
+
 /* Test hook: graph on the GPU over `in` (width x height working RGBA float), sRGB display
- * transform into `out` (RGBA8, premultiplied). */
+ * transform into `out` (RGBA8, premultiplied, `capacity` bytes). With a geometry op the
+ * result is the geometry's output size. */
 int lo_engine_gpu_self_test(lo_engine* engine, const float* in, int width, int height, const char* graph, uint8_t* out,
-                            char* error, size_t error_len);
+                            size_t capacity, char* error, size_t error_len);
 
 /* Test hook: the histogram compute pass over `in` (width x height working RGBA float)
  * into `out` (LO_HISTOGRAM_SIZE counts). */

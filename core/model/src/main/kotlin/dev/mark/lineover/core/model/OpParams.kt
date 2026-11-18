@@ -285,4 +285,36 @@ sealed interface OpParams {
     ) : OpParams {
         override val isIdentity: Boolean get() = (hue + saturation).all { it == 0f }
     }
+
+    /**
+     * Crop, straighten, rotate / flip, Upright, the manual transform and perspective crop
+     * composed into ONE matrix (Stage 9, [GeometryMath]): output normalised (u, v) ->
+     * source pixel coordinates (edges at 0 and [sourceWidth]) before lens distortion; then
+     * Brown-Conrady [k1] / [k2] (r normalised by the half diagonal) and a radial scale per
+     * channel for chromatic aberration. The engine applies it with one bicubic resample;
+     * lens vignetting correction ([vignette], [vignetteMid]) runs first in source space.
+     * [settings] keeps the panel values (the native engine ignores the object).
+     */
+    @Serializable
+    @SerialName("geometry")
+    data class Geometry(
+        val sourceWidth: Int,
+        val sourceHeight: Int,
+        val outputWidth: Int,
+        val outputHeight: Int,
+        val k1: Double = 0.0,
+        val k2: Double = 0.0,
+        val caRed: Double = 0.0,
+        val caBlue: Double = 0.0,
+        val vignette: Float = 0f,
+        val vignetteMid: Float = 50f,
+        val settings: GeometryAdjustments = GeometryAdjustments(),
+        val matrix: List<Double>,
+    ) : OpParams {
+        override val isIdentity: Boolean
+            get() =
+                outputWidth == sourceWidth && outputHeight == sourceHeight && k1 == 0.0 && k2 == 0.0 &&
+                    caRed == 0.0 && caBlue == 0.0 && vignette == 0f &&
+                    matrix == listOf(sourceWidth.toDouble(), 0.0, 0.0, 0.0, sourceHeight.toDouble(), 0.0, 0.0, 0.0, 1.0)
+    }
 }

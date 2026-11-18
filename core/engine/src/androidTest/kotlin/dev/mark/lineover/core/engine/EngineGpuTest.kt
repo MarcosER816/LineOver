@@ -51,13 +51,66 @@ class EngineGpuTest {
 
     private fun gpu(
         graph: String,
-        inputPath: String = "input/pattern_rec2020_f32.npy",
+        inputPath: String = PATTERN,
+        outputWidth: Int? = null,
+        outputHeight: Int? = null,
     ): U8Image {
         val input = npy(inputPath)
-        val out = ByteArray(input.width * input.height * 4)
+        val width = outputWidth ?: input.width
+        val height = outputHeight ?: input.height
+        val out = ByteArray(width * height * 4)
         assertNull(engine.gpuSelfTest(input.data, input.width, input.height, graph, out))
         Log.i("LineOverEngineTest", "GPU path: halfFloat=${engine.stats().halfFloat}")
-        return U8Image(input.width, input.height, 4, out)
+        return U8Image(width, height, 4, out)
+    }
+
+    /**
+     * Stage 9: the geometry op through the canvas's own display pass (one bicubic resample of
+     * the f16 texture: matrix, lens, chromatic aberration) vs OpenCV warpPerspective / remap
+     * (tools/golden reference.geometry_warp), max 3/255.
+     */
+    private fun checkGeometry(
+        name: String,
+        input: String,
+    ) {
+        val expected = premultiplied8(npy("geometry/${name}_gpu_srgb_display_f32.npy"))
+        val graph =
+            testContext.assets
+                .open("geometry/$name.graph.json")
+                .bufferedReader()
+                .use { it.readText() }
+        val actual = gpu(graph, input, expected.width, expected.height)
+        GoldenAssert.assertMatches(actual, expected, "gpu_geometry_${name}_srgb8", Tolerance.GPU_VS_CPU, diffDir)
+    }
+
+    @Test
+    fun gpuRotationMatchesOpenCv() = checkGeometry("rotate", PATTERN)
+
+    @Test
+    fun gpuPerspectiveMatchesOpenCvWarpPerspective() = checkGeometry("perspective", SCENE)
+
+    @Test
+    fun gpuFlipRotateCropMatchesOpenCv() = checkGeometry("flip_rotate_crop", SCENE)
+
+    @Test
+    fun gpuLensDistortionMatchesOpenCvRemap() = checkGeometry("lens", SCENE)
+
+    @Test
+    fun gpuChromaticAberrationMatchesOpenCvRemap() = checkGeometry("chromatic", CHART)
+
+    /** Lens vignetting correction (first setting: +50, midpoint 50) in source space. */
+    @Test
+    fun gpuVignettingMatchesTheReference() {
+        val input = npy(SCENE)
+        val w = input.width.toDouble()
+        val h = input.height.toDouble()
+        val op =
+            """{"op":"geometry","sourceWidth":${input.width},"sourceHeight":${input.height},"outputWidth":${input.width},""" +
+                """"outputHeight":${input.height},"k1":0.0,"k2":0.0,"caRed":0.0,"caBlue":0.0,"vignette":50.0,"vignetteMid":50.0,""" +
+                """"matrix":[$w,0.0,0.0,0.0,$h,0.0,0.0,0.0,1.0]}"""
+        val graph = """{"schemaVersion":1,"layers":[{"id":"background","ops":[$op]}]}"""
+        val expected = premultiplied8(npy("geometry/vignetting_gpu_srgb_display_f32.npy"))
+        GoldenAssert.assertMatches(gpu(graph, SCENE), expected, "gpu_geometry_vignetting_srgb8", Tolerance.GPU_VS_CPU, diffDir)
     }
 
     @Test
@@ -252,6 +305,7 @@ class EngineGpuTest {
     }
 
     private companion object {
+        const val PATTERN = "input/pattern_rec2020_f32.npy"
         const val SCENE = "input/scene_rec2020_f32.npy"
         const val CHART = "input/colors_rec2020_f32.npy"
         const val IDENTITY = """{"schemaVersion":1,"layers":[{"id":"background","ops":[{"op":"identity"}]}]}"""

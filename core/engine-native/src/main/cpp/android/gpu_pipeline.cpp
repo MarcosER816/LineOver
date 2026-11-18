@@ -38,7 +38,7 @@ void main() {
 // shadows (linear < 0.5 / 255 / 12.92).
 // Gamut mapping (color::gamutMap, reference.gamut_map): out-of-gamut colours keep their
 // OKLab lightness (clamped) and hue; 16 bisection steps of chroma towards the grey L^3.
-constexpr const char* kDisplayFragment = "#version 300 es\nprecision highp float;\n" LO_GLSL_OKLAB R"(
+constexpr const char* kDisplayHead = "#version 300 es\nprecision highp float;\n" LO_GLSL_OKLAB R"(
 uniform sampler2D u_texture;
 uniform mat3 u_toDisplay;
 uniform int u_encode;
@@ -66,8 +66,83 @@ vec3 lo_gamut(vec3 w, vec3 raw) {
     }
     return clamp(u_toDisplay * lo_fromLab(mix(grey, lab, lo)), 0.0, 1.0);
 }
+)";
+
+// The plain source of the display pass: the texture as drawn.
+constexpr const char* kPlainSource = R"(
+vec4 lo_source() { return texture(u_texture, v_uv); }
+)";
+
+// Geometry (Stage 9, geometry.h): the drawn quad is a rect of the OUTPUT image; each
+// fragment maps back to the source (matrix, lens distortion, a radial scale per channel)
+// and samples the texture with OpenCV's bicubic (Keys a = -0.75, exact positions, border 0
+// for the whole image; clamped inside a tile, whose neighbours are other draws). A tile's
+// fragments outside its own source rect are discarded.
+constexpr const char* kGeometrySource = R"(
+uniform mat3 u_geom;      // output normalised -> source pixels (before lens)
+uniform vec2 u_outSize;   // output pixels
+uniform vec2 u_srcSize;   // source pixels
+uniform vec4 u_lens;      // k1, k2, caRed, caBlue
+uniform vec4 u_srcRect;   // the texture's rect in normalised source coordinates
+uniform vec4 u_drawRect;  // the drawn quad in output pixels
+uniform int u_clampTile;
+vec2 lo_map(vec2 uvOut, float channelScale) {
+    vec3 p = u_geom * vec3(uvOut, 1.0);
+    vec2 px = p.xy / p.z;
+    vec2 c = 0.5 * u_srcSize;
+    float radius = 0.5 * length(u_srcSize);
+    vec2 q = px - c;
+    float r2 = dot(q, q) / (radius * radius);
+    return c + q * ((1.0 + u_lens.x * r2 + u_lens.y * r2 * r2) * channelScale);
+}
+vec4 lo_cubic(float t) {
+    const float A = -0.75;
+    float w0 = ((A * (t + 1.0) - 5.0 * A) * (t + 1.0) + 8.0 * A) * (t + 1.0) - 4.0 * A;
+    float w1 = ((A + 2.0) * t - (A + 3.0)) * t * t + 1.0;
+    float w2 = ((A + 2.0) * (1.0 - t) - (A + 3.0)) * (1.0 - t) * (1.0 - t) + 1.0;
+    return vec4(w0, w1, w2, 1.0 - w0 - w1 - w2);
+}
+// One channel at source pixel position px (edges at 0 and size).
+float lo_tap(ivec2 p, ivec2 size, int ch) {
+    if (u_clampTile == 1) p = clamp(p, ivec2(0), size - 1);
+    else if (p.x < 0 || p.y < 0 || p.x >= size.x || p.y >= size.y) return 0.0;
+    vec4 t = texelFetch(u_texture, p, 0);
+    return ch == 0 ? t.r : ch == 1 ? t.g : ch == 2 ? t.b : t.a;
+}
+float lo_channel(vec2 px, int ch) {
+    ivec2 size = textureSize(u_texture, 0);
+    vec2 t = ((px / u_srcSize - u_srcRect.xy) / u_srcRect.zw) * vec2(size) - 0.5;
+    vec2 f = floor(t);
+    vec4 wx = lo_cubic(t.x - f.x);
+    vec4 wy = lo_cubic(t.y - f.y);
+    ivec2 i = ivec2(f) - 1;
+    float sum = 0.0;
+    for (int y = 0; y < 4; ++y) {
+        float row = wx.x * lo_tap(i + ivec2(0, y), size, ch) + wx.y * lo_tap(i + ivec2(1, y), size, ch) +
+                    wx.z * lo_tap(i + ivec2(2, y), size, ch) + wx.w * lo_tap(i + ivec2(3, y), size, ch);
+        sum += (y == 0 ? wy.x : y == 1 ? wy.y : y == 2 ? wy.z : wy.w) * row;
+    }
+    return sum;
+}
+vec4 lo_source() {
+    vec2 uvOut = (u_drawRect.xy + v_uv * u_drawRect.zw) / u_outSize;
+    vec2 g = lo_map(uvOut, 1.0);
+    vec2 s = g / u_srcSize;
+    // The whole image: taps outside it read 0 (OpenCV's BORDER_CONSTANT), so the edge
+    // fades exactly like the reference and wedges stay transparent. A tile draws only its
+    // own rect (its neighbours are other draws).
+    if (u_clampTile == 1 && (s.x < u_srcRect.x || s.y < u_srcRect.y || s.x >= u_srcRect.x + u_srcRect.z || s.y >= u_srcRect.y + u_srcRect.w)) discard;
+    vec4 c = vec4(0.0, lo_channel(g, 1), 0.0, lo_channel(g, 3));
+    bool ca = u_lens.z != 0.0 || u_lens.w != 0.0;
+    c.r = lo_channel(ca ? lo_map(uvOut, 1.0 + u_lens.z) : g, 0);
+    c.b = lo_channel(ca ? lo_map(uvOut, 1.0 + u_lens.w) : g, 2);
+    return c;
+}
+)";
+
+constexpr const char* kDisplayMain = R"(
 void main() {
-    vec4 c = texture(u_texture, v_uv);
+    vec4 c = lo_source();
     vec3 raw = u_toDisplay * c.rgb;
     vec3 d = lo_gamut(c.rgb, raw);
     if (u_clip == 1) {
@@ -79,6 +154,11 @@ void main() {
     float a = clamp(c.a, 0.0, 1.0);
     o_color = vec4(d * a, a);
 }
+)";
+
+// The geometry warp into a working-space texture (histogram of the output, self test).
+constexpr const char* kWarpMain = R"(
+void main() { o_color = lo_source(); }
 )";
 
 // 256-bin histograms of the sRGB display values and of luminance (reference:
@@ -172,15 +252,12 @@ bool GpuPipeline::init(std::string* error) {
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
     glGenFramebuffers(1, &fbo_);
-    displayProgram_ = linkProgram(kDisplayVertex, kDisplayFragment, error);
+    displayProgram_ = linkProgram(kDisplayVertex, (std::string(kDisplayHead) + kPlainSource + kDisplayMain).c_str(), error);
     if (displayProgram_ == 0) return false;
-    displayTex_ = glGetUniformLocation(displayProgram_, "u_texture");
-    displayMatrix_ = glGetUniformLocation(displayProgram_, "u_matrix");
-    displayToDisplay_ = glGetUniformLocation(displayProgram_, "u_toDisplay");
-    displayEncode_ = glGetUniformLocation(displayProgram_, "u_encode");
-    displayClip_ = glGetUniformLocation(displayProgram_, "u_clip");
-    displayClipHi_ = glGetUniformLocation(displayProgram_, "u_clipHi");
-    displayClipLo_ = glGetUniformLocation(displayProgram_, "u_clipLo");
+    displayGeomProgram_ = linkProgram(kDisplayVertex, (std::string(kDisplayHead) + kGeometrySource + kDisplayMain).c_str(), error);
+    if (displayGeomProgram_ == 0) return false;
+    warpProgram_ = linkProgram(kDisplayVertex, (std::string(kDisplayHead) + kGeometrySource + kWarpMain).c_str(), error);
+    if (warpProgram_ == 0) return false;
     GLint major = 0, minor = 0;
     glGetIntegerv(GL_MAJOR_VERSION, &major);
     glGetIntegerv(GL_MINOR_VERSION, &minor);
@@ -207,6 +284,9 @@ void GpuPipeline::release() {
     for (auto& [size, texture] : scratch_) glDeleteTextures(1, &texture);
     scratch_.clear();
     if (displayProgram_ != 0) glDeleteProgram(displayProgram_);
+    if (displayGeomProgram_ != 0) glDeleteProgram(displayGeomProgram_);
+    if (warpProgram_ != 0) glDeleteProgram(warpProgram_);
+    displayGeomProgram_ = warpProgram_ = 0;
     if (histogramProgram_ != 0) glDeleteProgram(histogramProgram_);
     if (histogramBuffer_ != 0) glDeleteBuffers(1, &histogramBuffer_);
     histogramProgram_ = histogramBuffer_ = 0;
@@ -325,36 +405,82 @@ bool GpuPipeline::runOps(const OpList& ops, GLuint source, GLuint target, int wi
     return true;
 }
 
-void GpuPipeline::drawImage(GLuint texture, const float rect[4], const float imageToNdc[9], color::Display display,
-                            bool encode, const DisplayOptions& options) {
-    // matrix = imageToNdc * (unit quad -> rect in image pixels)
+namespace {
+
+// matrix = imageToNdc * (unit quad -> rect in image pixels)
+void quadMatrix(const float rect[4], const float imageToNdc[9], float m[9]) {
     const float tile[9] = {rect[2], 0.f, rect[0], 0.f, rect[3], rect[1], 0.f, 0.f, 1.f};
-    float m[9];
     for (int r = 0; r < 3; ++r)
         for (int c = 0; c < 3; ++c) {
             m[3 * r + c] = 0.f;
             for (int k = 0; k < 3; ++k) m[3 * r + c] += imageToNdc[3 * r + k] * tile[3 * k + c];
         }
+}
+
+void setGeometryUniforms(GLuint program, const GeometryDraw& g) {
+    glUniformMatrix3fv(glGetUniformLocation(program, "u_geom"), 1, GL_TRUE, g.matrix);
+    glUniform2fv(glGetUniformLocation(program, "u_outSize"), 1, g.outSize);
+    glUniform2fv(glGetUniformLocation(program, "u_srcSize"), 1, g.srcSize);
+    glUniform4fv(glGetUniformLocation(program, "u_lens"), 1, g.lens);
+    glUniform4fv(glGetUniformLocation(program, "u_srcRect"), 1, g.srcRect);
+    glUniform4fv(glGetUniformLocation(program, "u_drawRect"), 1, g.drawRect);
+    glUniform1i(glGetUniformLocation(program, "u_clampTile"), g.clampTile ? 1 : 0);
+}
+
+}  // namespace
+
+void GpuPipeline::drawImage(GLuint texture, const float rect[4], const float imageToNdc[9], color::Display display,
+                            bool encode, const DisplayOptions& options, const GeometryDraw* geometry) {
+    float m[9];
+    quadMatrix(rect, imageToNdc, m);
     const color::Mat3& toDisplay = display == color::Display::DisplayP3 ? color::kRec2020ToP3 : color::kRec2020ToSrgb;
-    glUseProgram(displayProgram_);
+    const GLuint program = geometry != nullptr ? displayGeomProgram_ : displayProgram_;
+    glUseProgram(program);
     glBindVertexArray(vao_);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture);
-    glUniform1i(displayTex_, 0);
-    glUniformMatrix3fv(displayMatrix_, 1, GL_TRUE, m);
-    glUniformMatrix3fv(displayToDisplay_, 1, GL_TRUE, toDisplay.m);
-    glUniform1i(displayEncode_, encode ? 1 : 0);
-    glUniform1i(displayClip_, options.clipping ? 1 : 0);
+    glUniform1i(glGetUniformLocation(program, "u_texture"), 0);
+    glUniformMatrix3fv(glGetUniformLocation(program, "u_matrix"), 1, GL_TRUE, m);
+    glUniformMatrix3fv(glGetUniformLocation(program, "u_toDisplay"), 1, GL_TRUE, toDisplay.m);
+    glUniform1i(glGetUniformLocation(program, "u_encode"), encode ? 1 : 0);
+    glUniform1i(glGetUniformLocation(program, "u_clip"), options.clipping ? 1 : 0);
     if (options.clipping) {
         float hi[3], lo[3];
         clipColor(0xFF2D55u, toDisplay, hi);
         clipColor(0x2D7BFFu, toDisplay, lo);
-        glUniform3fv(displayClipHi_, 1, hi);
-        glUniform3fv(displayClipLo_, 1, lo);
+        glUniform3fv(glGetUniformLocation(program, "u_clipHi"), 1, hi);
+        glUniform3fv(glGetUniformLocation(program, "u_clipLo"), 1, lo);
     }
+    if (geometry != nullptr) setGeometryUniforms(program, *geometry);
     glEnable(GL_BLEND);
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+}
+
+bool GpuPipeline::warp(GLuint texture, const GeometryDraw& geometry, GLuint target, int width, int height, std::string* error) {
+    glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, target, 0);
+    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
+        if (error != nullptr) *error = "warp target is not renderable";
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        return false;
+    }
+    glViewport(0, 0, width, height);
+    glDisable(GL_BLEND);
+    glClearColor(0.f, 0.f, 0.f, 0.f);
+    glClear(GL_COLOR_BUFFER_BIT);
+    // The whole target is the output: the unit quad straight to NDC.
+    const float toNdc[9] = {2.f, 0.f, -1.f, 0.f, 2.f, -1.f, 0.f, 0.f, 1.f};
+    glUseProgram(warpProgram_);
+    glBindVertexArray(vao_);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glUniform1i(glGetUniformLocation(warpProgram_, "u_texture"), 0);
+    glUniformMatrix3fv(glGetUniformLocation(warpProgram_, "u_matrix"), 1, GL_TRUE, toNdc);
+    setGeometryUniforms(warpProgram_, geometry);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    return true;
 }
 
 GLuint GpuPipeline::lutTexture(const float* rgba, int width, int height) {

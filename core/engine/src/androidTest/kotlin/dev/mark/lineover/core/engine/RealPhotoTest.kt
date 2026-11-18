@@ -11,7 +11,12 @@ import dev.mark.lineover.core.engine.testing.NpyIo
 import dev.mark.lineover.core.engine.testing.Tolerance
 import dev.mark.lineover.core.engine.testing.U8Image
 import dev.mark.lineover.core.io.source.SourceFormat
+import dev.mark.lineover.core.model.CropAspect
+import dev.mark.lineover.core.model.CropMath
+import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.EditGraphJson
+import dev.mark.lineover.core.model.GeometryAdjustments
+import dev.mark.lineover.core.model.GeometryMath
 import kotlinx.coroutines.runBlocking
 import org.junit.AfterClass
 import org.junit.Assert.assertEquals
@@ -20,6 +25,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -195,6 +201,119 @@ class RealPhotoTest {
         }
         return U8Image(display.width, display.height, CHANNELS, out)
     }
+
+    /** Full-resolution output of [graph] as 32 x 32 block means (output size), and the tile count. */
+    private fun outputBlocks(
+        session: EngineSession,
+        graphJson: String,
+    ): Pair<F32Image, Int> =
+        runBlocking {
+            assertNull(session.setGraph(EditGraphJson.decode(graphJson)))
+            val (width, height) = session.outputSize()
+            val bw = width / BLOCK
+            val bh = height / BLOCK
+            val sums = DoubleArray(bw * bh * CHANNELS)
+            var tiles = 0
+            session.renderFullResolution({ tx: Int, ty: Int, w: Int, h: Int, pixels: FloatArray ->
+                tiles++
+                for (y in 0 until h) {
+                    val by = (ty * TILE + y) / BLOCK
+                    if (by >= bh) continue
+                    for (x in 0 until w) {
+                        val bx = (tx * TILE + x) / BLOCK
+                        if (bx >= bw) continue
+                        val block = (by * bw + bx) * CHANNELS
+                        val p = (y * w + x) * CHANNELS
+                        for (c in 0 until CHANNELS) sums[block + c] += pixels[p + c].toDouble()
+                    }
+                }
+            })
+            val scale = 1.0 / (BLOCK * BLOCK)
+            F32Image(bw, bh, CHANNELS, FloatArray(sums.size) { (sums[it] * scale).toFloat() }) to tiles
+        }
+
+    /**
+     * Stage 9 export path: the output tiles of a rotated photo are its tiles turned (a quarter
+     * turn samples pixel centres exactly, so one resample changes nothing), and the Ultra HDR
+     * gain map turns with it.
+     */
+    @Test
+    fun aQuarterTurnRendersTheTurnedPhotoAndItsGainMap() =
+        runBlocking {
+            val session = requireNotNull(EngineSession.open(appContext, Uri.fromFile(photo("drop"))))
+            try {
+                val (plain, _) = outputBlocks(session, graph(null))
+                val op = requireNotNull(GeometryAdjustments(quarterTurns = 1).toOp(session.info.width, session.info.height))
+                val graph = EditGraph().withBackgroundOps(listOf(op))
+                val (turned, tiles) = outputBlocks(session, EditGraphJson.encode(graph))
+                assertEquals(session.info.height to session.info.width, session.outputSize())
+                assertEquals((session.info.height / TILE) * (session.info.width / TILE), tiles)
+                // Clockwise: output (x, y) shows source (y, H - 1 - x).
+                var worst = 0f
+                for (y in 0 until turned.height) {
+                    for (x in 0 until turned.width) {
+                        val sx = y
+                        val sy = plain.height - 1 - x
+                        val s = (sy * plain.width + sx) * CHANNELS
+                        val t = (y * turned.width + x) * CHANNELS
+                        for (c in 0 until 3) worst = maxOf(worst, abs(turned.data[t + c] - plain.data[s + c]))
+                    }
+                }
+                report("quarter turn: max block difference $worst")
+                assertTrue("turned blocks equal the photo's ($worst)", worst < 1e-3f)
+
+                val gainmap = checkNotNull(session.preview.gainmap)
+                val warped = checkNotNull(session.gainmapFor(graph))
+                val contents = gainmap.gainmapContents
+                assertEquals(contents.height, warped.gainmapContents.width)
+                assertEquals(contents.width, warped.gainmapContents.height)
+                // Output pixel (x, y) = gain map pixel (y, h - 1 - x).
+                val gx = contents.width / 3
+                val gy = contents.height / 4
+                val expected = contents.getPixel(gx, gy)
+                val actual = warped.gainmapContents.getPixel(contents.height - 1 - gy, gx)
+                for (shift in listOf(0, 8, 16, 24)) {
+                    val e = (expected shr shift) and 0xFF
+                    val a = (actual shr shift) and 0xFF
+                    assertTrue("gain map channel at $shift: $e vs $a", abs(e - a) <= 2)
+                }
+                assertEquals(gainmap.ratioMax.toList(), warped.ratioMax.toList())
+            } finally {
+                session.close()
+            }
+        }
+
+    /** A 4:5 crop with straighten (constrained): the output has the crop's size and renders. */
+    @Test
+    fun aStraightenedFourFiveCropRendersAtItsOutputSize() =
+        runBlocking {
+            val session = requireNotNull(EngineSession.open(appContext, Uri.fromFile(photo("bird"))))
+            try {
+                val w = session.info.width
+                val h = session.info.height
+                val crop = CropMath.fitAspect(floatArrayOf(0f, 0f, 1f, 1f), 4f / 5f, w, h)
+                val adjustments =
+                    GeometryAdjustments(
+                        cropLeft = crop[0],
+                        cropTop = crop[1],
+                        cropRight = crop[2],
+                        cropBottom = crop[3],
+                        aspect = CropAspect.FourFive,
+                        straighten = 3f,
+                    )
+                val op = requireNotNull(adjustments.toOp(w, h))
+                val (blocks, tiles) = outputBlocks(session, EditGraphJson.encode(EditGraph().withBackgroundOps(listOf(op))))
+                assertEquals(op.outputWidth to op.outputHeight, session.outputSize())
+                assertEquals(4.0 / 5.0, op.outputWidth.toDouble() / op.outputHeight, 0.01)
+                val expectedTiles = ((op.outputWidth + TILE - 1) / TILE) * ((op.outputHeight + TILE - 1) / TILE)
+                assertEquals(expectedTiles, tiles)
+                // Constrained: no transparent wedge anywhere (every block fully opaque).
+                for (i in 0 until blocks.width * blocks.height) assertEquals(1f, blocks.data[i * CHANNELS + 3], 1e-3f)
+                report("4:5 straighten 3: ${op.outputWidth}x${op.outputHeight}, $tiles tiles")
+            } finally {
+                session.close()
+            }
+        }
 
     companion object {
         private const val TAG = "LineOverPhotos"

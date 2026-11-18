@@ -1,4 +1,6 @@
 #include "lineover/graph.h"
+
+#include "lineover/geometry.h"
 #include "lineover/color_ops.h"
 #include "lineover/grade_ops.h"
 #include "lineover/light.h"
@@ -502,6 +504,14 @@ std::unique_ptr<OpList> buildOps(const Graph& graph, std::string* skipped) {
             } else if (params.op == "highlights_shadows") {
                 list->add(makeHighlightsShadows(static_cast<float>(param("highlights", 0.0)),
                                                 static_cast<float>(param("shadows", 0.0))));
+            } else if (params.op == "geometry") {
+                // Stage 9: the warp itself is applied where pixels are sampled (geometry.h);
+                // its lens vignetting correction is a source-space op, first of all.
+                const float amount = static_cast<float>(param("vignette", 0.0));
+                const double w = param("sourceWidth", 1.0), h = param("sourceHeight", 1.0);
+                if (amount != 0.f && h > 0.0) {
+                    list->add(makeVignetting(amount, static_cast<float>(param("vignetteMid", 50.0)), static_cast<float>(w / h)));
+                }
             } else if (skipped != nullptr) {
                 if (!skipped->empty()) skipped->push_back(',');
                 skipped->append(params.op);

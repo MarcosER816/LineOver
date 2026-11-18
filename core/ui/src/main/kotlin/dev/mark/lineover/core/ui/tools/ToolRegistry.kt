@@ -314,8 +314,29 @@ private fun buildTools(): List<ToolSpec> =
                 "grain removal",
             )
 
-            strip(Optics, "optics.upright", "Upright", 9, PanelType.Transform, LoIcons.Straighten, "keystone", "verticals", "perspective")
-            strip(Optics, "optics.lens_distortion", "Lens distortion", 9, PanelType.Sliders, LoIcons.Lens, "barrel", "pincushion")
+            strip(
+                Optics,
+                "optics.upright",
+                "Upright",
+                9,
+                PanelType.Transform,
+                LoIcons.Straighten,
+                "keystone",
+                "verticals",
+                "perspective",
+                done = true,
+            )
+            strip(
+                Optics,
+                "optics.lens_distortion",
+                "Lens distortion",
+                9,
+                PanelType.Sliders,
+                LoIcons.Lens,
+                "barrel",
+                "pincushion",
+                done = true,
+            )
             strip(
                 Optics,
                 "optics.chromatic_aberration",
@@ -325,15 +346,47 @@ private fun buildTools(): List<ToolSpec> =
                 LoIcons.Flare,
                 "fringing",
                 "purple fringe",
+                done = true,
             )
-            strip(Optics, "optics.lens_vignetting", "Lens vignetting", 9, PanelType.Sliders, LoIcons.Vignette, "corner shading")
+            strip(
+                Optics,
+                "optics.lens_vignetting",
+                "Lens vignetting",
+                9,
+                PanelType.Sliders,
+                LoIcons.Vignette,
+                "corner shading",
+                done = true,
+            )
 
-            strip(Crop, "crop.crop", "Crop", 9, PanelType.Transform, LoIcons.Crop, "trim", "cut")
-            strip(Crop, "crop.aspect_ratios", "Aspect ratios", 9, PanelType.Transform, LoIcons.AspectRatio, "ratio", "square", "16:9")
-            strip(Crop, "crop.straighten", "Straighten", 9, PanelType.Transform, LoIcons.Straighten, "level", "horizon", "tilt")
-            strip(Crop, "crop.rotate", "Rotate", 9, PanelType.Action, LoIcons.RotateRight, "turn")
-            strip(Crop, "crop.flip", "Flip", 9, PanelType.Action, LoIcons.Flip, "mirror")
-            strip(Crop, "crop.perspective_crop", "Perspective crop", 9, PanelType.Transform, LoIcons.CropFree, "keystone crop")
+            strip(Crop, "crop.crop", "Crop", 9, PanelType.Transform, LoIcons.Crop, "trim", "cut", done = true)
+            strip(
+                Crop,
+                "crop.aspect_ratios",
+                "Aspect ratios",
+                9,
+                PanelType.Transform,
+                LoIcons.AspectRatio,
+                "ratio",
+                "square",
+                "16:9",
+                done = true,
+            )
+            strip(
+                Crop,
+                "crop.straighten",
+                "Straighten",
+                9,
+                PanelType.Transform,
+                LoIcons.Straighten,
+                "level",
+                "horizon",
+                "tilt",
+                done = true,
+            )
+            strip(Crop, "crop.rotate", "Rotate", 9, PanelType.Action, LoIcons.RotateRight, "turn", done = true)
+            strip(Crop, "crop.flip", "Flip", 9, PanelType.Action, LoIcons.Flip, "mirror", done = true)
+            strip(Crop, "crop.perspective_crop", "Perspective crop", 9, PanelType.Transform, LoIcons.CropFree, "keystone crop", done = true)
 
             strip(
                 Masks,

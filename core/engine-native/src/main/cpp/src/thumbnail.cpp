@@ -1,11 +1,16 @@
 #include "lineover/thumbnail.h"
 
 #include <algorithm>
+#include <cmath>
 
 #include "lineover/color.h"
+#include "lineover/geometry.h"
 #include "lineover/graph.h"
 
 namespace lo {
+namespace {
+constexpr int kMaxThumbnailEdge = 512;
+}  // namespace
 
 ImageF32 boxDownsample(const float* rgba, int width, int height, int maxEdge) {
     ImageF32 out;
@@ -34,7 +39,7 @@ ImageF32 boxDownsample(const float* rgba, int width, int height, int maxEdge) {
 }
 
 bool renderThumbnail(const ImageF32& source, const GuidedCoefficients* coefficients, const std::string& graphJson,
-                     std::vector<std::uint8_t>* out, std::string* error) {
+                     std::vector<std::uint8_t>* out, std::string* error, int* width, int* height) {
     Graph graph;
     if (!parseGraph(graphJson, &graph, error)) return false;
     std::string skipped;
@@ -45,6 +50,26 @@ bool renderThumbnail(const ImageF32& source, const GuidedCoefficients* coefficie
     region.height = source.height;
     region.coefficients = coefficients;
     ops->cpuRefRegion(working.data(), working.data(), region);
+    *width = source.width;
+    *height = source.height;
+    Geometry g;
+    if (geometryOf(graph, &g)) {
+        // One resample from the (already edited) source copy to the output, at its scale.
+        const int fullW = g.sourceWidth > 0 ? g.sourceWidth : source.width;
+        const int fullH = g.sourceHeight > 0 ? g.sourceHeight : source.height;
+        const double scale = static_cast<double>(source.width) / fullW;
+        const double outputScale = std::min(scale, kMaxThumbnailEdge / static_cast<double>(std::max(g.outputWidth, g.outputHeight)));
+        *width = std::max(1, static_cast<int>(std::lround(g.outputWidth * outputScale)));
+        *height = std::max(1, static_cast<int>(std::lround(g.outputHeight * outputScale)));
+        WarpSource s;
+        s.rgba = working.data();
+        s.width = source.width;
+        s.height = source.height;
+        s.scale = scale;
+        std::vector<float> warped(static_cast<std::size_t>(*width) * *height * 4);
+        warp(g, fullW, fullH, s, static_cast<double>(*width) / g.outputWidth, 0, 0, *width, *height, warped.data());
+        working.swap(warped);
+    }
     out->resize(working.size());
     color::workingToDisplay8(working.data(), out->data(), working.size() / 4, color::Display::Srgb);
     return true;

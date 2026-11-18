@@ -22,9 +22,10 @@ struct ImageF32 {
 ImageF32 boxDownsample(const float* rgba, int width, int height, int maxEdge);
 
 // Runs `graphJson` on `source` (the preview's guided-filter `coefficients` for Highlights /
-// Shadows, may be null) and writes sRGB display RGBA8 to `out`. False with `error` set
-// when the graph cannot be read.
+// Shadows, may be null), then its geometry (crop, rotation, lens) at the source's scale
+// (long edge <= 512), and writes sRGB display RGBA8 to `out` with its size. False with
+// `error` set when the graph cannot be read.
 bool renderThumbnail(const ImageF32& source, const GuidedCoefficients* coefficients, const std::string& graphJson,
-                     std::vector<std::uint8_t>* out, std::string* error);
+                     std::vector<std::uint8_t>* out, std::string* error, int* width, int* height);
 
 }  // namespace lo

@@ -31,6 +31,8 @@ add_library(lo_engine STATIC
     src/graph.cpp
     src/tiling.cpp
     src/thumbnail.cpp
+    src/geometry.cpp
+    src/lines.cpp
     src/tile_store.cpp)
 target_include_directories(lo_engine PUBLIC include)
 target_compile_definitions(lo_engine PRIVATE LO_ENGINE_VERSION="${PROJECT_VERSION}")
@@ -72,7 +74,7 @@ else()
         target_link_libraries(lo_testing PUBLIC lo_engine ZLIB::ZLIB)
 
         foreach(test_name sample_test golden_assert_test golden_identity_test
-                color_test ops_test graph_test tiling_test tile_store_test light_test color_ops_test grade_ops_test photo_test thumbnail_test)
+                color_test ops_test graph_test tiling_test tile_store_test light_test color_ops_test grade_ops_test photo_test thumbnail_test geometry_test lines_test)
             add_executable(${test_name} tests/${test_name}.cpp)
             target_compile_options(${test_name} PRIVATE ${LO_WARNINGS})
             target_link_libraries(${test_name} PRIVATE lo_testing)

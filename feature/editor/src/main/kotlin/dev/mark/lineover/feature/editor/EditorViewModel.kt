@@ -10,8 +10,10 @@ import dev.mark.lineover.core.io.prefs.TapGestures
 import dev.mark.lineover.core.io.project.DocumentLoad
 import dev.mark.lineover.core.io.project.ProjectLibrary
 import dev.mark.lineover.core.model.ColorAdjustments
+import dev.mark.lineover.core.model.CropOverlay
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.EditHistory
+import dev.mark.lineover.core.model.GeometryAdjustments
 import dev.mark.lineover.core.model.GradeAdjustments
 import dev.mark.lineover.core.model.HslBand
 import dev.mark.lineover.core.model.HslChannel
@@ -157,6 +159,11 @@ data class EditorState(
     val color: ColorAdjustments = ColorAdjustments(),
     /** Curves and grading (Stage 7). */
     val grade: GradeAdjustments = GradeAdjustments(),
+    /** Crop and Optics (Stage 9): one geometry op, applied first. */
+    val geometry: GeometryAdjustments = GeometryAdjustments(),
+    /** The composition overlay shown while a crop handle or the straighten ruler is dragged. */
+    val cropOverlay: CropOverlay = CropOverlay.Thirds,
+    val cropDragging: Boolean = false,
     /** What the HSL panel's sliders change. */
     val hslChannel: HslChannel = HslChannel.Hue,
     /** Eyedropper or targeted adjustment armed: one finger picks on the canvas. */
@@ -393,6 +400,11 @@ sealed interface EditorIntent {
     /** A slider, wheel or curve point was released: the drag becomes one History step. */
     data object EndEdit : EditorIntent
 
+    /** A Crop / Optics change (Stage 9). */
+    data class Geometry(
+        val action: GeometryAction,
+    ) : EditorIntent
+
     /** Two- or three-finger tap on the canvas (Settings → Gestures maps it to undo / redo). */
     data class MultiFingerTap(
         val fingers: Int,
@@ -480,6 +492,19 @@ class EditorViewModel(
             tapGestures = preferences.tapGestures.value,
         ),
     ) {
+    private val geometryActions =
+        EditorGeometryActions(
+            scope = viewModelScope,
+            dispatcher = renderDispatcher,
+            state = { state.value },
+            reduce = { label, block -> reduce(label, block) },
+            endEdit = { onIntent(EditorIntent.EndEdit) },
+            message = { sendEffect(EditorEffect.Message(it)) },
+        )
+
+    /** Crop handles, perspective corners and guide lines from CanvasView. */
+    val cropGestures get() = geometryActions.gestures
+
     private val autosave =
         EditorAutosave(
             projectId,
@@ -580,6 +605,7 @@ class EditorViewModel(
                         loupe = null,
                         targeted = null,
                         preview = null,
+                        cropDragging = false,
                         history = history.close(),
                     )
                 }
@@ -611,8 +637,16 @@ class EditorViewModel(
             }
 
             else -> {
-                if (!onHistoryIntent(intent)) onEditIntent(intent)
+                onOtherIntent(intent)
             }
+        }
+    }
+
+    /** Crop / Optics (Stage 9), History (Stage 8), then the editing tools. */
+    private fun onOtherIntent(intent: EditorIntent) {
+        when {
+            intent is EditorIntent.Geometry -> geometryActions.onAction(intent.action)
+            !onHistoryIntent(intent) -> onEditIntent(intent)
         }
     }
 
@@ -864,10 +898,10 @@ class EditorViewModel(
     private fun PickMode.toggle(mode: PickMode) = if (this == mode) PickMode.None else mode
 
     private fun EditorState.withColor(next: ColorAdjustments): EditorState =
-        copy(color = next, graph = graph.withBackgroundOps(editOps(light, next, grade)))
+        copy(color = next, graph = graph.withBackgroundOps(editOps(light, next, grade, geometryOp)))
 
     private fun EditorState.withGrade(next: GradeAdjustments): EditorState =
-        copy(grade = next, graph = graph.withBackgroundOps(editOps(light, color, next)))
+        copy(grade = next, graph = graph.withBackgroundOps(editOps(light, color, next, geometryOp)))
 
     private fun autoLevels() {
         val percentiles = state.value.canvas?.autoLevels()
@@ -1014,7 +1048,7 @@ class EditorViewModel(
         }
 
     private fun EditorState.withLight(next: LightAdjustments): EditorState =
-        copy(light = next, graph = graph.withBackgroundOps(editOps(next, color, grade)))
+        copy(light = next, graph = graph.withBackgroundOps(editOps(next, color, grade, geometryOp)))
 
     private fun autoLight() {
         val result = state.value.canvas?.autoLight()
@@ -1056,7 +1090,8 @@ class EditorViewModel(
         after: EditorState,
     ) {
         val canvas = after.canvas ?: return
-        if (before == null || before.shownGraph != after.shownGraph) scheduler?.submit(after.shownGraph)
+        // While cropping the canvas shows the whole frame (canvasGraph), else the shown edit.
+        if (before == null || before.canvasGraph != after.canvasGraph) scheduler?.submit(after.canvasGraph)
         if (before == null || before.clippingShown != after.clippingShown) canvas.setClipping(after.clippingShown)
         if (before == null || before.compare != after.compare || before.split != after.split) {
             canvas.setCompare(after.compare, after.split)

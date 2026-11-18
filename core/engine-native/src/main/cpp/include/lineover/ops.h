@@ -44,6 +44,7 @@ enum class OpType : int {
     PhotoFilter = 23,
     GradientMap = 24,
     Calibration = 25,
+    Vignetting = 26,
 };
 
 // Guided-filter coefficients of an image's log2 luminance, at preview resolution:
