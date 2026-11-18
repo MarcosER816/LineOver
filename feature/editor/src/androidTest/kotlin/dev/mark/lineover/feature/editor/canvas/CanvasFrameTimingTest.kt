@@ -161,7 +161,9 @@ class CanvasFrameTimingTest {
                 assertNull(session.setGraph(graph))
                 Thread.sleep(STEP_MILLIS.toLong())
             }
-            Thread.sleep(SETTLE_MILLIS)
+            // SwiftShader takes ~0.4 s per frame of seven ops on a 3 MP preview: wait for the
+            // edited frames to be presented (and timed) rather than for a fixed time.
+            waitFor { session.stats().updates > 0 }
             waitFor { session.histogram.value != null }
             val stats = session.stats()
             val histogram = requireNotNull(session.histogram.value)
