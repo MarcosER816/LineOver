@@ -114,7 +114,7 @@ abstract class EditorScreenshots(
 
     // A tool that is still reserved (Light tools have real panels since Stage 5).
     @Test
-    fun toolPanelPlaceholder() = shot("tool_panel", base(ToolCategory.Color).copy(panel = EditorPanel.Tool("color.color_grading")))
+    fun toolPanelPlaceholder() = shot("tool_panel", base(ToolCategory.Effects).copy(panel = EditorPanel.Tool("effects.texture")))
 
     /** Stage 5: the Light panel (collapsed on phones: the selected slider; all of them when wide). */
     @Test
@@ -180,6 +180,21 @@ abstract class EditorScreenshots(
                 pickMode = PickMode.Targeted,
                 targeted = TargetedHud(HslBand.Orange, HslChannel.Saturation, 35f),
             ),
+        )
+
+    /** Stage 7: the curves panel in the editor (full-width editor over the canvas). */
+    @Test
+    fun curvesPanel() =
+        shot(
+            "grade_curves",
+            base().copy(panel = EditorPanel.Tool("light.curves_point"), grade = SAMPLE_GRADE),
+        )
+
+    @Test
+    fun colorGradingPanel() =
+        shot(
+            "grade_color_grading",
+            base(ToolCategory.Color).copy(panel = EditorPanel.Tool("color.color_grading"), grade = SAMPLE_GRADE),
         )
 
     @Test

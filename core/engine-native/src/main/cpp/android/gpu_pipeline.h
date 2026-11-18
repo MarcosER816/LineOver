@@ -4,6 +4,7 @@
 #include <GLES3/gl31.h>
 
 #include <cstdint>
+#include <list>
 #include <map>
 #include <string>
 #include <utility>
@@ -74,6 +75,10 @@ public:
 private:
     GLuint programFor(const std::string& declarations, const std::string& body, std::string* error);
     GLuint scratch(int width, int height);
+    // An RGBA32F texture holding an op's LUT (cached by content, most recent first).
+    GLuint lutTexture(const float* rgba, int width, int height);
+    static constexpr std::size_t kMaxLuts = 8;
+    std::list<std::pair<std::uint64_t, GLuint>> luts_;
 
     bool halfFloat_ = true;
     GLuint vao_ = 0;

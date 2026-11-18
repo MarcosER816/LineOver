@@ -205,10 +205,28 @@ Native **C++17, OpenGL ES 3**, in `:core:engine-native`; Kotlin reaches it throu
   the main thread); `colorops::solveNeutral` and `targetedWeights` turn it into (T, tint) or
   band weights. The loupe reads 9 x 9 original preview pixels.
 
+### Curves and grading (Stage 7)
+
+- `grade_ops.h/.cpp`, `reference.py` and the GLSL change together. Full background op order
+  (`editOps`): Calibration → White balance → Light → Levels → Curves → Parametric curve →
+  Vibrance → Saturation → HSL → Color Balance → Selective Color → Channel Mixer → Color
+  Grading → Photo Filter → Black & White → Gradient Map → Invert → Posterize → Threshold.
+- Curves: Fritsch-Carlson monotone cubics (C++ `grade::curveLut`, Kotlin `MonotoneCurve` for
+  drawing, Python `spline_eval`, all the same sequential tangent limiting) sampled into
+  4096-entry LUTs; ops hand LUTs to the backend with `GpuOpContext::setLut` (RGBA32F texture
+  at unit 2, cached by content hash) and read them with `lo_lut1` / `lo_lut3` (linear between
+  entries, slope 1 outside 0..1). The parametric curve is 9 points of the same spline.
+- Tone ops work on transfer-encoded values; Color Grading is CDL there (shadows = offset,
+  midtones = power, highlights = slope, global = offset) with tone weights from encoded
+  luminance set by Balance / Blending. Wheel hues are OKLCh hues; the UI shows HSV hues and
+  converts with `HueMap` (piecewise linear through the band centres).
+- GLSL indexes uniform arrays with constants only (generated unrolled code), after
+  SwiftShader mishandled dynamic indexing in Stage 6.
+
 `core/engine-native/src/main/cpp`:
 
 ```
-include/lineover/   public C++ API (portable): color, ops, light, color_ops, graph, tiling, tile_store
+include/lineover/   public C++ API (portable): color, ops, light, color_ops, grade_ops, graph, tiling, tile_store
 src/                portable engine core                         -> lo_engine (static)
 third_party/zstd    zstd 1.5.7 sources (BSD), spilled tiles      -> lo_zstd (static)
 android/            render thread, EGL, GL pipeline, C API (lo_api.h), JNI -> liblineover_engine.so

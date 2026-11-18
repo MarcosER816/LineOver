@@ -93,6 +93,11 @@ object EditorTags {
     const val LOUPE = "eyedropper-loupe"
     const val TARGETED_HUD = "targeted-hud"
 
+    const val GRADE_PANEL = "grade-panel"
+    const val CURVE_EDITOR = "curve-editor"
+    const val GRADE_WHEEL = "grade-wheel"
+    const val GRADIENT_BAR = "gradient-bar"
+
     fun hslDot(band: String) = "hsl-dot:$band"
 
     fun hslSlider(band: String) = "hsl-slider:$band"

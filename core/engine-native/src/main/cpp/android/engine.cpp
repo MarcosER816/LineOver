@@ -194,6 +194,8 @@ void Engine::setPreview(std::vector<float> working, int width, int height) {
     const std::size_t pixels = static_cast<std::size_t>(width) * height;
     // About a million samples are plenty for 0.5 % / 99.5 %.
     luminancePercentiles(working.data(), pixels, 0.005f, 0.995f, &low, &high, std::max<std::size_t>(1, pixels / 1000000));
+    float channels[6];
+    grade::channelPercentiles(working.data(), pixels, 0.001f, 0.999f, channels, std::max<std::size_t>(1, pixels / 1000000));
     {
         std::lock_guard<std::mutex> lock(mutex_);
         guided_ = std::move(guided);
@@ -201,6 +203,7 @@ void Engine::setPreview(std::vector<float> working, int width, int height) {
         havePercentiles_ = true;
         lowPercentile_ = low;
         highPercentile_ = high;
+        std::copy(channels, channels + 6, channelPercentiles_);
         pendingPreview_ = std::move(working);
         pendingPreviewW_ = width;
         pendingPreviewH_ = height;
@@ -309,6 +312,13 @@ bool Engine::sampleGrid(float u, float v, int n, float* rgba) {
         if (window_ != EGL_NO_SURFACE) eglMakeCurrent(display_, window_, window_, context_);
         return read;
     });
+}
+
+bool Engine::autoLevels(float out[6]) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!havePercentiles_) return false;
+    std::copy(channelPercentiles_, channelPercentiles_ + 6, out);
+    return true;
 }
 
 void Engine::setShowOriginal(bool original) {

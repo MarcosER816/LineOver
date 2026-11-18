@@ -26,6 +26,7 @@
 #include <vector>
 
 #include "gpu_pipeline.h"
+#include "lineover/grade_ops.h"
 #include "lineover/light.h"
 #include "lineover/color.h"
 #include "lineover/ops.h"
@@ -83,6 +84,9 @@ public:
     void setPreview(std::vector<float> working, int width, int height);
     // Auto (percentile stretch) of the preview; false before a preview was set.
     bool autoLight(float* exposure, float* blacks);
+    // Levels → Auto: per-channel encoded 0.1 % / 99.9 % percentiles of the preview
+    // (low R, high R, low G, high G, low B, high B); false before a preview.
+    bool autoLevels(float out[6]);
     // The average working-space RGB of the 5 x 5 preview pixels around image point (u, v)
     // (0..1, oriented image), run through the ops that come before the first op of type
     // `before` (all ops if there is none). The eyedropper samples before White balance,
@@ -193,6 +197,7 @@ private:
     bool guidedChanged_ = false;
     bool havePercentiles_ = false;
     float lowPercentile_ = 0.f, highPercentile_ = 0.f;
+    float channelPercentiles_[6] = {0.f, 1.f, 0.f, 1.f, 0.f, 1.f};
     bool showOriginal_ = false;
     CompareMode compareMode_ = CompareMode::Off;
     float split_ = 0.5f;

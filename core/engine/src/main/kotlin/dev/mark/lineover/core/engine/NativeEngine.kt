@@ -142,6 +142,9 @@ internal class NativeEngine(
         n: Int,
     ): FloatArray? = nativeSampleGrid(h(), u, v, n)
 
+    /** Levels Auto: per-channel encoded 0.1 / 99.9 % percentiles (low R, high R, …) or null. */
+    fun autoLevels(): FloatArray? = nativeAutoLevels(h())
+
     /** Auto (percentile stretch): (exposure EV, blacks) or null before a preview. */
     fun autoLight(): FloatArray? = nativeAutoLight(h())
 
@@ -201,6 +204,8 @@ internal class NativeEngine(
     }
 
     private external fun nativeAutoLight(engine: Long): FloatArray?
+
+    private external fun nativeAutoLevels(engine: Long): FloatArray?
 
     private external fun nativeSample(
         engine: Long,

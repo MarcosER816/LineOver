@@ -29,6 +29,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.unit.dp
 import dev.mark.lineover.core.designsystem.LoColors
 import dev.mark.lineover.core.designsystem.LoIcons
@@ -39,8 +40,10 @@ import dev.mark.lineover.core.designsystem.component.LoCategory
 import dev.mark.lineover.core.designsystem.component.LoCategoryBar
 import dev.mark.lineover.core.designsystem.component.LoChip
 import dev.mark.lineover.core.designsystem.component.LoColorWheel
+import dev.mark.lineover.core.designsystem.component.LoCurveEditor
 import dev.mark.lineover.core.designsystem.component.LoCurveEditorPlaceholder
 import dev.mark.lineover.core.designsystem.component.LoEmptyState
+import dev.mark.lineover.core.designsystem.component.LoGradeWheel
 import dev.mark.lineover.core.designsystem.component.LoHueSat
 import dev.mark.lineover.core.designsystem.component.LoIconButton
 import dev.mark.lineover.core.designsystem.component.LoPanel
@@ -112,6 +115,18 @@ fun ComponentGalleryScreen(
                 item { SwitchesSection(showPanel) { showPanel = it } }
                 item { ColorWheelSection() }
                 item { Section("LoCurveEditorPlaceholder") { LoCurveEditorPlaceholder() } }
+                item {
+                    Section("LoCurveEditor") {
+                        LoCurveEditor(
+                            listOf(Offset(0f, 0f), Offset(0.3f, 0.2f), Offset(0.7f, 0.8f), Offset(1f, 1f)),
+                            { it },
+                            { null },
+                            { _, _, _ -> },
+                            {},
+                        )
+                    }
+                }
+                item { Section("LoGradeWheel") { LoGradeWheel(LoHueSat(200f, 0.5f), -0.3f, {}, {}, "Shadows") } }
                 item { ToastSection(toast) }
                 item { EmptyAndPlaceholderSection() }
             }

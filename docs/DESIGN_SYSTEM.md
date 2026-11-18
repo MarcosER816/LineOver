@@ -136,7 +136,9 @@ through the `Vibrator` (some OEM builds ignore the view constants).
 | `LoSegmented` | Segmented control |
 | `LoSwitchRow` | Label (+ description) with a switch; the whole row toggles |
 | `LoColorWheel` | Hue (angle) / saturation (radius) wheel for colour grading; double tap resets |
-| `LoCurveEditorPlaceholder` | Reserves the curve editor (Stage 7) |
+| `LoCurveEditorPlaceholder` | Reserves the curve editor (Stage 7); kept for slots of later curve-like tools |
+| `LoCurveEditor` | Square, full-width curve editor: tap adds a point on the curve, drag moves, drag off the graph deletes (turns red first); 3× magnifier and "In · Out" (0–255) readout while dragging; optional histogram behind the curve. Geometry in `LoCurveEditorMath` |
+| `LoGradeWheel` | `LoColorWheel` inside a 270° luminance ring (open at the bottom): drag inside for hue / saturation, drag the ring for luminance; double tap the centre or the ring resets it. Geometry in `LoGradeWheelMath` |
 | `LoToast` / `LoToastHost` / `LoToastState` | Toast and undo snackbar, one at a time |
 | `LoEmptyState` | Icon, title, body, optional action |
 | `LoPlaceholderTool` | "Coming in Stage N" for a reserved tool slot |

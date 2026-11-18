@@ -33,6 +33,17 @@ enum class OpType : int {
     Invert = 12,
     Posterize = 13,
     Threshold = 14,
+    Curves = 15,
+    ParametricCurve = 16,
+    Levels = 17,
+    ColorGrading = 18,
+    ColorBalance = 19,
+    SelectiveColor = 20,
+    ChannelMixer = 21,
+    BlackAndWhite = 22,
+    PhotoFilter = 23,
+    GradientMap = 24,
+    Calibration = 25,
 };
 
 // Guided-filter coefficients of an image's log2 luminance, at preview resolution:
@@ -75,6 +86,13 @@ public:
         (void)name;
         (void)values;
         (void)count;
+    }
+    // A lookup table the shader reads with lo_lut1(row, e) / lo_lut3(row, t): `width` x
+    // `height` RGBA float texels, row-major (the backend caches it by content).
+    virtual void setLut(const float* rgba, int width, int height) {
+        (void)rgba;
+        (void)width;
+        (void)height;
     }
 };
 

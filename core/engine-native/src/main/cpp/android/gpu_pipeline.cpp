@@ -106,6 +106,21 @@ uniform highp sampler2D u_guided;
 uniform vec4 u_rect;
 uniform ivec2 u_guidedSize;
 vec2 lo_texel(ivec2 p) { return texelFetch(u_guided, clamp(p, ivec2(0), u_guidedSize - 1), 0).rg; }
+uniform highp sampler2D u_lut;
+// LUT row `row` at e (0..1, linear between the 4096 entries), slope 1 outside 0..1.
+float lo_lut1(int row, float e) {
+    float c = clamp(e, 0.0, 1.0);
+    float p = c * 4095.0;
+    float i = min(floor(p), 4094.0);
+    float f = p - i;
+    return mix(texelFetch(u_lut, ivec2(int(i), row), 0).r, texelFetch(u_lut, ivec2(int(i) + 1, row), 0).r, f) + (e - c);
+}
+vec3 lo_lut3(int row, float t) {
+    float p = clamp(t, 0.0, 1.0) * 4095.0;
+    float i = min(floor(p), 4094.0);
+    float f = p - i;
+    return mix(texelFetch(u_lut, ivec2(int(i), row), 0).rgb, texelFetch(u_lut, ivec2(int(i) + 1, row), 0).rgb, f);
+}
 vec2 lo_guided() {
     vec2 uv = u_rect.xy + v_uv * u_rect.zw;
     vec2 p = uv * vec2(u_guidedSize) - 0.5;
@@ -178,6 +193,8 @@ void GpuPipeline::release() {
     if (histogramBuffer_ != 0) glDeleteBuffers(1, &histogramBuffer_);
     histogramProgram_ = histogramBuffer_ = 0;
     releaseReadback();
+    for (auto& [hash, texture] : luts_) glDeleteTextures(1, &texture);
+    luts_.clear();
     if (fbo_ != 0) glDeleteFramebuffers(1, &fbo_);
     if (vbo_ != 0) glDeleteBuffers(1, &vbo_);
     if (vao_ != 0) glDeleteVertexArrays(1, &vao_);
@@ -220,6 +237,13 @@ public:
     void setUniform1f(const char* name, float value) override { uniforms.emplace_back(name, value); }
     void setUniformMat3(const char* name, const float* m) override { matrices.emplace_back(name, std::vector<float>(m, m + 9)); }
     void setUniform1fv(const char* name, const float* v, int n) override { arrays.emplace_back(name, std::vector<float>(v, v + n)); }
+    void setLut(const float* rgba, int w, int h) override {
+        lut = rgba;
+        lutWidth = w;
+        lutHeight = h;
+    }
+    const float* lut = nullptr;
+    int lutWidth = 0, lutHeight = 0;
 };
 
 }  // namespace
@@ -266,6 +290,9 @@ bool GpuPipeline::runOps(const OpList& ops, GLuint source, GLuint target, int wi
         glUniform1i(glGetUniformLocation(program, "u_guided"), 1);
         glUniform4fv(glGetUniformLocation(program, "u_rect"), 1, inputs.rect);
         glUniform2i(glGetUniformLocation(program, "u_guidedSize"), inputs.guidedWidth, inputs.guidedHeight);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, recorder.lut != nullptr ? lutTexture(recorder.lut, recorder.lutWidth, recorder.lutHeight) : 0);
+        glUniform1i(glGetUniformLocation(program, "u_lut"), 2);
         glActiveTexture(GL_TEXTURE0);
         for (const auto& [name, value] : recorder.uniforms) glUniform1f(glGetUniformLocation(program, name.c_str()), value);
         for (const auto& [name, m] : recorder.matrices) glUniformMatrix3fv(glGetUniformLocation(program, name.c_str()), 1, GL_TRUE, m.data());
@@ -310,6 +337,35 @@ void GpuPipeline::drawImage(GLuint texture, const float rect[4], const float ima
     glEnable(GL_BLEND);
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+}
+
+GLuint GpuPipeline::lutTexture(const float* rgba, int width, int height) {
+    // Content hash (FNV-1a over the bytes): a slider drag re-creates the op, not the table.
+    const std::size_t bytes = static_cast<std::size_t>(width) * height * 4 * sizeof(float);
+    std::uint64_t hash = 1469598103934665603ull ^ (static_cast<std::uint64_t>(width) << 32) ^ static_cast<std::uint64_t>(height);
+    const auto* p = reinterpret_cast<const unsigned char*>(rgba);
+    for (std::size_t i = 0; i < bytes; ++i) hash = (hash ^ p[i]) * 1099511628211ull;
+    for (auto it = luts_.begin(); it != luts_.end(); ++it) {
+        if (it->first == hash) {
+            luts_.splice(luts_.begin(), luts_, it);
+            return luts_.front().second;
+        }
+    }
+    GLuint texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA32F, width, height, 0, GL_RGBA, GL_FLOAT, rgba);
+    luts_.emplace_front(hash, texture);
+    while (luts_.size() > kMaxLuts) {
+        glDeleteTextures(1, &luts_.back().second);
+        luts_.pop_back();
+    }
+    return texture;
 }
 
 bool GpuPipeline::dispatchHistogram(GLuint texture, int width, int height) {

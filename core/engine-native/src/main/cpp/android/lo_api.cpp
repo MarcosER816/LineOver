@@ -199,6 +199,8 @@ int lo_engine_auto_light(lo_engine* engine, float* exposure, float* blacks) {
     return engine->engine->autoLight(exposure, blacks) ? 1 : 0;
 }
 
+int lo_engine_auto_levels(lo_engine* engine, float* out6) { return engine->engine->autoLevels(out6) ? 1 : 0; }
+
 void lo_engine_set_show_original(lo_engine* engine, int original) { engine->engine->setShowOriginal(original != 0); }
 
 void lo_engine_set_compare(lo_engine* engine, int mode, float split) {

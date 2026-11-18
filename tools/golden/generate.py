@@ -65,6 +65,7 @@ def build_outputs() -> dict[str, np.ndarray]:
     }
     outputs.update(light_outputs())
     outputs.update(color_outputs())
+    outputs.update(grade_outputs())
     return outputs
 
 
@@ -109,6 +110,26 @@ def color_outputs() -> dict[str, np.ndarray]:
         image = (chart if input_name == "chart" else scene).astype(np.float16).astype(np.float32)
         out = reference.COLOR_OPS[name](image, *params)
         outputs[f"colorops/{name}_gpu_srgb_display_f32.npy"] = reference.working_to_display(out, "srgb")
+    return outputs
+
+
+GRADE_SCENE_OPS = ("curves", "parametric_curve", "levels", "color_balance")
+
+
+def grade_outputs() -> dict[str, np.ndarray]:
+    """Stage 7: Curves and grading at three settings each, GPU display goldens (middle).
+
+    Tone ops run on the HDR scene, colour ops on the OKLCh chart.
+    """
+    scene = reference.scene_rec2020()
+    chart = reference.colors_rec2020()
+    outputs = {}
+    for name, settings in reference.GRADE_SETTINGS.items():
+        op = reference.GRADE_OPS[name]
+        image = scene if name in GRADE_SCENE_OPS else chart
+        for index, params in enumerate(settings, start=1):
+            outputs[f"grade/{name}_{index}_f32.npy"] = op(image, params)
+        outputs[f"grade/{name}_gpu_srgb_display_f32.npy"] = reference.working_to_display(op(image, settings[1]), "srgb")
     return outputs
 
 
@@ -164,6 +185,7 @@ def main() -> int:
     reference.self_check()
     reference.light_self_check()
     reference.color_self_check()
+    reference.grade_self_check()
     outputs = build_outputs()
 
     if args.check:
