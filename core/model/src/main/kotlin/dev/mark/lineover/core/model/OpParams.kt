@@ -90,4 +90,68 @@ sealed interface OpParams {
     ) : OpParams {
         override val isIdentity: Boolean get() = highlights == 0f && shadows == 0f
     }
+
+    /** White balance: Bradford adaptation from the (temperature K, tint) white to D65. Stage 6. */
+    @Serializable
+    @SerialName("white_balance")
+    data class WhiteBalance(
+        val temperature: Float,
+        val tint: Float,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = temperature == ColorAdjustments.DEFAULT_KELVIN && tint == 0f
+    }
+
+    /** Vibrance (-100..100): boosts less saturated colours more, spares skin. */
+    @Serializable
+    @SerialName("vibrance")
+    data class Vibrance(
+        val amount: Float,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = amount == 0f
+    }
+
+    /** Saturation (-100..100) in OKLCh. */
+    @Serializable
+    @SerialName("saturation")
+    data class Saturation(
+        val amount: Float,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = amount == 0f
+    }
+
+    /** HSL / Color Mixer: 8 bands (red … magenta) of hue, saturation, luminance (-100..100). */
+    @Serializable
+    @SerialName("hsl_mixer")
+    data class HslMixer(
+        val hue: List<Float>,
+        val saturation: List<Float>,
+        val luminance: List<Float>,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = (hue + saturation + luminance).all { it == 0f }
+    }
+
+    /** Invert (on transfer-encoded values: mid grey stays mid grey). */
+    @Serializable
+    @SerialName("invert")
+    data object Invert : OpParams {
+        override val isIdentity: Boolean get() = false
+    }
+
+    /** Posterize to [levels] steps (2..32) per channel. */
+    @Serializable
+    @SerialName("posterize")
+    data class Posterize(
+        val levels: Float,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = levels < 2f
+    }
+
+    /** Threshold at [level] (0..1) of encoded luminance: black or white. */
+    @Serializable
+    @SerialName("threshold")
+    data class Threshold(
+        val level: Float,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = false
+    }
 }

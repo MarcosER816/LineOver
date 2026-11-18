@@ -47,6 +47,37 @@ class CanvasGestureTest {
                     override fun onSwipeActive(active: Boolean) {
                         events += "swipe $active"
                     }
+
+                    override fun onEyedropperMove(
+                        viewX: Float,
+                        viewY: Float,
+                        u: Float,
+                        v: Float,
+                    ) {
+                        events += "loupe %.0f %.2f %.2f".format(java.util.Locale.ROOT, viewX, u, v)
+                    }
+
+                    override fun onEyedropperEnd(
+                        u: Float?,
+                        v: Float?,
+                    ) {
+                        events += if (u == null || v == null) "pick cancelled" else "pick %.2f %.2f".format(java.util.Locale.ROOT, u, v)
+                    }
+
+                    override fun onTargetedStart(
+                        u: Float,
+                        v: Float,
+                    ) {
+                        events += "target %.2f %.2f".format(java.util.Locale.ROOT, u, v)
+                    }
+
+                    override fun onTargetedDrag(fraction: Float) {
+                        events += "drag %.3f".format(java.util.Locale.ROOT, fraction)
+                    }
+
+                    override fun onTargetedEnd() {
+                        events += "target end"
+                    }
                 }
         }
     private val down = SystemClock.uptimeMillis()
@@ -105,6 +136,30 @@ class CanvasGestureTest {
         touch(MotionEvent.ACTION_UP, 100f, 100f + step * 2.5f)
         assertEquals(listOf("swipe true", "select 1", "select 1", "swipe false"), events)
         assertFalse(renderer.showingOriginal)
+    }
+
+    /** The fake image is 8160 x 6120, fitted into the 1000 x 1600 view: its centre is (0.5, 0.5). */
+    @Test
+    fun eyedropperReportsTheImagePointAndPicksOnLift() {
+        view.pickMode = PickMode.Eyedropper
+        touch(MotionEvent.ACTION_DOWN, 500f, 800f)
+        touch(MotionEvent.ACTION_MOVE, 600f, 800f)
+        idle(400)
+        touch(MotionEvent.ACTION_UP, 600f, 800f)
+        assertEquals(3, events.size)
+        assertEquals("loupe 500 0.50 0.50", events[0])
+        assertTrue(events[1].startsWith("loupe 600 0.6"))
+        assertTrue(events[2].startsWith("pick 0.6"))
+        assertFalse("no compare while picking", renderer.showingOriginal)
+    }
+
+    @Test
+    fun targetedDragReportsVerticalMovement() {
+        view.pickMode = PickMode.Targeted
+        touch(MotionEvent.ACTION_DOWN, 500f, 800f)
+        touch(MotionEvent.ACTION_MOVE, 500f, 640f) // up 160 px of 1600
+        touch(MotionEvent.ACTION_UP, 500f, 640f)
+        assertEquals(listOf("target 0.50 0.50", "drag 0.100", "target end"), events)
     }
 
     private companion object {

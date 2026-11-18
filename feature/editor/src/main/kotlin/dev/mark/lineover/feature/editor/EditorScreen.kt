@@ -123,6 +123,7 @@ internal fun PhotoCanvas(
     val canvas = state.canvas
     val surround = state.surround.color.toArgb()
     val swipeMode = state.swipeMode
+    val pickMode = state.pickMode
     AndroidView(
         factory = { CanvasView(it) },
         modifier = modifier,
@@ -131,6 +132,7 @@ internal fun PhotoCanvas(
             view.setRenderer(canvas)
             view.gestureListener = gestures
             view.swipeMode = swipeMode
+            view.pickMode = pickMode
         },
         onRelease = { view -> view.setRenderer(null) },
     )
@@ -299,6 +301,8 @@ private fun CanvasArea(
         CompareOverlay(state, onIntent)
         CanvasBadges(state, Modifier.align(Alignment.TopStart))
         SwipeHud(state, Modifier.align(Alignment.Center))
+        TargetedHudOverlay(state, Modifier.align(Alignment.TopCenter).padding(top = LoSpacing.S))
+        EyedropperLoupe(state)
         if (state.renderStats) RenderStatsOverlay(state, Modifier.align(Alignment.BottomStart).padding(LoSpacing.Xs))
         if (state.showSpinner) {
             // Subtle: sharp tiles are still loading (only after 300 ms, see EditorViewModel).

@@ -254,6 +254,63 @@ bool Engine::autoLight(float* exposure, float* blacks) {
     return true;
 }
 
+bool Engine::samplePatch(float u, float v, OpType before, float rgb[3]) {
+    constexpr int kPatch = 5;
+    float pixels[kPatch * kPatch * 4];
+    int count = 0;
+    const bool ok = runSync([&] {
+        if (previewSource_ == 0 || previewW_ <= 0 || previewH_ <= 0 || !gpu_.halfFloat()) return false;
+        eglMakeCurrent(display_, pbuffer_, pbuffer_, context_);
+        const int cx = std::clamp(static_cast<int>(u * previewW_), 0, previewW_ - 1);
+        const int cy = std::clamp(static_cast<int>(v * previewH_), 0, previewH_ - 1);
+        const int x0 = std::clamp(cx - kPatch / 2, 0, std::max(0, previewW_ - kPatch));
+        const int y0 = std::clamp(cy - kPatch / 2, 0, std::max(0, previewH_ - kPatch));
+        const int w = std::min(kPatch, previewW_), h = std::min(kPatch, previewH_);
+        const bool read = gpu_.readRegion(previewSource_, x0, y0, w, h, pixels);
+        if (window_ != EGL_NO_SURFACE) eglMakeCurrent(display_, window_, window_, context_);
+        count = w * h;
+        return read;
+    });
+    if (!ok || count == 0) return false;
+    float mean[4] = {0.f, 0.f, 0.f, 1.f};
+    for (int i = 0; i < count; ++i)
+        for (int c = 0; c < 3; ++c) mean[c] += pixels[4 * i + c] / static_cast<float>(count);
+    std::shared_ptr<const OpList> ops;
+    std::shared_ptr<const GuidedCoefficients> guided;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        ops = ops_;
+        guided = guided_;
+    }
+    OpRegion region;
+    region.width = region.height = 1;
+    region.rect[0] = u;
+    region.rect[1] = v;
+    region.rect[2] = region.rect[3] = 1e-6f;
+    region.coefficients = guided.get();
+    for (const auto& op : ops->ops()) {
+        if (op->type() == before) break;
+        op->cpuRefRegion(mean, mean, region);
+    }
+    std::copy(mean, mean + 3, rgb);
+    return true;
+}
+
+bool Engine::sampleGrid(float u, float v, int n, float* rgba) {
+    if (n <= 0 || n > 15) return false;
+    return runSync([&] {
+        if (previewSource_ == 0 || previewW_ < n || previewH_ < n || !gpu_.halfFloat()) return false;
+        eglMakeCurrent(display_, pbuffer_, pbuffer_, context_);
+        const int cx = std::clamp(static_cast<int>(u * previewW_), 0, previewW_ - 1);
+        const int cy = std::clamp(static_cast<int>(v * previewH_), 0, previewH_ - 1);
+        const int x0 = std::clamp(cx - n / 2, 0, previewW_ - n);
+        const int y0 = std::clamp(cy - n / 2, 0, previewH_ - n);
+        const bool read = gpu_.readRegion(previewSource_, x0, y0, n, n, rgba);
+        if (window_ != EGL_NO_SURFACE) eglMakeCurrent(display_, window_, window_, context_);
+        return read;
+    });
+}
+
 void Engine::setShowOriginal(bool original) {
     {
         std::lock_guard<std::mutex> lock(mutex_);

@@ -301,3 +301,121 @@ private const val STATS_POLL_MILLIS = 500L
 private const val MB = 20
 private const val TARGET_US = 16_000L
 private const val MICROS_PER_MILLI = 1000.0
+
+/**
+ * The eyedropper loupe: the 9 x 9 original pixels under the finger, magnified, drawn
+ * above the thumb so the finger never hides it; the 5 x 5 patch that is averaged is
+ * outlined.
+ */
+@Composable
+internal fun EyedropperLoupe(state: EditorState) {
+    val loupe = state.loupe ?: return
+    val density = LocalDensity.current
+    val sizePx = with(density) { LOUPE_SIZE.toPx() }
+    val offsetPx = with(density) { LOUPE_OFFSET.toPx() }
+    Box(
+        Modifier
+            .offset {
+                IntOffset((loupe.viewX - sizePx / 2f).roundToInt(), (loupe.viewY - offsetPx - sizePx).coerceAtLeast(0f).roundToInt())
+            }.size(LOUPE_SIZE)
+            .clip(CircleShape)
+            .background(LoColors.Surface2)
+            .testTag(EditorTags.LOUPE)
+            .semantics { contentDescription = "Eyedropper loupe" },
+    ) {
+        val pixels = loupe.pixels
+        Canvas(Modifier.fillMaxSize()) {
+            if (pixels == null) return@Canvas
+            val n = LOUPE_PIXELS
+            val cell = size.width / n
+            for (row in 0 until n) {
+                for (col in 0 until n) {
+                    val i = (row * n + col) * 4
+                    drawRect(
+                        workingToSrgb(pixels[i], pixels[i + 1], pixels[i + 2]),
+                        topLeft =
+                            androidx.compose.ui.geometry
+                                .Offset(col * cell, row * cell),
+                        size =
+                            androidx.compose.ui.geometry
+                                .Size(cell + 0.5f, cell + 0.5f),
+                    )
+                }
+            }
+            val patch = cell * PATCH_PIXELS
+            drawRect(
+                LoColors.TextPrimary,
+                topLeft =
+                    androidx.compose.ui.geometry
+                        .Offset((size.width - patch) / 2f, (size.height - patch) / 2f),
+                size =
+                    androidx.compose.ui.geometry
+                        .Size(patch, patch),
+                style = Stroke(width = 2.dp.toPx()),
+            )
+        }
+    }
+}
+
+/** Targeted adjustment: the band under the finger and its value while dragging. */
+@Composable
+internal fun TargetedHudOverlay(
+    state: EditorState,
+    modifier: Modifier = Modifier,
+) {
+    val hud = state.targeted ?: return
+    Row(
+        modifier
+            .clip(LoShapes.Medium)
+            .background(LoColors.Surface2.copy(alpha = OVERLAY_ALPHA))
+            .padding(horizontal = LoSpacing.M, vertical = LoSpacing.Xs)
+            .testTag(EditorTags.TARGETED_HUD),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(LoSpacing.Xs),
+    ) {
+        Box(Modifier.size(DOT * 1.5f).clip(CircleShape).background(hud.band.dot))
+        Text(
+            "${hud.band.label} ${hud.channel.label} ${LoSliderDefaults.formatValue(hud.value, 1f, signed = true)}",
+            style = LoType.Title,
+            color = LoColors.TextPrimary,
+        )
+    }
+}
+
+/** Working space (linear Rec.2020) -> an sRGB colour for UI drawing (clipped). */
+@Suppress("MagicNumber") // row-major 3 x 3 matrix indices
+internal fun workingToSrgb(
+    r: Float,
+    g: Float,
+    b: Float,
+): Color {
+    fun enc(x: Float): Float {
+        val v = x.coerceIn(0f, 1f)
+        return if (v <= SRGB_LINEAR_LIMIT) v * SRGB_SLOPE else SRGB_A * Math.pow(v.toDouble(), 1.0 / SRGB_GAMMA).toFloat() - (SRGB_A - 1f)
+    }
+    val sr = REC2020_TO_SRGB[0] * r + REC2020_TO_SRGB[1] * g + REC2020_TO_SRGB[2] * b
+    val sg = REC2020_TO_SRGB[3] * r + REC2020_TO_SRGB[4] * g + REC2020_TO_SRGB[5] * b
+    val sb = REC2020_TO_SRGB[6] * r + REC2020_TO_SRGB[7] * g + REC2020_TO_SRGB[8] * b
+    return Color(enc(sr), enc(sg), enc(sb))
+}
+
+private val REC2020_TO_SRGB =
+    floatArrayOf(
+        1.6603035f,
+        -0.5875701f,
+        -0.0728901f,
+        -0.1243756f,
+        1.1328345f,
+        -0.0083597f,
+        -0.0181123f,
+        -0.1005836f,
+        1.1187703f,
+    )
+private const val SRGB_LINEAR_LIMIT = 0.0031308f
+private const val SRGB_SLOPE = 12.92f
+private const val SRGB_A = 1.055f
+private const val SRGB_GAMMA = 2.4
+private const val LOUPE_PIXELS = 9
+private const val PATCH_PIXELS = 5
+private val LOUPE_SIZE = 108.dp
+private val LOUPE_OFFSET = 56.dp

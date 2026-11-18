@@ -465,3 +465,272 @@ def light_self_check() -> None:
             assert np.all(np.diff(y) > 0), (name, amount)
     assert histogram_edge_crowding(scene) <= 1, histogram_edge_crowding(scene)
     assert histogram_srgb(scene).sum() == SCENE_WIDTH * SCENE_HEIGHT * 4
+
+
+# ---------------------------------------------------------------------------
+# Stage 6: Color basics.
+#
+# White balance is a Bradford chromatic adaptation in XYZ (colour-science computes the
+# matrix here). Vibrance, Saturation and the HSL mixer work in OKLCh (never in sRGB
+# gamma). Invert, Posterize and Threshold work on transfer-encoded working values
+# (the sRGB curve, extended by symmetry), so mid grey stays mid grey. Nothing is
+# clipped: out-of-gamut and HDR values pass through.
+# ---------------------------------------------------------------------------
+
+COLORS_WIDTH = 120
+COLORS_HEIGHT = 48
+
+WB_DEFAULT_KELVIN = 6504.0
+WB_MIN_KELVIN = 2000.0
+WB_MAX_KELVIN = 50000.0
+WB_TINT_DUV_PER_UNIT = 0.05 / 150.0  # tint +-150 = +-0.05 duv (green-magenta axis)
+D65_XY = np.array([0.3127, 0.3290])
+
+# OKLCh hues (degrees) of saturated sRGB colours at the classic HSV band hues
+# 0, 30, 60, 120, 180, 240, 270, 300 (checked in color_self_check).
+HSL_CENTRES = np.array([29.2, 52.8, 109.8, 142.5, 194.8, 264.1, 293.8, 328.4])
+HSL_BANDS = ["red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"]
+HSL_HUE_DEGREES = 30.0  # hue +-100 = +-30 degrees
+HSL_LUMINANCE = 0.4  # luminance +-100 = L x (1 +- 0.4)
+HSL_CHROMA_FADE = 0.03  # effects fade in from grey over this OKLCh chroma
+
+VIBRANCE_CHROMA_REF = 0.3  # chroma counted as fully saturated
+SKIN_HUES = (34.5, 84.2)  # OKLCh image of HSV hues 15..45 degrees
+SKIN_EDGE = 10.0  # soft edges of the skin band, degrees
+SKIN_PROTECT = 0.75  # how much of the vibrance boost skin is spared
+
+_REC2020_TO_XYZ = np.array(_REC2020.matrix_RGB_to_XYZ)
+_XYZ_TO_REC2020 = np.array(_REC2020.matrix_XYZ_to_RGB)
+
+
+def uv_planck(kelvin: float) -> np.ndarray:
+    """CIE 1960 uv of the Planckian locus (Krystek 1985, as in colour-science)."""
+    return np.asarray(colour.temperature.CCT_to_uv_Krystek1985(kelvin), dtype=np.float64)
+
+
+def _locus_normal(kelvin: float) -> np.ndarray:
+    """Unit normal of the locus at T pointing to green (+v side)."""
+    h = kelvin * 1e-4
+    d = uv_planck(kelvin + h) - uv_planck(kelvin - h)
+    n = np.array([-d[1], d[0]])
+    n /= np.linalg.norm(n)
+    return n if n[1] > 0 else -n
+
+
+def wb_source_uv(kelvin: float, tint: float) -> np.ndarray:
+    """The scene white for (T, tint): D65 moved by the locus offset from 6504 K.
+
+    T = 6504 K and tint 0 is exactly D65 (no change). Tint moves along the locus normal,
+    + towards green (the image then turns magenta).
+    """
+    d65 = np.asarray(colour.xy_to_UCS_uv(D65_XY), dtype=np.float64)
+    offset = uv_planck(kelvin) - uv_planck(WB_DEFAULT_KELVIN)
+    return d65 + offset + tint * WB_TINT_DUV_PER_UNIT * _locus_normal(kelvin)
+
+
+def _uv_to_xyz(uv: np.ndarray) -> np.ndarray:
+    xy = colour.UCS_uv_to_xy(uv)
+    return colour.xy_to_XYZ(xy)
+
+
+def white_balance_matrix(kelvin: float, tint: float) -> np.ndarray:
+    """Working-space 3x3: Bradford adaptation from the (T, tint) white to D65."""
+    source = _uv_to_xyz(wb_source_uv(kelvin, tint))
+    target = colour.xy_to_XYZ(D65_XY)
+    cat = colour.adaptation.matrix_chromatic_adaptation_VonKries(source, target, transform="Bradford")
+    return _XYZ_TO_REC2020 @ cat @ _REC2020_TO_XYZ
+
+
+def white_balance(image: np.ndarray, kelvin: float, tint: float) -> np.ndarray:
+    out = image.astype(np.float64).copy()
+    out[..., :3] = out[..., :3] @ white_balance_matrix(kelvin, tint).T
+    return out.astype(np.float32)
+
+
+def to_oklab(rgb: np.ndarray) -> np.ndarray:
+    return colour.XYZ_to_Oklab(rgb @ _REC2020_TO_XYZ.T)
+
+
+def from_oklab(lab: np.ndarray) -> np.ndarray:
+    return colour.Oklab_to_XYZ(lab) @ _XYZ_TO_REC2020.T
+
+
+def _lch(rgb: np.ndarray):
+    lab = to_oklab(rgb)
+    c = np.hypot(lab[..., 1], lab[..., 2])
+    h = np.degrees(np.arctan2(lab[..., 2], lab[..., 1])) % 360.0
+    return lab[..., 0], c, h
+
+
+def _from_lch(l, c, h) -> np.ndarray:
+    r = np.radians(h)
+    return from_oklab(np.stack([l, c * np.cos(r), c * np.sin(r)], axis=-1))
+
+
+def _apply_lch(image: np.ndarray, fn) -> np.ndarray:
+    out = image.astype(np.float64).copy()
+    l, c, h = _lch(out[..., :3])
+    l2, c2, h2 = fn(l, c, h)
+    out[..., :3] = _from_lch(l2, c2, h2)
+    return out.astype(np.float32)
+
+
+def saturation(image: np.ndarray, amount: float) -> np.ndarray:
+    """Saturation in [-100, 100]: OKLCh chroma x (1 + amount/100); -100 = grey."""
+    return _apply_lch(image, lambda l, c, h: (l, c * (1.0 + amount / 100.0), h))
+
+
+def skin_weight(h: np.ndarray) -> np.ndarray:
+    lo, hi = SKIN_HUES
+    return _smoothstep(lo - SKIN_EDGE, lo, h) * (1.0 - _smoothstep(hi, hi + SKIN_EDGE, h))
+
+
+def vibrance(image: np.ndarray, amount: float) -> np.ndarray:
+    """Vibrance in [-100, 100]: chroma x (1 + v (1 - s) protect), s = min(C / 0.3, 1).
+
+    Less saturated colours move more; skin hues (OKLCh 34.5..84.2) are 75 % protected.
+    """
+    v = amount / 100.0
+
+    def fn(l, c, h):
+        s = np.minimum(c / VIBRANCE_CHROMA_REF, 1.0)
+        protect = 1.0 - SKIN_PROTECT * skin_weight(h)
+        return l, c * (1.0 + v * (1.0 - s) * protect), h
+
+    return _apply_lch(image, fn)
+
+
+def hsl_weights(h: np.ndarray) -> np.ndarray:
+    """Raised-cosine weights of the 8 bands at OKLCh hue h (degrees); they sum to 1."""
+    h = np.asarray(h, dtype=np.float64) % 360.0
+    w = np.zeros(h.shape + (8,))
+    for i in range(8):
+        c0 = HSL_CENTRES[i]
+        c1 = HSL_CENTRES[(i + 1) % 8] + (360.0 if i == 7 else 0.0)
+        d = (h - c0) % 360.0
+        inside = d < (c1 - c0)
+        t = np.where(inside, d / (c1 - c0), 0.0)
+        a = 0.5 * (1.0 + np.cos(np.pi * t))
+        w[..., i] += np.where(inside, a, 0.0)
+        w[..., (i + 1) % 8] += np.where(inside, 1.0 - a, 0.0)
+    return w
+
+
+def hsl_mixer(image: np.ndarray, hue, sat, lum) -> np.ndarray:
+    """HSL / Color Mixer: 8 bands x (hue, saturation, luminance) in [-100, 100] each."""
+    hue, sat, lum = (np.asarray(x, dtype=np.float64) / 100.0 for x in (hue, sat, lum))
+
+    def fn(l, c, h):
+        w = hsl_weights(h)
+        fade = _smoothstep(0.0, HSL_CHROMA_FADE, c)
+        dh = fade * (w @ hue) * HSL_HUE_DEGREES
+        cs = np.maximum(1.0 + fade * (w @ sat), 0.0)
+        ls = 1.0 + fade * HSL_LUMINANCE * (w @ lum)
+        return l * ls, c * cs, h + dh
+
+    return _apply_lch(image, fn)
+
+
+def encode(x: np.ndarray) -> np.ndarray:
+    """The sRGB transfer extended by symmetry (and beyond 1 by the same power law)."""
+    a = np.abs(x)
+    e = np.where(a <= 0.0031308, a * 12.92, 1.055 * np.power(a, 1.0 / 2.4) - 0.055)
+    return np.sign(x) * e
+
+
+def decode(e: np.ndarray) -> np.ndarray:
+    a = np.abs(e)
+    x = np.where(a <= 0.04045, a / 12.92, np.power((a + 0.055) / 1.055, 2.4))
+    return np.sign(e) * x
+
+
+def _on_encoded(image: np.ndarray, fn) -> np.ndarray:
+    out = image.astype(np.float64).copy()
+    out[..., :3] = decode(fn(encode(out[..., :3])))
+    return out.astype(np.float32)
+
+
+def invert(image: np.ndarray) -> np.ndarray:
+    """Invert on encoded values: e -> 1 - e (mid grey stays mid grey)."""
+    return _on_encoded(image, lambda e: 1.0 - e)
+
+
+def posterize(image: np.ndarray, levels: float) -> np.ndarray:
+    """Posterize to `levels` steps (2..32) of the encoded value, per channel."""
+    n = levels - 1.0
+    return _on_encoded(image, lambda e: np.floor(e * n + 0.5) / n)
+
+
+def threshold(image: np.ndarray, level: float) -> np.ndarray:
+    """Threshold at `level` (0..1) of encoded luminance: white above, black below."""
+    out = image.astype(np.float64).copy()
+    y = encode(luminance(out[..., :3]))
+    v = np.where(y >= level, 1.0, 0.0)
+    out[..., :3] = v[..., None]
+    return out.astype(np.float32)
+
+
+def colors_rec2020() -> np.ndarray:
+    """An OKLCh test chart: hue across (0..357 deg), chroma 0..0.32 down in 6 bands of
+    lightness, plus a grey ramp and a few HDR / out-of-sRGB-gamut values. Alpha 1."""
+    h, w = COLORS_HEIGHT, COLORS_WIDTH
+    y, x = np.mgrid[0:h, 0:w].astype(np.float64)
+    hue = x * 3.0
+    band = (y // 8).astype(np.int64)
+    row = y % 8
+    lightness = np.array([0.35, 0.5, 0.62, 0.72, 0.85, 0.95])[np.minimum(band, 5)]
+    chroma = row / 7.0 * 0.32
+    rgb = _from_lch(lightness, chroma, hue)
+    grey = band == 5
+    rgb[grey & (row < 2)] = (np.linspace(0.0, 2.0, w)[:, None] * np.ones(3))[x[grey & (row < 2)].astype(int)]
+    rgba = np.concatenate([rgb, np.ones((h, w, 1))], axis=-1)
+    return rgba.astype(np.float32)
+
+
+COLOR_SETTINGS = {
+    "white_balance": [(3000.0, 0.0), (9000.0, 40.0), (5000.0, -60.0)],
+    "vibrance": [(-50.0,), (40.0,), (100.0,)],
+    "saturation": [(-100.0,), (-30.0,), (60.0,)],
+    "hsl_mixer": [
+        ([0, 40, 0, 0, 0, -30, 0, 0], [0, 60, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 0]),
+        ([0] * 8, [-100, -100, -100, -100, -100, 100, 0, 0], [0, 0, 0, 0, 50, -60, 0, 0]),
+        ([20, -20, 30, -40, 50, -60, 70, -80], [10, 20, 30, 40, -50, -60, -70, -80], [-10, 20, -30, 40, -50, 60, -70, 80]),
+    ],
+    "invert": [()],
+    "posterize": [(2.0,), (5.0,), (16.0,)],
+    "threshold": [(0.25,), (0.5,), (0.75,)],
+}
+
+COLOR_OPS = {
+    "white_balance": white_balance,
+    "vibrance": vibrance,
+    "saturation": saturation,
+    "hsl_mixer": hsl_mixer,
+    "invert": invert,
+    "posterize": posterize,
+    "threshold": threshold,
+}
+
+
+def color_self_check() -> None:
+    # Band centres are the OKLCh hues of the classic HSV band hues.
+    for hsv, centre in zip([0, 30, 60, 120, 180, 240, 270, 300], HSL_CENTRES):
+        rgb = colour.cctf_decoding(colour.HSV_to_RGB(np.array([hsv / 360.0, 1.0, 1.0])), function="sRGB")
+        lab = colour.XYZ_to_Oklab(colour.RGB_to_XYZ(rgb, _SRGB, apply_cctf_decoding=False))
+        hue = np.degrees(np.arctan2(lab[2], lab[1])) % 360.0
+        assert abs(hue - centre) < 0.1, (hsv, hue, centre)
+    # Band weights are a partition of unity and peak at their centre.
+    w = hsl_weights(np.linspace(0, 360, 7201))
+    assert np.allclose(w.sum(axis=-1), 1.0, atol=1e-12)
+    assert np.allclose(hsl_weights(HSL_CENTRES), np.eye(8), atol=1e-12)
+    # 6504 K, tint 0 is no change; the default white is D65.
+    assert np.allclose(white_balance_matrix(WB_DEFAULT_KELVIN, 0.0), np.eye(3), atol=1e-9)
+    # A colour adapted with the source white of (T, tint) becomes neutral.
+    for k, t in [(3200.0, 20.0), (12000.0, -40.0)]:
+        white = _uv_to_xyz(wb_source_uv(k, t)) @ _XYZ_TO_REC2020.T
+        out = white_balance_matrix(k, t) @ white
+        assert np.allclose(out / out.mean(), 1.0, atol=1e-6), out
+    # Out-of-gamut and HDR values survive (no clipping).
+    chart = colors_rec2020()
+    assert chart[..., :3].min() < 0.0 and chart[..., :3].max() > 1.0
+    assert np.allclose(invert(invert(chart)), chart, atol=1e-4)

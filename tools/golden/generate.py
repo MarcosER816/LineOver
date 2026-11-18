@@ -64,6 +64,7 @@ def build_outputs() -> dict[str, np.ndarray]:
         ),
     }
     outputs.update(light_outputs())
+    outputs.update(color_outputs())
     return outputs
 
 
@@ -78,6 +79,27 @@ def light_outputs() -> dict[str, np.ndarray]:
         # GPU vs reference on the device: the middle setting through the sRGB display transform.
         outputs[f"light/{name}_2_srgb_display_f32.npy"] = reference.working_to_display(op(scene, *settings[1]), "srgb")
     outputs["histogram/scene_srgb_hist_f32.npy"] = reference.histogram_srgb(scene)
+    return outputs
+
+
+COLOR_CHART_OPS = ("vibrance", "saturation", "hsl_mixer")
+
+
+def color_outputs() -> dict[str, np.ndarray]:
+    """Stage 6: Color basics at three settings each (Invert: one), GPU display goldens.
+
+    Vibrance, Saturation and HSL run on the OKLCh chart, the others on the HDR scene.
+    """
+    scene = reference.scene_rec2020()
+    chart = reference.colors_rec2020()
+    outputs = {"input/colors_rec2020_f32.npy": chart}
+    for name, settings in reference.COLOR_SETTINGS.items():
+        op = reference.COLOR_OPS[name]
+        image = chart if name in COLOR_CHART_OPS else scene
+        for index, params in enumerate(settings, start=1):
+            outputs[f"colorops/{name}_{index}_f32.npy"] = op(image, *params)
+        middle = settings[min(1, len(settings) - 1)]
+        outputs[f"colorops/{name}_gpu_srgb_display_f32.npy"] = reference.working_to_display(op(image, *middle), "srgb")
     return outputs
 
 
@@ -128,6 +150,7 @@ def main() -> int:
 
     reference.self_check()
     reference.light_self_check()
+    reference.color_self_check()
     outputs = build_outputs()
 
     if args.check:

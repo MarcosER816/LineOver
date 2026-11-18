@@ -194,13 +194,36 @@ private fun buildTools(): List<ToolSpec> =
                 "tint",
                 "warm",
                 "cool",
+                "eyedropper",
+                done = true,
             )
-            strip(Color, "color.vibrance", "Vibrance", 6, PanelType.Sliders, LoIcons.Colorize)
-            strip(Color, "color.saturation", "Saturation", 6, PanelType.Sliders, LoIcons.Opacity, "colourfulness", "desaturate")
-            strip(Color, "color.hsl_color_mixer", "HSL / Color Mixer", 6, PanelType.Mixer, LoIcons.Tune, "hue", "hsl", "colour mixer")
-            strip(Color, "color.invert", "Invert", 6, PanelType.Action, LoIcons.InvertColors, "negative")
-            strip(Color, "color.posterize", "Posterize", 6, PanelType.Sliders, LoIcons.Wallpaper)
-            strip(Color, "color.threshold", "Threshold", 6, PanelType.Sliders, LoIcons.Tonality)
+            strip(Color, "color.vibrance", "Vibrance", 6, PanelType.Sliders, LoIcons.Colorize, done = true)
+            strip(
+                Color,
+                "color.saturation",
+                "Saturation",
+                6,
+                PanelType.Sliders,
+                LoIcons.Opacity,
+                "colourfulness",
+                "desaturate",
+                done = true,
+            )
+            strip(
+                Color,
+                "color.hsl_color_mixer",
+                "HSL / Color Mixer",
+                6,
+                PanelType.Mixer,
+                LoIcons.Tune,
+                "hue",
+                "hsl",
+                "colour mixer",
+                done = true,
+            )
+            strip(Color, "color.invert", "Invert", 6, PanelType.Action, LoIcons.InvertColors, "negative", done = true)
+            strip(Color, "color.posterize", "Posterize", 6, PanelType.Sliders, LoIcons.Wallpaper, done = true)
+            strip(Color, "color.threshold", "Threshold", 6, PanelType.Sliders, LoIcons.Tonality, done = true)
             strip(Color, "color.color_grading", "Color Grading", 7, PanelType.ColorWheels, LoIcons.Colors, "colour wheels", "grade")
             strip(Color, "color.split_toning", "Split toning", 7, PanelType.ColorWheels, LoIcons.Gradient, "duotone")
             strip(Color, "color.color_balance", "Color Balance", 7, PanelType.Sliders, LoIcons.Palette)

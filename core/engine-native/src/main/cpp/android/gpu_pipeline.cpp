@@ -211,11 +211,15 @@ class Recorder final : public GpuOpContext {
 public:
     std::string declarations, body;
     std::vector<std::pair<std::string, float>> uniforms;
+    std::vector<std::pair<std::string, std::vector<float>>> matrices;  // row-major mat3
+    std::vector<std::pair<std::string, std::vector<float>>> arrays;
     void setShader(const char* d, const char* b) override {
         declarations = d;
         body = b;
     }
     void setUniform1f(const char* name, float value) override { uniforms.emplace_back(name, value); }
+    void setUniformMat3(const char* name, const float* m) override { matrices.emplace_back(name, std::vector<float>(m, m + 9)); }
+    void setUniform1fv(const char* name, const float* v, int n) override { arrays.emplace_back(name, std::vector<float>(v, v + n)); }
 };
 
 }  // namespace
@@ -264,6 +268,10 @@ bool GpuPipeline::runOps(const OpList& ops, GLuint source, GLuint target, int wi
         glUniform2i(glGetUniformLocation(program, "u_guidedSize"), inputs.guidedWidth, inputs.guidedHeight);
         glActiveTexture(GL_TEXTURE0);
         for (const auto& [name, value] : recorder.uniforms) glUniform1f(glGetUniformLocation(program, name.c_str()), value);
+        for (const auto& [name, m] : recorder.matrices) glUniformMatrix3fv(glGetUniformLocation(program, name.c_str()), 1, GL_TRUE, m.data());
+        for (const auto& [name, v] : recorder.arrays) {
+            glUniform1fv(glGetUniformLocation(program, name.c_str()), static_cast<GLsizei>(v.size()), v.data());
+        }
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
         in = out;
     }
@@ -373,12 +381,14 @@ void GpuPipeline::releaseReadback() {
     packBytes_ = 0;
 }
 
-bool GpuPipeline::readFloat(GLuint texture, int width, int height, float* out) {
+bool GpuPipeline::readFloat(GLuint texture, int width, int height, float* out) { return readRegion(texture, 0, 0, width, height, out); }
+
+bool GpuPipeline::readRegion(GLuint texture, int x, int y, int width, int height, float* out) {
     if (!halfFloat_) return false;
     glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
     glPixelStorei(GL_PACK_ALIGNMENT, 4);
-    glReadPixels(0, 0, width, height, GL_RGBA, GL_FLOAT, out);
+    glReadPixels(x, y, width, height, GL_RGBA, GL_FLOAT, out);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     return true;

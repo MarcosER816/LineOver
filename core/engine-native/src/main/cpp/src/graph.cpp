@@ -1,6 +1,8 @@
 #include "lineover/graph.h"
+#include "lineover/color_ops.h"
 #include "lineover/light.h"
 
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -308,6 +310,12 @@ bool parseGraph(const std::string& json, Graph* out, std::string* error) {
                     for (const auto& member : opValue.members) {
                         if (member.first != "op" && member.second.kind == Value::Kind::Number) {
                             params.params.emplace_back(member.first, member.second.number);
+                        } else if (member.second.kind == Value::Kind::Array) {
+                            std::vector<double> numbers;
+                            for (const Value& item : member.second.items) {
+                                if (item.kind == Value::Kind::Number) numbers.push_back(item.number);
+                            }
+                            params.arrays.emplace_back(member.first, std::move(numbers));
                         }
                     }
                     layer.ops.push_back(std::move(params));
@@ -337,6 +345,16 @@ std::string serializeGraph(const Graph& graph) {
                 writeString(param.first, &out);
                 out.push_back(':');
                 out.append(formatKotlinFloat(static_cast<float>(param.second)));
+            }
+            for (const auto& array : ops[o].arrays) {
+                out.push_back(',');
+                writeString(array.first, &out);
+                out.append(":[");
+                for (std::size_t i = 0; i < array.second.size(); ++i) {
+                    if (i > 0) out.push_back(',');
+                    out.append(formatKotlinFloat(static_cast<float>(array.second[i])));
+                }
+                out.push_back(']');
             }
             out.push_back('}');
         }
@@ -370,6 +388,31 @@ std::unique_ptr<OpList> buildOps(const Graph& graph, std::string* skipped) {
                 list->add(makeWhites(static_cast<float>(param("amount", 0.0))));
             } else if (params.op == "blacks") {
                 list->add(makeBlacks(static_cast<float>(param("amount", 0.0))));
+            } else if (params.op == "white_balance") {
+                list->add(makeWhiteBalance(static_cast<float>(param("temperature", kWbDefaultKelvin)),
+                                           static_cast<float>(param("tint", 0.0))));
+            } else if (params.op == "vibrance") {
+                list->add(makeVibrance(static_cast<float>(param("amount", 0.0))));
+            } else if (params.op == "saturation") {
+                list->add(makeSaturation(static_cast<float>(param("amount", 0.0))));
+            } else if (params.op == "hsl_mixer") {
+                auto bands = [&](const char* key) {
+                    std::array<float, kHslBands> values{};
+                    for (const auto& a : params.arrays) {
+                        if (a.first != key) continue;
+                        for (std::size_t i = 0; i < values.size() && i < a.second.size(); ++i) {
+                            values[i] = static_cast<float>(a.second[i]);
+                        }
+                    }
+                    return values;
+                };
+                list->add(makeHslMixer(bands("hue"), bands("saturation"), bands("luminance")));
+            } else if (params.op == "invert") {
+                list->add(makeInvert());
+            } else if (params.op == "posterize") {
+                list->add(makePosterize(static_cast<float>(param("levels", 0.0))));
+            } else if (params.op == "threshold") {
+                list->add(makeThreshold(static_cast<float>(param("level", 0.5))));
             } else if (params.op == "highlights_shadows") {
                 list->add(makeHighlightsShadows(static_cast<float>(param("highlights", 0.0)),
                                                 static_cast<float>(param("shadows", 0.0))));

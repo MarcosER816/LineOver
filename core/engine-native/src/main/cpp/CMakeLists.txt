@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(lineover_engine VERSION 0.5.0 LANGUAGES C CXX)
+project(lineover_engine VERSION 0.6.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -26,6 +26,7 @@ add_library(lo_engine STATIC
     src/color.cpp
     src/ops.cpp
     src/light.cpp
+    src/color_ops.cpp
     src/graph.cpp
     src/tiling.cpp
     src/tile_store.cpp)
@@ -69,7 +70,7 @@ else()
         target_link_libraries(lo_testing PUBLIC lo_engine ZLIB::ZLIB)
 
         foreach(test_name sample_test golden_assert_test golden_identity_test
-                color_test ops_test graph_test tiling_test tile_store_test light_test)
+                color_test ops_test graph_test tiling_test tile_store_test light_test color_ops_test)
             add_executable(${test_name} tests/${test_name}.cpp)
             target_compile_options(${test_name} PRIVATE ${LO_WARNINGS})
             target_link_libraries(${test_name} PRIVATE lo_testing)

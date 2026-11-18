@@ -128,6 +128,20 @@ internal class NativeEngine(
         )
     }
 
+    /** Average working RGB of the 5 x 5 preview pixels at (u, v), through the ops before [beforeOpType]. */
+    fun sample(
+        u: Float,
+        v: Float,
+        beforeOpType: Int,
+    ): FloatArray? = nativeSample(h(), u, v, beforeOpType)
+
+    /** The n x n source preview pixels around (u, v), RGBA working space, top row first. */
+    fun sampleGrid(
+        u: Float,
+        v: Float,
+        n: Int,
+    ): FloatArray? = nativeSampleGrid(h(), u, v, n)
+
     /** Auto (percentile stretch): (exposure EV, blacks) or null before a preview. */
     fun autoLight(): FloatArray? = nativeAutoLight(h())
 
@@ -187,6 +201,20 @@ internal class NativeEngine(
     }
 
     private external fun nativeAutoLight(engine: Long): FloatArray?
+
+    private external fun nativeSample(
+        engine: Long,
+        u: Float,
+        v: Float,
+        before: Int,
+    ): FloatArray?
+
+    private external fun nativeSampleGrid(
+        engine: Long,
+        u: Float,
+        v: Float,
+        n: Int,
+    ): FloatArray?
 
     private external fun nativeSetShowOriginal(
         engine: Long,

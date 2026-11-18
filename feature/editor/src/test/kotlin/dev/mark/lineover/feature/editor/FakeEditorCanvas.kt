@@ -60,6 +60,38 @@ class FakeEditorCanvas(
 
     override fun stats(): EngineStats? = null
 
+    /** What the eyedropper solves to, null for "black". */
+    var whiteBalance: Pair<Float, Float>? = 4500f to 12f
+
+    /** Band weights under the finger: mostly orange. */
+    var weights: FloatArray? =
+        FloatArray(8).also {
+            it[1] = 0.75f
+            it[2] = 0.25f
+        }
+    val samples = mutableListOf<Pair<Float, Float>>()
+
+    override fun whiteBalanceAt(
+        u: Float,
+        v: Float,
+    ): Pair<Float, Float>? {
+        samples += u to v
+        return whiteBalance
+    }
+
+    override fun hslWeightsAt(
+        u: Float,
+        v: Float,
+    ): FloatArray? {
+        samples += u to v
+        return weights
+    }
+
+    override fun loupeAt(
+        u: Float,
+        v: Float,
+    ): FloatArray = FloatArray(9 * 9 * 4) { if (it % 4 == 3) 1f else 0.18f }
+
     override fun setGraph(graph: EditGraph): String? {
         graphs += graph
         return null

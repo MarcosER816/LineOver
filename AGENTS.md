@@ -129,9 +129,11 @@ python3 tools/golden/generate.py --check
   `testdata/graph/edit_graph_v1.json`.
 - zstd is vendored under `core/engine-native/src/main/cpp/third_party/zstd` (BSD); never
   run scripts from downloaded archives to regenerate it — copy the sources.
-- Light ops (Stage 5) run in the fixed order of `LightAdjustments.toOps()`; Highlights /
-  Shadows reads the preview's guided-filter coefficients (`OpRegion`, `lo_guided()`), so
-  it must stay first. Never tone-map in 8 bit: all ops run on RGBA16F / float.
+- Background ops run in the fixed order of `editOps()` (`:core:model`): White balance,
+  then Light (`LightAdjustments.toOps()`: Highlights / Shadows first, it reads the preview's
+  guided-filter coefficients via `OpRegion` / `lo_guided()`), then the rest of Color. Never
+  tone-map in 8 bit: all ops run on RGBA16F / float. Colour work (HSL, vibrance,
+  saturation) is done in OKLCh, never in sRGB gamma; nothing clips before the display.
 - Full-resolution bitmaps never exist on the Java heap: previews are ≤ 2048 px, tiles are
   512 px regions recycled after conversion.
 

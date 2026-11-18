@@ -2,6 +2,23 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 6 — Color basics (0.6.0)
+
+### Added
+
+- White balance: Temperature (2000–50000 K, blue → amber track) and Tint (green → magenta),
+  done as a proper chromatic adaptation (Bradford) rather than channel gains; "As shot"
+  returns to the camera's own balance.
+- White-balance eyedropper: tap the pipette, put your finger on something that should be
+  grey; a magnifier above your finger shows the pixels, and lifting makes that spot neutral.
+- Vibrance (boosts muted colours more and spares skin tones) and Saturation.
+- HSL / Color Mixer: Hue, Saturation and Luminance for 8 colours (red, orange, yellow,
+  green, aqua, blue, purple, magenta), each with its coloured dot. Computed in OKLCh so
+  neighbouring colours blend smoothly and greys never get a colour cast.
+- Targeted adjustment (the target icon in the mixer): drag up or down on a colour in the
+  photo to change the band under your finger.
+- Invert, Posterize (2–32 levels) and Threshold, in the Color strip.
+
 ## Stage 5 — Light (0.5.0)
 
 ### Added

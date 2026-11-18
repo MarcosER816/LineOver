@@ -26,6 +26,13 @@ enum class OpType : int {
     Whites = 5,
     Blacks = 6,
     HighlightsShadows = 7,
+    WhiteBalance = 8,
+    Vibrance = 9,
+    Saturation = 10,
+    HslMixer = 11,
+    Invert = 12,
+    Posterize = 13,
+    Threshold = 14,
 };
 
 // Guided-filter coefficients of an image's log2 luminance, at preview resolution:
@@ -58,6 +65,17 @@ public:
     // coefficients (A, B) at the current pixel, sampled exactly as sampleGuided() does.
     virtual void setShader(const char* declarations, const char* body) = 0;
     virtual void setUniform1f(const char* name, float value) = 0;
+    // A mat3 uniform, row-major.
+    virtual void setUniformMat3(const char* name, const float* rowMajor9) {
+        (void)name;
+        (void)rowMajor9;
+    }
+    // A float[count] uniform.
+    virtual void setUniform1fv(const char* name, const float* values, int count) {
+        (void)name;
+        (void)values;
+        (void)count;
+    }
 };
 
 class Op {

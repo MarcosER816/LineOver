@@ -84,6 +84,18 @@ object EditorTags {
     const val SWIPE_HUD = "swipe-hud"
     const val SPLIT_HANDLE = "compare-split-handle"
     const val RENDER_STATS = "render-stats"
+    const val COLOR_PANEL = "color-panel"
+    const val AS_SHOT = "wb-as-shot"
+    const val EYEDROPPER = "wb-eyedropper"
+    const val TEMPERATURE = "wb-temperature"
+    const val TINT = "wb-tint"
+    const val TARGETED = "hsl-targeted"
+    const val LOUPE = "eyedropper-loupe"
+    const val TARGETED_HUD = "targeted-hud"
+
+    fun hslDot(band: String) = "hsl-dot:$band"
+
+    fun hslSlider(band: String) = "hsl-slider:$band"
 }
 
 /** The 56 dp top bar: Back · Undo · Redo · Compare · History · Layers · More · Export. */
