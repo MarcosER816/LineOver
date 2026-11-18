@@ -34,6 +34,8 @@ def build_outputs() -> dict[str, np.ndarray]:
     """Returns every golden file as {relative path: array}."""
     pattern_u8 = reference.test_pattern_rgba8()
     pattern_f32 = reference.srgb8_to_working(pattern_u8)
+    encoded = reference.color_samples_encoded()
+    linear = reference.color_samples_linear()
 
     return {
         # Inputs shared by all operations.
@@ -43,6 +45,19 @@ def build_outputs() -> dict[str, np.ndarray]:
         # Identity op.
         "identity/expected_rgba8.png": reference.identity(pattern_u8),
         "identity/expected_rec2020_f32.npy": reference.identity(pattern_f32),
+        # ExposureTest op (+1.5 stops).
+        "exposure_test/expected_rec2020_f32.npy": reference.exposure_test(pattern_f32),
+        # Colour pipeline (colour-science): transfer functions, matrices, display transforms.
+        "color/encoded_f32.npy": encoded,
+        "color/linear_f32.npy": linear,
+        "color/srgb_eotf_f32.npy": reference.srgb_eotf(encoded),
+        "color/srgb_oetf_f32.npy": reference.srgb_oetf(encoded),
+        "color/srgb_to_rec2020_f32.npy": reference.rgb_to_rgb(linear, "srgb", "rec2020"),
+        "color/rec2020_to_srgb_f32.npy": reference.rgb_to_rgb(linear, "rec2020", "srgb"),
+        "color/p3_to_rec2020_f32.npy": reference.rgb_to_rgb(linear, "p3", "rec2020"),
+        "color/rec2020_to_p3_f32.npy": reference.rgb_to_rgb(linear, "rec2020", "p3"),
+        "color/working_to_srgb_display_f32.npy": reference.working_to_display(pattern_f32, "srgb"),
+        "color/working_to_p3_display_f32.npy": reference.working_to_display(pattern_f32, "p3"),
     }
 
 

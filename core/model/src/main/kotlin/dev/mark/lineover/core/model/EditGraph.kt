@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class Layer(
     val id: String,
-    val ops: List<Op> = emptyList(),
+    val ops: List<OpParams> = emptyList(),
 )
 
 /**
@@ -19,7 +19,16 @@ data class EditGraph(
     val schemaVersion: Int = SCHEMA_VERSION,
     val layers: List<Layer> = emptyList(),
 ) {
+    /** A copy whose bottom layer ("background", created if missing) has [ops]. */
+    fun withBackgroundOps(ops: List<OpParams>): EditGraph {
+        val background = layers.firstOrNull() ?: Layer(BACKGROUND)
+        return copy(layers = listOf(background.copy(ops = ops)) + layers.drop(1))
+    }
+
     companion object {
+        /** Id of the bottom layer: the photo. */
+        const val BACKGROUND = "background"
+
         const val SCHEMA_VERSION = 1
     }
 }

@@ -1,0 +1,1 @@
+{"schemaVersion":1,"layers":[{"id":"background","ops":[{"op":"identity"},{"op":"exposure_test","stops":1.5}]},{"id":"empty","ops":[]}]}

@@ -17,7 +17,10 @@ PATTERN_WIDTH = 64
 PATTERN_HEIGHT = 48
 
 _SRGB = colour.RGB_COLOURSPACES["sRGB"]
+_P3 = colour.RGB_COLOURSPACES["Display P3"]
 _REC2020 = colour.RGB_COLOURSPACES["ITU-R BT.2020"]
+
+COLOR_GRID = 16
 
 
 def test_pattern_rgba8() -> np.ndarray:
@@ -86,6 +89,71 @@ def working_to_srgb8(rgba_f32: np.ndarray) -> np.ndarray:
     rgb8 = np.rint(encoded * 255.0)
     alpha8 = np.rint(np.clip(rgba_f32[..., 3:4].astype(np.float64), 0.0, 1.0) * 255.0)
     return np.concatenate([rgb8, alpha8], axis=-1).astype(np.uint8)
+
+
+def color_samples_encoded() -> np.ndarray:
+    """16 x 16 RGBA grid of encoded values in 0..1 covering every channel combination step."""
+    n = COLOR_GRID
+    y, x = np.mgrid[0:n, 0:n].astype(np.float64)
+    rgba = np.empty((n, n, 4))
+    rgba[..., 0] = x / (n - 1)
+    rgba[..., 1] = y / (n - 1)
+    rgba[..., 2] = ((x * 7 + y * 3) % n) / (n - 1)
+    rgba[..., 3] = 1.0 - x / (2 * (n - 1))
+    return rgba.astype(np.float32)
+
+
+def color_samples_linear() -> np.ndarray:
+    """Linear samples beyond 0..1 (negative and above 1), as wide-gamut / HDR values are."""
+    rgba = color_samples_encoded().astype(np.float64)
+    rgba[..., :3] = rgba[..., :3] * 2.5 - 0.5
+    return rgba.astype(np.float32)
+
+
+def _with_alpha(rgb: np.ndarray, rgba_in: np.ndarray) -> np.ndarray:
+    return np.concatenate([rgb, rgba_in[..., 3:4].astype(np.float64)], axis=-1).astype(np.float32)
+
+
+def srgb_eotf(rgba: np.ndarray) -> np.ndarray:
+    """sRGB / Display P3 transfer: encoded -> linear (0..1 inputs)."""
+    return _with_alpha(colour.cctf_decoding(rgba[..., :3].astype(np.float64), function="sRGB"), rgba)
+
+
+def srgb_oetf(rgba: np.ndarray) -> np.ndarray:
+    """sRGB / Display P3 transfer: linear -> encoded (0..1 inputs)."""
+    return _with_alpha(colour.cctf_encoding(rgba[..., :3].astype(np.float64), function="sRGB"), rgba)
+
+
+def rgb_to_rgb(rgba: np.ndarray, source: str, target: str) -> np.ndarray:
+    """Linear RGB -> linear RGB between colour spaces (all D65, no adaptation)."""
+    spaces = {"srgb": _SRGB, "p3": _P3, "rec2020": _REC2020}
+    rgb = colour.RGB_to_RGB(
+        rgba[..., :3].astype(np.float64),
+        spaces[source],
+        spaces[target],
+        chromatic_adaptation_transform=None,
+        apply_cctf_decoding=False,
+        apply_cctf_encoding=False,
+    )
+    return _with_alpha(rgb, rgba)
+
+
+def working_to_display(rgba_f32: np.ndarray, display: str) -> np.ndarray:
+    """Working space -> encoded display values (0..1), clipped to the display gamut."""
+    linear = rgb_to_rgb(rgba_f32, "rec2020", display).astype(np.float64)
+    encoded = colour.cctf_encoding(np.clip(linear[..., :3], 0.0, 1.0), function="sRGB")
+    alpha = np.clip(rgba_f32[..., 3:4].astype(np.float64), 0.0, 1.0)
+    return np.concatenate([encoded, alpha], axis=-1).astype(np.float32)
+
+
+EXPOSURE_TEST_STOPS = 1.5
+
+
+def exposure_test(image: np.ndarray, stops: float = EXPOSURE_TEST_STOPS) -> np.ndarray:
+    """Reference of the ExposureTest op: RGB x 2^stops, alpha unchanged."""
+    out = image.astype(np.float64).copy()
+    out[..., :3] *= 2.0**stops
+    return out.astype(np.float32)
 
 
 def identity(image: np.ndarray) -> np.ndarray:
