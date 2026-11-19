@@ -280,6 +280,12 @@ Native **C++17, OpenGL ES 3**, in `:core:engine-native`; Kotlin reaches it throu
   `CanvasView` (`CropGestures`); `CropOverlayLayer` only draws, reading the transform in the
   draw phase.
 - Ultra HDR: `EngineSession.gainmapFor(graph)` warps the gain map with the same geometry.
+- **Lens profiles** (0.9.1): `:core:io` `LensProfileStore` downloads the Lensfun database on
+  request (pinned files, SHA-256, atomic install); `:core:model` `LensDatabase` (its own small
+  XML reader), `LensMatcher` (EXIF camera / lens -> database entry) and `LensProfiles`
+  (exact conversion to the engine's lens model, which follows Lensfun's: odd distortion
+  terms, TCA on the distorted radius, "pa" vignetting). The profile is part of the geometry
+  op (`lensDistortion`, `lensTcaRed` / `lensTcaBlue`, `vignetteProfile`).
 
 `core/engine-native/src/main/cpp`:
 

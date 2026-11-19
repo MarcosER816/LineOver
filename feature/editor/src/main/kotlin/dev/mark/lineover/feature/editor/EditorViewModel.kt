@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import androidx.lifecycle.viewModelScope
 import dev.mark.lineover.core.engine.CompareMode
 import dev.mark.lineover.core.engine.RenderScheduler
+import dev.mark.lineover.core.io.lens.LensProfileState
+import dev.mark.lineover.core.io.lens.LensProfileStore
 import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.CanvasSurround
 import dev.mark.lineover.core.io.prefs.TapGestures
@@ -164,6 +166,9 @@ data class EditorState(
     /** The composition overlay shown while a crop handle or the straighten ruler is dragged. */
     val cropOverlay: CropOverlay = CropOverlay.Thirds,
     val cropDragging: Boolean = false,
+    /** The lens profile database (downloaded on request) and the lenses it has for this photo. */
+    val lensProfiles: LensProfileState = LensProfileState.Missing,
+    val lensCandidates: List<String> = emptyList(),
     /** What the HSL panel's sliders change. */
     val hslChannel: HslChannel = HslChannel.Hue,
     /** Eyedropper or targeted adjustment armed: one finger picks on the canvas. */
@@ -482,6 +487,7 @@ class EditorViewModel(
     private val saveScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
     private val clock: () -> Long = System::currentTimeMillis,
     private val autosaveMillis: Long = AUTOSAVE_MILLIS,
+    lensProfiles: LensProfileStore? = null,
 ) : MviViewModel<EditorState, EditorIntent, EditorEffect>(
         EditorState(
             debuggable = debuggable,
@@ -500,6 +506,8 @@ class EditorViewModel(
             reduce = { label, block -> reduce(label, block) },
             endEdit = { onIntent(EditorIntent.EndEdit) },
             message = { sendEffect(EditorEffect.Message(it)) },
+            setState = { block -> setState(block) },
+            lensProfiles = lensProfiles,
         )
 
     /** Crop handles, perspective corners and guide lines from CanvasView. */

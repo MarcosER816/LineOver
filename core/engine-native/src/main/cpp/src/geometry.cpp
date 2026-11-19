@@ -38,6 +38,12 @@ bool geometryOf(const Graph& graph, Geometry* out) {
         g.k2 = scalarOf(p, "k2", 0.0);
         g.caRed = scalarOf(p, "caRed", 0.0);
         g.caBlue = scalarOf(p, "caBlue", 0.0);
+        if (const std::vector<double>* d = arrayOf(p, "lensDistortion"); d != nullptr)
+            for (std::size_t i = 0; i < 4 && i < d->size(); ++i) g.dist[i] = (*d)[i];
+        if (const std::vector<double>* t = arrayOf(p, "lensTcaRed"); t != nullptr)
+            for (std::size_t i = 0; i < 3 && i < t->size(); ++i) g.tcaRed[i] = (*t)[i];
+        if (const std::vector<double>* t = arrayOf(p, "lensTcaBlue"); t != nullptr)
+            for (std::size_t i = 0; i < 3 && i < t->size(); ++i) g.tcaBlue[i] = (*t)[i];
         g.vignette = static_cast<float>(scalarOf(p, "vignette", 0.0));
         g.vignetteMid = static_cast<float>(scalarOf(p, "vignetteMid", 50.0));
         if (g.outputWidth <= 0 || g.outputHeight <= 0) return false;
@@ -45,6 +51,15 @@ bool geometryOf(const Graph& graph, Geometry* out) {
         return true;
     }
     return false;
+}
+
+double Geometry::radialScale(double r2) const {
+    double s = 1.0 + k1 * r2 + k2 * r2 * r2;
+    if (dist[0] != 0.0 || dist[1] != 0.0 || dist[2] != 0.0 || dist[3] != 0.0) {
+        const double r = std::sqrt(r2);
+        s = s + r * (dist[0] + r * (dist[1] + r * (dist[2] + r * dist[3])));
+    }
+    return s;
 }
 
 void mapToSource(const Geometry& g, int sourceWidth, int sourceHeight, double u, double v, int channel, double* x, double* y) {
@@ -57,9 +72,16 @@ void mapToSource(const Geometry& g, int sourceWidth, int sourceHeight, double u,
     const double radius = 0.5 * std::hypot(static_cast<double>(sourceWidth), static_cast<double>(sourceHeight));
     const double qx = px - cx, qy = py - cy;
     const double r2 = (qx * qx + qy * qy) / (radius * radius);
-    double s = 1.0 + g.k1 * r2 + g.k2 * r2 * r2;
-    if (channel == 0) s *= 1.0 + g.caRed;
-    if (channel == 2) s *= 1.0 + g.caBlue;
+    double s = g.radialScale(r2);
+    if (channel == 0 || channel == 2) {
+        double scale = 1.0 + (channel == 0 ? g.caRed : g.caBlue);
+        const double* t = channel == 0 ? g.tcaRed : g.tcaBlue;
+        if (t[0] != 0.0 || t[1] != 0.0 || t[2] != 0.0) {
+            const double rd = std::sqrt(r2) * s;
+            scale = scale + t[0] + rd * (t[1] + rd * t[2]);
+        }
+        s = s * scale;
+    }
     *x = cx + qx * s;
     *y = cy + qy * s;
 }
@@ -89,18 +111,18 @@ bool sourceToOutput(const Geometry& g, int sourceWidth, int sourceHeight, double
     const double cx = sourceWidth / 2.0, cy = sourceHeight / 2.0;
     const double radius = 0.5 * std::hypot(static_cast<double>(sourceWidth), static_cast<double>(sourceHeight));
     double ux = x, uy = y;
-    if (g.k1 != 0.0 || g.k2 != 0.0) {
-        // r_d = r_u (1 + k1 r_u^2 + k2 r_u^4): Newton on r_u, then scale the vector.
+    if (g.k1 != 0.0 || g.k2 != 0.0 || g.hasProfile()) {
+        // r_d = r_u s(r_u): Newton on r_u (numeric derivative), then scale the vector.
         const double qx = (x - cx) / radius, qy = (y - cy) / radius;
         const double rd = std::hypot(qx, qy);
         if (rd > 0.0) {
             double ru = rd;
             for (int i = 0; i < 20; ++i) {
-                const double r2 = ru * ru;
-                const double f = ru * (1.0 + g.k1 * r2 + g.k2 * r2 * r2) - rd;
-                const double df = 1.0 + 3.0 * g.k1 * r2 + 5.0 * g.k2 * r2 * r2;
+                const double f = ru * g.radialScale(ru * ru) - rd;
+                constexpr double h = 1e-6;
+                const double df = ((ru + h) * g.radialScale((ru + h) * (ru + h)) - (ru - h) * g.radialScale((ru - h) * (ru - h))) / (2 * h);
                 if (std::fabs(df) < 1e-9) break;
-                ru -= f / df;
+                ru = std::max(0.0, ru - f / df);
             }
             ux = cx + (x - cx) * ru / rd;
             uy = cy + (y - cy) * ru / rd;
@@ -138,7 +160,9 @@ bool outputRectOf(const Geometry& g, int sourceWidth, int sourceHeight, const do
         }
     }
     // Chromatic aberration moves red / blue by a fraction of a percent: a wider margin.
-    const double margin = 3.0 + (std::fabs(g.caRed) + std::fabs(g.caBlue)) * std::max(g.outputWidth, g.outputHeight);
+    double tca = std::fabs(g.caRed) + std::fabs(g.caBlue);
+    for (int i = 0; i < 3; ++i) tca += 2.0 * (std::fabs(g.tcaRed[i]) + std::fabs(g.tcaBlue[i]));  // rd <= ~2
+    const double margin = 3.0 + tca * std::max(g.outputWidth, g.outputHeight);
     out[0] = std::max(0.0, minX - margin);
     out[1] = std::max(0.0, minY - margin);
     out[2] = std::min(static_cast<double>(g.outputWidth), maxX + margin) - out[0];
@@ -203,7 +227,8 @@ void warp(const Geometry& g, int sourceWidth, int sourceHeight, const WarpSource
             float* o = out + 4 * (static_cast<std::size_t>(j) * width + i);
             // Green (and alpha) at the geometry's own position; red and blue at theirs
             // when chromatic aberration scales them.
-            const bool ca = g.caRed != 0.0 || g.caBlue != 0.0;
+            const bool ca = g.caRed != 0.0 || g.caBlue != 0.0 || g.tcaRed[0] != 0.0 || g.tcaRed[1] != 0.0 || g.tcaRed[2] != 0.0 ||
+                            g.tcaBlue[0] != 0.0 || g.tcaBlue[1] != 0.0 || g.tcaBlue[2] != 0.0;
             for (int c = 0; c < 4; ++c) {
                 const int mapChannel = c == 3 || !ca ? 1 : c;
                 double x, y;
@@ -250,18 +275,23 @@ namespace {
 
 class VignettingOp final : public Op {
 public:
-    VignettingOp(float amount, float midpoint, float aspect) : amount_(amount), mid_(midpoint / 100.f * 0.8f), aspect_(aspect) {}
+    VignettingOp(float amount, float midpoint, float aspect, const float profile[3])
+        : amount_(amount), mid_(midpoint / 100.f * 0.8f), aspect_(aspect) {
+        for (int i = 0; i < 3; ++i) profile_[i] = profile != nullptr ? profile[i] : 0.f;
+    }
     OpType type() const override { return OpType::Vignetting; }
-    bool isIdentity() const override { return amount_ == 0.f; }
+    bool isIdentity() const override { return amount_ == 0.f && profile_[0] == 0.f && profile_[1] == 0.f && profile_[2] == 0.f; }
     void gpu(GpuOpContext& context) const override {
-        context.setShader("uniform float u_v[3];",
+        context.setShader("uniform float u_v[6];",
                           "vec2 uv = u_rect.xy + v_uv * u_rect.zw;\n"
                           "vec2 q = (uv - 0.5) * vec2(u_v[2], 1.0);\n"
                           "float r = length(q) / (0.5 * length(vec2(u_v[2], 1.0)));\n"
                           "float f = clamp((r - u_v[1]) / (1.0 - u_v[1]), 0.0, 1.0);\n"
-                          "return vec4(c.rgb * exp2(u_v[0] * f * f), c.a);");
-        const float u[3] = {amount_ / 100.f, mid_, aspect_};
-        context.setUniform1fv("u_v", u, 3);
+                          "float r2 = r * r;\n"
+                          "float lens = 1.0 + r2 * (u_v[3] + r2 * (u_v[4] + r2 * u_v[5]));\n"
+                          "return vec4(c.rgb * (exp2(u_v[0] * f * f) / lens), c.a);");
+        const float u[6] = {amount_ / 100.f, mid_, aspect_, profile_[0], profile_[1], profile_[2]};
+        context.setUniform1fv("u_v", u, 6);
     }
     void cpuRef(const float* in, float* out, std::size_t pixels) const override {
         // Without a region: a 1-pixel-high strip is meaningless; treat it as one row.
@@ -278,7 +308,9 @@ public:
                 const double v = region.rect[1] + (j + 0.5) / region.height * region.rect[3];
                 const double r = std::hypot((u - 0.5) * aspect_, v - 0.5) / norm;
                 const double f = std::clamp((r - mid_) / (1.0 - mid_), 0.0, 1.0);
-                const float gain = static_cast<float>(std::exp2(amount_ / 100.0 * f * f));
+                const double r2 = r * r;
+                const double lens = 1.0 + r2 * (profile_[0] + r2 * (profile_[1] + r2 * profile_[2]));
+                const float gain = static_cast<float>(std::exp2(amount_ / 100.0 * f * f) / lens);
                 const std::size_t k = 4 * (static_cast<std::size_t>(j) * region.width + i);
                 for (int c = 0; c < 3; ++c) out[k + c] = in[k + c] * gain;
                 out[k + 3] = in[k + 3];
@@ -288,12 +320,13 @@ public:
 
 private:
     float amount_, mid_, aspect_;
+    float profile_[3];
 };
 
 }  // namespace
 
-std::unique_ptr<Op> makeVignetting(float amount, float midpoint, float aspect) {
-    return std::make_unique<VignettingOp>(amount, midpoint, aspect);
+std::unique_ptr<Op> makeVignetting(float amount, float midpoint, float aspect, const float profile[3]) {
+    return std::make_unique<VignettingOp>(amount, midpoint, aspect, profile);
 }
 
 std::vector<std::uint8_t> warpRgba8(const Geometry& g, int sourceWidth, int sourceHeight, const std::uint8_t* rgba, int width,

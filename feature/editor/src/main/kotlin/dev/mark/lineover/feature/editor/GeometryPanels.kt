@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -39,6 +40,8 @@ import dev.mark.lineover.core.designsystem.component.LoSegmented
 import dev.mark.lineover.core.designsystem.component.LoSlider
 import dev.mark.lineover.core.designsystem.component.LoSliderFill
 import dev.mark.lineover.core.designsystem.component.LoSwitchRow
+import dev.mark.lineover.core.io.lens.LensProfileState
+import dev.mark.lineover.core.io.lens.LensfunManifest
 import dev.mark.lineover.core.model.CropAspect
 import dev.mark.lineover.core.model.CropOverlay
 import dev.mark.lineover.core.model.GeometryParam
@@ -178,7 +181,8 @@ internal fun OpticsPanel(
                 DISTORTION_TOOL -> {
                     GeometrySlider(GeometryParam.Distortion, state, onIntent)
                     GeometrySlider(GeometryParam.DistortionEdge, state, onIntent)
-                    Hint("+ straightens barrel distortion (lines bowing out), − pincushion. Lens profiles are not included yet.")
+                    Hint("+ straightens barrel distortion (lines bowing out), − pincushion.")
+                    LensProfileSection(state, act)
                 }
 
                 CHROMATIC_TOOL -> {
@@ -201,6 +205,86 @@ internal fun OpticsPanel(
         }
     }
 }
+
+/**
+ * Lens profile (Stage 9, Lensfun): download the database (explicit tap, size and licence
+ * shown), then the photo's lens is matched from its EXIF or picked from the list; the
+ * profile's distortion and vignetting amounts and its chromatic aberration apply on top of
+ * the manual sliders, in the same single resample.
+ */
+@Composable
+private fun LensProfileSection(
+    state: EditorState,
+    act: (GeometryAction) -> Unit,
+) {
+    val g = state.geometry
+    val lens = state.lensProfiles
+    Column(Modifier.fillMaxWidth().testTag(EditorTags.LENS_PROFILE), verticalArrangement = Arrangement.spacedBy(LoSpacing.Xs)) {
+        Text("Lens profile", style = LoType.Body, color = LoColors.TextPrimary)
+        when (lens) {
+            is LensProfileState.Missing, is LensProfileState.Failed -> {
+                Hint(
+                    "Corrections for thousands of camera lenses (Lensfun database, " +
+                        "${"%.1f".format(Locale.ROOT, LensfunManifest.TOTAL_BYTES / BYTES_PER_MB)} MB, ${LensfunManifest.LICENCE}). " +
+                        "Phone cameras are not in it." + if (lens is LensProfileState.Failed) " Last try failed: ${lens.message}." else "",
+                )
+                LoChip("Download lens profiles", false, { act(GeometryAction.DownloadProfiles) }, leadingIcon = LoIcons.Download)
+            }
+
+            is LensProfileState.Downloading -> {
+                Hint("Downloading lens profiles… ${lens.bytes * PERCENT / lens.total.coerceAtLeast(1)} %")
+            }
+
+            is LensProfileState.Installed -> {
+                LaunchedEffect(state.image) { act(GeometryAction.LoadLensCandidates) }
+                LoSwitchRow(
+                    "Use lens profile",
+                    g.profile != null,
+                    { act(GeometryAction.UseProfile(it)) },
+                    description = g.profile?.lens ?: "Matched from the photo's camera and lens",
+                )
+                if (state.lensCandidates.isNotEmpty()) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(LoSpacing.Xs)) {
+                        for (name in state.lensCandidates) {
+                            LoChip(name, g.profile?.lens == name, { act(GeometryAction.UseProfile(true, name)) })
+                        }
+                    }
+                }
+                val profile = g.profile
+                if (profile != null) {
+                    LoSlider(
+                        g.profileDistortion,
+                        { act(GeometryAction.Set(GeometryParam.ProfileDistortion, it)) },
+                        "Profile distortion",
+                        valueRange = 0f..200f,
+                        defaultValue = 100f,
+                        fill = LoSliderFill.FromStart,
+                        enabled = profile.distortion.isNotEmpty(),
+                    )
+                    LoSlider(
+                        g.profileVignetting,
+                        { act(GeometryAction.Set(GeometryParam.ProfileVignetting, it)) },
+                        "Profile vignetting",
+                        valueRange = 0f..200f,
+                        defaultValue = 100f,
+                        fill = LoSliderFill.FromStart,
+                        enabled = profile.vignette.isNotEmpty(),
+                    )
+                    LoSwitchRow(
+                        "Profile chromatic aberration",
+                        g.profileChromatic,
+                        { act(GeometryAction.ProfileChromatic(it)) },
+                        enabled = profile.tcaRed.isNotEmpty(),
+                    )
+                }
+                Hint(LensfunManifest.ATTRIBUTION)
+            }
+        }
+    }
+}
+
+private const val BYTES_PER_MB = 1_048_576.0
+private const val PERCENT = 100
 
 private val TRANSFORM_PARAMS =
     listOf(

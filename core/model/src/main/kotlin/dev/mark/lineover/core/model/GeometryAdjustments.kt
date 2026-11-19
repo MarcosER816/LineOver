@@ -79,6 +79,8 @@ enum class GeometryParam(
     OffsetY("optics.transform.offset_y", "Y offset", -100f, 100f, 1f),
     Distortion("optics.distortion", "Distortion", -100f, 100f, 1f),
     DistortionEdge("optics.distortion.edge", "Edge distortion", -100f, 100f, 1f),
+    ProfileDistortion("optics.profile.distortion", "Profile distortion", 0f, 200f, 1f, 100f),
+    ProfileVignetting("optics.profile.vignetting", "Profile vignetting", 0f, 200f, 1f, 100f),
     ChromaticRed("optics.ca.red", "Red / cyan fringe", -100f, 100f, 1f),
     ChromaticBlue("optics.ca.blue", "Blue / yellow fringe", -100f, 100f, 1f),
     Vignetting("optics.vignetting", "Vignetting", -100f, 100f, 1f),
@@ -125,6 +127,11 @@ data class GeometryAdjustments(
     val chromaticBlue: Float = 0f,
     val vignetting: Float = 0f,
     val vignettingMidpoint: Float = 50f,
+    /** A lens profile (Lensfun) applied with these amounts (percent; chromatic on / off). */
+    val profile: LensProfile? = null,
+    val profileDistortion: Float = 100f,
+    val profileVignetting: Float = 100f,
+    val profileChromatic: Boolean = true,
     /** Perspective crop corners (TL, TR, BR, BL as x, y pairs, normalised frame); empty = off. */
     val perspectiveCorners: List<Float> = emptyList(),
     val guides: List<GuideLine> = emptyList(),
@@ -142,6 +149,8 @@ data class GeometryAdjustments(
             GeometryParam.OffsetY -> offsetY
             GeometryParam.Distortion -> distortion
             GeometryParam.DistortionEdge -> distortionEdge
+            GeometryParam.ProfileDistortion -> profileDistortion
+            GeometryParam.ProfileVignetting -> profileVignetting
             GeometryParam.ChromaticRed -> chromaticRed
             GeometryParam.ChromaticBlue -> chromaticBlue
             GeometryParam.Vignetting -> vignetting
@@ -165,6 +174,8 @@ data class GeometryAdjustments(
             GeometryParam.OffsetY -> copy(offsetY = v)
             GeometryParam.Distortion -> copy(distortion = v)
             GeometryParam.DistortionEdge -> copy(distortionEdge = v)
+            GeometryParam.ProfileDistortion -> copy(profileDistortion = v)
+            GeometryParam.ProfileVignetting -> copy(profileVignetting = v)
             GeometryParam.ChromaticRed -> copy(chromaticRed = v)
             GeometryParam.ChromaticBlue -> copy(chromaticBlue = v)
             GeometryParam.Vignetting -> copy(vignetting = v)
@@ -182,6 +193,40 @@ data class GeometryAdjustments(
     /** Red / blue radial scale - 1: slider 100 = 1 % of the radius. */
     val caRed: Double get() = chromaticRed / 100.0 * MAX_CA
     val caBlue: Double get() = chromaticBlue / 100.0 * MAX_CA
+
+    /** The profile's distortion p1..p4 at [profileDistortion] percent; empty without one. */
+    val lensDistortion: List<Double>
+        get() =
+            profile
+                ?.distortion
+                ?.takeIf { it.isNotEmpty() && profileDistortion != 0f }
+                ?.map { it * profileDistortion / 100.0 }
+                .orEmpty()
+
+    /** The profile's red / blue TCA (tv, tc, tb) when [profileChromatic]; empty otherwise. */
+    val lensTcaRed: List<Double> get() = profile?.tcaRed?.takeIf { profileChromatic }.orEmpty()
+    val lensTcaBlue: List<Double> get() = profile?.tcaBlue?.takeIf { profileChromatic }.orEmpty()
+
+    /** s(r) of the whole lens model at r² = [r2] (green), as geometry.cpp radialScale. */
+    @Suppress("MagicNumber") // p1..p4
+    fun radialScale(r2: Double): Double {
+        var s = 1 + k1 * r2 + k2 * r2 * r2
+        val p = lensDistortion
+        if (p.any { it != 0.0 }) {
+            val r = kotlin.math.sqrt(r2)
+            s += r * (p[0] + r * (p[1] + r * (p[2] + r * p[3])))
+        }
+        return s
+    }
+
+    /** The profile's vignetting ("pa" k1..k3) at [profileVignetting] percent; empty without one. */
+    val vignetteProfile: List<Double>
+        get() =
+            profile
+                ?.vignette
+                ?.takeIf { it.isNotEmpty() && profileVignetting != 0f }
+                ?.map { it * profileVignetting / 100.0 }
+                .orEmpty()
 
     val isIdentity: Boolean get() = this == GeometryAdjustments().copy(constrain = constrain, aspect = aspect)
 
@@ -204,6 +249,10 @@ data class GeometryAdjustments(
             vignette = vignetting,
             vignetteMid = vignettingMidpoint,
             settings = this,
+            lensDistortion = lensDistortion,
+            lensTcaRed = lensTcaRed,
+            lensTcaBlue = lensTcaBlue,
+            vignetteProfile = vignetteProfile,
             matrix = composed.matrix.toList(),
         )
     }

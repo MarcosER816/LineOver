@@ -88,6 +88,8 @@ object LoIcons {
 
     @DrawableRes val Delete: Int = R.drawable.lo_ic_delete
 
+    @DrawableRes val Download: Int = R.drawable.lo_ic_download
+
     @DrawableRes val TouchApp: Int = R.drawable.lo_ic_touch_app
 
     @DrawableRes val Vibration: Int = R.drawable.lo_ic_vibration

@@ -1,6 +1,9 @@
 package dev.mark.lineover.feature.settings
 
 import androidx.lifecycle.viewModelScope
+import dev.mark.lineover.core.io.lens.LensProfileState
+import dev.mark.lineover.core.io.lens.LensProfileStore
+import dev.mark.lineover.core.io.lens.LensfunManifest
 import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.CanvasSurround
 import dev.mark.lineover.core.io.prefs.TapGestures
@@ -25,6 +28,9 @@ data class SettingsState(
     val versionName: String = "",
     val surround: CanvasSurround = CanvasSurround.Dark,
     val tapGestures: TapGestures = TapGestures.Standard,
+    /** The Lensfun lens profile database (Stage 9): downloaded on request, deletable. */
+    val lensProfiles: LensProfileState = LensProfileState.Missing,
+    val lensProfilesBytes: Long = LensfunManifest.TOTAL_BYTES,
 )
 
 sealed interface SettingsIntent {
@@ -43,12 +49,17 @@ sealed interface SettingsIntent {
     data class SetTapGestures(
         val gestures: TapGestures,
     ) : SettingsIntent
+
+    data object DownloadLensProfiles : SettingsIntent
+
+    data object DeleteLensProfiles : SettingsIntent
 }
 
 class SettingsViewModel(
     versionName: String,
     showDebug: Boolean,
     private val preferences: AppPreferences,
+    private val lensProfiles: LensProfileStore? = null,
 ) : MviViewModel<SettingsState, SettingsIntent, Nothing>(
         SettingsState(
             sections = SettingsSection.entries.filter { showDebug || it != SettingsSection.Debug },
@@ -60,6 +71,7 @@ class SettingsViewModel(
     init {
         viewModelScope.launch { preferences.surround.collect { setState { copy(surround = it) } } }
         viewModelScope.launch { preferences.tapGestures.collect { setState { copy(tapGestures = it) } } }
+        lensProfiles?.let { store -> viewModelScope.launch { store.state.collect { setState { copy(lensProfiles = it) } } } }
     }
 
     override fun onIntent(intent: SettingsIntent) {
@@ -72,6 +84,10 @@ class SettingsViewModel(
             is SettingsIntent.SetSurround -> preferences.setSurround(intent.surround)
 
             is SettingsIntent.SetTapGestures -> preferences.setTapGestures(intent.gestures)
+
+            is SettingsIntent.DownloadLensProfiles -> lensProfiles?.let { viewModelScope.launch { it.download() } }
+
+            is SettingsIntent.DeleteLensProfiles -> lensProfiles?.let { viewModelScope.launch { it.delete() } }
         }
     }
 }

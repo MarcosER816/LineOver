@@ -71,11 +71,26 @@ internal object GeometryLabels {
             "chromaticBlue" to "Blue / yellow fringe",
             "vignetting" to "Lens vignetting",
             "vignettingMidpoint" to "Vignetting midpoint",
+            "profile" to "Lens profile",
+            "profileDistortion" to "Profile distortion",
+            "profileVignetting" to "Profile vignetting",
+            "profileChromatic" to "Profile chromatic aberration",
             "perspectiveCorners" to "Perspective crop",
             "guides" to "Guided Upright",
         )
 
     /** Geometry fields named without their value (switches, lists, ratios). */
     private val GEOMETRY_PLAIN =
-        setOf("quarterTurns", "flipHorizontal", "flipVertical", "constrain", "customWidth", "customHeight", "perspectiveCorners", "guides")
+        setOf(
+            "quarterTurns",
+            "flipHorizontal",
+            "flipVertical",
+            "constrain",
+            "customWidth",
+            "customHeight",
+            "perspectiveCorners",
+            "guides",
+            "profile",
+            "profileChromatic",
+        )
 }

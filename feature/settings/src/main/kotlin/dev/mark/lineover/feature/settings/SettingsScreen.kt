@@ -24,6 +24,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -43,10 +44,14 @@ import dev.mark.lineover.core.designsystem.component.LoEmptyState
 import dev.mark.lineover.core.designsystem.component.LoIconButton
 import dev.mark.lineover.core.designsystem.component.LoPlaceholderTool
 import dev.mark.lineover.core.designsystem.component.LoSegmented
+import dev.mark.lineover.core.io.lens.LensProfileState
+import dev.mark.lineover.core.io.lens.LensProfileStore
+import dev.mark.lineover.core.io.lens.LensfunManifest
 import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.CanvasSurround
 import dev.mark.lineover.core.io.prefs.TapGestures
 import dev.mark.lineover.core.ui.adaptive.rememberLoWindowInfo
+import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.roundToLong
 
@@ -57,8 +62,17 @@ fun SettingsRoute(
     onBack: () -> Unit,
     onOpenSection: (SettingsSection) -> Unit,
     onOpenGallery: (() -> Unit)?,
+    lensProfiles: LensProfileStore? = null,
 ) {
-    val viewModel = viewModel { SettingsViewModel(versionName, showDebug = onOpenGallery != null, preferences = preferences) }
+    val viewModel =
+        viewModel {
+            SettingsViewModel(
+                versionName,
+                showDebug = onOpenGallery != null,
+                preferences = preferences,
+                lensProfiles = lensProfiles,
+            )
+        }
     val state by viewModel.state.collectAsStateWithLifecycle()
     SettingsScreen(
         state = state,
@@ -113,14 +127,24 @@ fun SettingsSectionScreen(
     onBack: () -> Unit,
     onOpenGallery: (() -> Unit)?,
     modifier: Modifier = Modifier,
+    lensProfiles: LensProfileStore? = null,
 ) {
     val surround by preferences.surround.collectAsStateWithLifecycle()
+    val lensState = lensProfiles?.state?.collectAsStateWithLifecycle()?.value ?: LensProfileState.Missing
+    val scope = rememberCoroutineScope()
     Column(modifier.fillMaxSize().background(LoColors.Bg).windowInsetsPadding(WindowInsets.safeDrawing)) {
         TitleBar(section.title, onBack)
         SectionDetail(
             section,
-            SettingsState(versionName = versionName, surround = surround),
-            onIntent = { if (it is SettingsIntent.SetSurround) preferences.setSurround(it.surround) },
+            SettingsState(versionName = versionName, surround = surround, lensProfiles = lensState),
+            onIntent = {
+                when (it) {
+                    is SettingsIntent.SetSurround -> preferences.setSurround(it.surround)
+                    is SettingsIntent.DownloadLensProfiles -> lensProfiles?.let { store -> scope.launch { store.download() } }
+                    is SettingsIntent.DeleteLensProfiles -> lensProfiles?.let { store -> scope.launch { store.delete() } }
+                    else -> Unit
+                }
+            },
             onOpenGallery,
             Modifier.fillMaxSize(),
         )
@@ -194,6 +218,7 @@ private fun SectionDetail(
     ) {
         when (section) {
             SettingsSection.AiModels -> {
+                LensProfilesRow(state.lensProfiles, state.lensProfilesBytes, onIntent)
                 AiModelsDetail(state.models, onIntent)
             }
 
@@ -305,6 +330,60 @@ private fun AiModelsDetail(
         models.forEach { AiModelRow(it, onDelete = { onIntent(SettingsIntent.DeleteModel(it.id)) }) }
     }
 }
+
+/**
+ * The Lensfun lens profile database (Stage 9): its size and licence, Download (nothing is
+ * fetched until tapped) or Delete, and the attribution the CC BY-SA licence asks for.
+ */
+@Composable
+internal fun LensProfilesRow(
+    lens: LensProfileState,
+    bytes: Long,
+    onIntent: (SettingsIntent) -> Unit,
+) {
+    val status =
+        when (lens) {
+            is LensProfileState.Missing -> "Not downloaded"
+            is LensProfileState.Downloading -> "Downloading ${lens.bytes * PERCENT / lens.total.coerceAtLeast(1)} %"
+            is LensProfileState.Installed -> "Downloaded"
+            is LensProfileState.Failed -> "Download failed: ${lens.message}"
+        }
+    Column(Modifier.fillMaxWidth().testTag("lens-profiles")) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 64.dp)
+                .background(LoColors.Surface1)
+                .padding(start = LoSpacing.M),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text("Lens profiles (Lensfun)", style = LoType.Body, color = LoColors.TextPrimary)
+                Text("${formatSize(bytes)} · ${LensfunManifest.LICENCE} · $status", style = LoType.Caption, color = LoColors.TextSecondary)
+            }
+            if (lens is LensProfileState.Installed) {
+                LoIconButton(LoIcons.Delete, "Delete lens profiles", onClick = { onIntent(SettingsIntent.DeleteLensProfiles) })
+            } else {
+                LoIconButton(
+                    LoIcons.Download,
+                    "Download lens profiles",
+                    onClick = { onIntent(SettingsIntent.DownloadLensProfiles) },
+                    enabled = lens !is LensProfileState.Downloading,
+                )
+            }
+        }
+        Text(
+            "Distortion, chromatic aberration and vignetting corrections for thousands of camera lenses " +
+                "(Optics → Lens distortion → Lens profile). Phone cameras are not in the database. " +
+                LensfunManifest.ATTRIBUTION + ".",
+            style = LoType.Caption,
+            color = LoColors.TextSecondary,
+            modifier = Modifier.padding(horizontal = LoSpacing.M, vertical = LoSpacing.Xs),
+        )
+    }
+}
+
+private const val PERCENT = 100
 
 /** One model of the download manager: name, size, licence, state, delete. */
 @Composable

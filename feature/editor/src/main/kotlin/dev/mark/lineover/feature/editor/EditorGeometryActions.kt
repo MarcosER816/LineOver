@@ -1,7 +1,11 @@
 package dev.mark.lineover.feature.editor
 
+import dev.mark.lineover.core.io.lens.LensProfileStore
 import dev.mark.lineover.core.model.GeometryAdjustments
 import dev.mark.lineover.core.model.GeometryParam
+import dev.mark.lineover.core.model.LensMatcher
+import dev.mark.lineover.core.model.LensProfiles
+import dev.mark.lineover.core.model.PhotoExif
 import dev.mark.lineover.core.model.Upright
 import dev.mark.lineover.core.model.UprightMode
 import dev.mark.lineover.feature.editor.canvas.CropGestureListener
@@ -22,16 +26,60 @@ internal class EditorGeometryActions(
     private val reduce: (label: String?, block: EditorState.() -> EditorState) -> Unit,
     private val endEdit: () -> Unit,
     private val message: (String) -> Unit,
+    private val setState: (EditorState.() -> EditorState) -> Unit = {},
+    private val lensProfiles: LensProfileStore? = null,
 ) {
+    init {
+        lensProfiles?.let { store -> scope.launch { store.state.collect { s -> setState { copy(lensProfiles = s) } } } }
+    }
+
     fun onAction(action: GeometryAction) {
         when (action) {
-            is GeometryAction.Upright -> upright(action.mode)
-            is GeometryAction.AutoStraighten -> autoStraighten()
-            is GeometryAction.AutoChromatic -> autoChromatic()
-            is GeometryAction.Crop -> crop(action)
-            is GeometryAction.Corners -> corners(action)
-            is GeometryAction.Set, is GeometryAction.Dragging, is GeometryAction.Overlay -> reduce(null) { reduceGeometry(action) }
-            else -> reduce(labelOf(action)) { reduceGeometry(action) }
+            is GeometryAction.Upright -> {
+                upright(action.mode)
+            }
+
+            is GeometryAction.AutoStraighten -> {
+                autoStraighten()
+            }
+
+            is GeometryAction.AutoChromatic -> {
+                autoChromatic()
+            }
+
+            is GeometryAction.Crop -> {
+                crop(action)
+            }
+
+            is GeometryAction.UseProfile -> {
+                useProfile(action)
+            }
+
+            is GeometryAction.DownloadProfiles -> {
+                downloadProfiles()
+            }
+
+            is GeometryAction.ProfileChromatic -> {
+                reduce("Profile chromatic aberration ${if (action.on) "on" else "off"}") {
+                    withGeometry(geometry.copy(profileChromatic = action.on))
+                }
+            }
+
+            is GeometryAction.LoadLensCandidates -> {
+                loadCandidates()
+            }
+
+            is GeometryAction.Corners -> {
+                corners(action)
+            }
+
+            is GeometryAction.Set, is GeometryAction.Dragging, is GeometryAction.Overlay -> {
+                reduce(null) { reduceGeometry(action) }
+            }
+
+            else -> {
+                reduce(labelOf(action)) { reduceGeometry(action) }
+            }
         }
     }
 
@@ -173,7 +221,56 @@ internal class EditorGeometryActions(
         }
     }
 
+    private fun downloadProfiles() {
+        val store = lensProfiles ?: return
+        scope.launch { if (!store.download()) message("Lens profiles: download failed") }
+    }
+
+    /** The lenses the database has for this photo, best match first (names). */
+    private fun loadCandidates() {
+        val store = lensProfiles ?: return
+        scope.launch {
+            val db = store.database() ?: return@launch
+            val exif = state().image?.exif ?: PhotoExif()
+            val names = withContext(dispatcher) { LensMatcher.candidates(db, exif).take(MAX_CANDIDATES).map { it.name } }
+            setState { copy(lensCandidates = names) }
+        }
+    }
+
+    private fun useProfile(action: GeometryAction.UseProfile) {
+        if (!action.on) {
+            reduce("Lens profile off") { withGeometry(geometry.copy(profile = null)) }
+            return
+        }
+        val store = lensProfiles ?: return message("Lens profiles are not available")
+        scope.launch {
+            val db = store.database() ?: return@launch message("Download the lens profiles first (Settings → AI models)")
+            val exif = state().image?.exif ?: PhotoExif()
+            val profile =
+                withContext(dispatcher) {
+                    val lens =
+                        action.lens?.let { name -> db.lenses.firstOrNull { it.name == name } }
+                            ?: LensMatcher.match(db, exif)?.lens
+                            ?: return@withContext null
+                    LensProfiles.profile(
+                        lens,
+                        focal = exif.focal ?: lens.focalRange.start,
+                        aperture = exif.aperture,
+                        distance = exif.distance,
+                        imageCrop = LensMatcher.imageCrop(db, exif) ?: lens.crop,
+                        camera = LensMatcher.camera(db, exif)?.model,
+                    )
+                }
+            if (profile == null) {
+                message("No lens profile found for this photo: pick its lens from the list")
+                return@launch
+            }
+            reduce("Lens profile ${profile.lens}") { withGeometry(geometry.copy(profile = profile)) }
+        }
+    }
+
     private companion object {
         const val SLIDER_MAX = 100f
+        const val MAX_CANDIDATES = 8
     }
 }

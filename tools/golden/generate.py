@@ -21,6 +21,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+import lensfun_reference
 import reference
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -70,6 +71,7 @@ def build_outputs() -> dict[str, np.ndarray]:
     outputs.update(grade_outputs())
     outputs.update(photo_outputs())
     outputs.update(geometry_outputs())
+    outputs.update(lensfun_outputs())
     return outputs
 
 
@@ -185,7 +187,10 @@ def geometry_outputs() -> dict:
 
         def warp(im, matrix=matrix, w=w, h=h, extra=extra):
             return reference.geometry_warp(im, matrix, w, h, extra.get("k1", 0.0), extra.get("k2", 0.0),
-                                           extra.get("caRed", 0.0), extra.get("caBlue", 0.0))
+                                           extra.get("caRed", 0.0), extra.get("caBlue", 0.0),
+                                           tuple(extra.get("lensDistortion", (0.0,) * 4)),
+                                           tuple(extra.get("lensTcaRed", (0.0,) * 3)),
+                                           tuple(extra.get("lensTcaBlue", (0.0,) * 3)))
 
         outputs[f"geometry/{name}_f32.npy"] = warp(image)
         outputs[f"geometry/{name}_gpu_srgb_display_f32.npy"] = reference.gpu_display(warp, image)
@@ -194,7 +199,18 @@ def geometry_outputs() -> dict:
         outputs[f"geometry/vignetting_{index}_f32.npy"] = reference.vignetting(scene, amount, mid)
     amount, mid = reference.VIGNETTING_SETTINGS[0]
     outputs["geometry/vignetting_gpu_srgb_display_f32.npy"] = reference.gpu_display(lambda im: reference.vignetting(im, amount, mid), scene)
+    amount, mid, profile = reference.VIGNETTING_PROFILE
+    outputs["geometry/vignetting_profile_f32.npy"] = reference.vignetting(scene, amount, mid, profile)
+    outputs["geometry/vignetting_profile_gpu_srgb_display_f32.npy"] = reference.gpu_display(
+        lambda im: reference.vignetting(im, amount, mid, profile), scene)
     return outputs
+
+
+def lensfun_outputs() -> dict:
+    """Stage 9: lens profile corrections as the Lensfun library computes them, for the
+    fixture lenses (testdata/lensfun/fixture.xml, CC BY-SA 3.0)."""
+    golden = lensfun_reference.corrections_golden(REPO_ROOT / "testdata" / "lensfun" / "fixture.xml")
+    return {"lensfun/corrections.json": json.dumps(golden, indent=1) + "\n"}
 
 
 # GPU cases of the step ops: (input, params); see color_outputs.

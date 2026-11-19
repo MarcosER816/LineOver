@@ -204,6 +204,11 @@ GeometryDraw drawOf(const Geometry& g) {
     d.lens[1] = static_cast<float>(g.k2);
     d.lens[2] = static_cast<float>(g.caRed);
     d.lens[3] = static_cast<float>(g.caBlue);
+    for (int i = 0; i < 4; ++i) d.dist[i] = static_cast<float>(g.dist[i]);
+    for (int i = 0; i < 3; ++i) {
+        d.tcaRed[i] = static_cast<float>(g.tcaRed[i]);
+        d.tcaBlue[i] = static_cast<float>(g.tcaBlue[i]);
+    }
     d.drawRect[2] = d.outSize[0];
     d.drawRect[3] = d.outSize[1];
     return d;

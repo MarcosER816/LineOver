@@ -309,12 +309,20 @@ sealed interface OpParams {
         val vignette: Float = 0f,
         val vignetteMid: Float = 50f,
         val settings: GeometryAdjustments = GeometryAdjustments(),
+        /** A lens profile's distortion p1..p4 (s += p1 r + p2 r² + p3 r³ + p4 r⁴); empty = none. */
+        val lensDistortion: List<Double> = emptyList(),
+        /** Its red / blue scale terms (tv, tc, tb) on the distorted radius; empty = none. */
+        val lensTcaRed: List<Double> = emptyList(),
+        val lensTcaBlue: List<Double> = emptyList(),
+        /** A lens profile's vignetting ("pa" k1..k3, r = 1 at the corner), source space; empty = none. */
+        val vignetteProfile: List<Double> = emptyList(),
         val matrix: List<Double>,
     ) : OpParams {
         override val isIdentity: Boolean
             get() =
                 outputWidth == sourceWidth && outputHeight == sourceHeight && k1 == 0.0 && k2 == 0.0 &&
                     caRed == 0.0 && caBlue == 0.0 && vignette == 0f &&
+                    (lensDistortion + lensTcaRed + lensTcaBlue + vignetteProfile).all { it == 0.0 } &&
                     matrix == listOf(sourceWidth.toDouble(), 0.0, 0.0, 0.0, sourceHeight.toDouble(), 0.0, 0.0, 0.0, 1.0)
     }
 }

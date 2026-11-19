@@ -84,18 +84,62 @@ Tests added: ctest `geometry_test` (7), `lines_test` (3), `thumbnail_test` updat
    and side-by-side halves stay aligned.
 8. **Gain map**: `EngineSession.gainmapFor(graph)` warps it (single-channel ALPHA_8 or RGB)
    at its own resolution with the same matrix; Stage 12 writes it into the exported JPEG.
-9. **lensfun** profiles are not included (LGPL-3 data, about 10 MB; see the question below).
-10. Version 0.9.0 (11). Branch: session branch `ccr-a94fce54-a1j7s3`.
+9. **Lens profiles** (follow-up, 0.9.1, Mark: "Add them"): see the section below.
+10. Version 0.9.0 (11), lens profiles 0.9.1 (12). Branch: session branch `ccr-a94fce54-a1j7s3`.
+
+## Lens profiles (follow-up, 0.9.1)
+
+Mark's answer to the Stage 9 question was to add the Lensfun lens profiles.
+
+- **Licences, checked (R10):** the Lensfun *database* is CC BY-SA 3.0 (not LGPL; the
+  LGPL-3 part is the Lensfun library, which LineOver does not use). LineOver parses the XML
+  and applies the models with its own code. The data is never bundled: Settings → AI models
+  → Lens profiles (Lensfun), or the Download chip in the panel, fetches the 56 `data/db`
+  files of pinned commit `37238fc` from GitHub (5.0 MB). Each file is checked against its
+  SHA-256 in `LensfunManifest` and the install is atomic; Delete removes it. The
+  attribution is shown in Settings and in the panel. `testdata/lensfun/fixture.xml` copies
+  four lenses for the tests, with the attribution in its header.
+- **The engine's lens model is now Lensfun's:** distortion `s(r) = 1 + k1 r² + k2 r⁴ + p1 r
+  + p2 r² + p3 r³ + p4 r⁴`. Each channel's scale is `1 + ca + tv + tc rd + tb rd²` on the
+  distorted radius, as Lensfun applies its TCA. Vignetting also divides by
+  `1 + k1 r² + k2 r⁴ + k3 r⁶` (the "pa" model) in source space. ptlens / poly3 / poly5
+  distortion and linear / poly3 TCA therefore convert *exactly* (`LensProfiles`): the
+  rescaling from Hugin units uses the crop factors and Lensfun's d-normalisation, as in
+  lensfun's `rescale_polynomial_coefficients`. A first version fitted ptlens to k1 / k2 and
+  was 7–11 px off on a 24 MP zoom, so the engine was extended instead (still one resample).
+- **Verified against Lensfun's own arithmetic:** `tools/golden/lensfun_reference.py`
+  mirrors lensfun's `modifier.cpp` / `mod-coord.cpp` / `mod-subpix.cpp` / `mod-color.cpp`
+  (NormScale, rescaling, undistortion, anti-TCA, devignetting). For 7 cases (ptlens, poly3
+  and poly5 distortion, linear and poly3 TCA, pa vignetting, a full-frame lens on an APS-C
+  body, an interpolated focal length), LineOver's mapping matches within 1e-12 px and the
+  gains within 1e-15 (`LensProfilesTest`). The extended lens model has a new warp golden
+  `geometry/lens_profile` vs OpenCV `remap` (ctest, and `EngineGpuTest` at 3/255), and
+  `geometry/vignetting_profile` (ctest, GPU).
+- **Matching:** camera by EXIF make / model (crop factor, mount); lens by how much of the
+  database name the EXIF lens name covers, among lenses for the mount and focal length.
+  A compact's built-in lens matches by its mount. Without a camera entry, the crop factor
+  comes from the 35 mm-equivalent focal length. The panel lists up to 8 candidates to pick
+  from. Phone cameras (the POCO F7 Ultra) are not in the database, and their JPEGs are
+  already corrected in camera.
+- **Deviations from Lensfun:** between calibrated focal lengths LineOver interpolates
+  linearly, where Lensfun uses a spline. Vignetting is bilinear in focal length and log
+  aperture at the nearest calibrated distance, where Lensfun uses an inverse-distance
+  weighting. A lens's optical-centre offset (rare in the database) is ignored.
+- `INTERNET` permission added, used only for downloads the user taps.
 
 ## Dependencies added (R10)
 
-None. (OpenCV is used only by the Python reference generator in `tools/golden`, as before.)
+None (code). Data: the Lensfun lens database, CC BY-SA 3.0, downloaded on request, never
+bundled (see Lens profiles). OpenCV is used only by the Python reference generator in
+`tools/golden`, as before.
 
 ## Golden images changed (R4)
 
 No existing golden file changed. New: `testdata/golden/geometry/` (5 warp cases with their
 graphs and GPU display references, 3 vignetting settings + GPU reference, 24 homography
-fixtures).
+fixtures); with the lens profiles: `geometry/lens_profile*` (6th warp case),
+`geometry/vignetting_profile*` and `lensfun/corrections.json` (Lensfun's own corrections
+for the fixture lenses).
 
 Screenshots changed, and why:
 
@@ -103,6 +147,9 @@ Screenshots changed, and why:
 | --- | --- |
 | `editor/expanded/category_crop`, `category_optics` | The ten tools say "Ready" instead of "Arrives in Stage 9" |
 | `editor/*/crop_*`, `optics_*` | New: the Crop and Optics panels and the crop overlay (`crop_straighten` re-recorded after the edge margin: the constrained crop is 2 px smaller) |
+| `editor/expanded/optics_distortion` | Lens profiles: the panel's Lens profile section (Download) |
+| `editor/*/optics_distortion_profile` | New: a matched profile with its candidates and amounts |
+| `settings/*/settings` | AI models: the Lens profiles (Lensfun) row and its summary text |
 
 ## Troubleshooting log (R11)
 
@@ -139,11 +186,14 @@ POCO F7 Ultra, `lineover-<sha>.apk`:
 - [ ] Perspective crop on a photo of a page or a painting: drag the four corners onto it.
 - [ ] Lens distortion, chromatic aberration (Auto), lens vignetting move the photo as named.
 - [ ] Zoom in to 100 % after a crop: sharp tiles load; no gaps.
+- [ ] Lens profiles: Settings → AI models → Lens profiles → Download (5.0 MB). Open a photo
+      from a camera with an interchangeable lens (e.g. a Sony / Canon / Nikon JPEG), Optics →
+      Lens distortion → Use lens profile: its lens is named, straight lines near the edges
+      straighten, the corners brighten. A phone photo shows "No lens profile found".
 
 ## Open questions (R12)
 
-1. **lensfun lens profiles** (Stage 9 ASK): adds LGPL-3 data, about 10 MB, used as a dynamic
-   download (D3 style) or not at all? Default: not included; Distortion / Chromatic
-   aberration / Lens vignetting are manual (CA has Auto).
-2. (Stage 8) Gesture mapping (two fingers undo, three redo) and history limit (500)?
-3. (Stage 6) White balance / HSL strength compared with another editor?
+Answered by Mark: (1) lens profiles — added (above); (2) two fingers undo, three redo, and
+500 history steps — kept; (3) White balance / HSL strength — fine as it is.
+
+None open.

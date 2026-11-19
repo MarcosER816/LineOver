@@ -13,6 +13,7 @@ import android.util.Log
 import androidx.exifinterface.media.ExifInterface
 import dev.mark.lineover.core.io.project.PreviewImage
 import dev.mark.lineover.core.io.project.ThumbnailMath
+import dev.mark.lineover.core.model.PhotoExif
 import java.io.Closeable
 import java.io.IOException
 
@@ -68,6 +69,8 @@ data class SourceInfo(
     val format: SourceFormat,
     val colorSpaceName: String?,
     val regionDecodable: Boolean,
+    /** Camera and lens from the EXIF, for lens profiles (Stage 9). */
+    val exif: PhotoExif = PhotoExif(),
 )
 
 /** A decoded raw region for one tile (see the native `lo::RegionSource`). */
@@ -115,7 +118,7 @@ class SourceReader(
             return null
         }
         if (decodedWidth <= 0 || decodedHeight <= 0) return null
-        val orientation = readOrientation(uri)
+        val (orientation, exif) = readExif(uri)
         val rawSize = regionDecoderSize(uri)
         val (rawWidth, rawHeight) =
             rawSize ?: if (orientation in SWAPPING) decodedHeight to decodedWidth else decodedWidth to decodedHeight
@@ -131,6 +134,7 @@ class SourceReader(
             format = SourceFormat.forColorSpace(colorSpace),
             colorSpaceName = colorSpace?.name,
             regionDecodable = rawSize != null,
+            exif = exif,
         )
     }
 
@@ -176,16 +180,31 @@ class SourceReader(
         }
     }
 
-    private fun readOrientation(uri: Uri): Int =
-        try {
-            resolver.openInputStream(uri)?.use { stream ->
-                ExifInterface(stream).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
-            } ?: ExifInterface.ORIENTATION_NORMAL
-        } catch (_: IOException) {
-            ExifInterface.ORIENTATION_NORMAL
-        } catch (_: SecurityException) {
-            ExifInterface.ORIENTATION_NORMAL
-        }.coerceIn(1, MAX_ORIENTATION)
+    /** EXIF orientation (1..8) and the camera / lens fields lens profiles match on. */
+    private fun readExif(uri: Uri): Pair<Int, PhotoExif> {
+        val exif =
+            try {
+                resolver.openInputStream(uri)?.use { ExifInterface(it) }
+            } catch (_: IOException) {
+                null
+            } catch (_: SecurityException) {
+                null
+            } ?: return ExifInterface.ORIENTATION_NORMAL to PhotoExif()
+        val orientation = exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL).coerceIn(1, MAX_ORIENTATION)
+
+        fun number(tag: String) = exif.getAttributeDouble(tag, 0.0).takeIf { it > 0.0 && it.isFinite() }
+        return orientation to
+            PhotoExif(
+                make = exif.getAttribute(ExifInterface.TAG_MAKE)?.trim()?.ifEmpty { null },
+                model = exif.getAttribute(ExifInterface.TAG_MODEL)?.trim()?.ifEmpty { null },
+                lensMake = exif.getAttribute(ExifInterface.TAG_LENS_MAKE)?.trim()?.ifEmpty { null },
+                lensModel = exif.getAttribute(ExifInterface.TAG_LENS_MODEL)?.trim()?.ifEmpty { null },
+                focal = number(ExifInterface.TAG_FOCAL_LENGTH),
+                focal35 = number(ExifInterface.TAG_FOCAL_LENGTH_IN_35MM_FILM),
+                aperture = number(ExifInterface.TAG_F_NUMBER),
+                distance = number(ExifInterface.TAG_SUBJECT_DISTANCE),
+            )
+    }
 
     private fun regionDecoderSize(uri: Uri): Pair<Int, Int>? =
         try {
