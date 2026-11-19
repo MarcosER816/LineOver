@@ -274,6 +274,32 @@ class EngineSession private constructor(
         }
     }
 
+    /**
+     * Export (Stage 12): renders the whole edit at full resolution into a new [ExportImage]
+     * in [dir], reporting the share of tiles done (0..1) to [progress]. Set the graph first.
+     */
+    suspend fun renderForExport(
+        dir: File,
+        progress: (Float) -> Unit = {},
+    ): ExportImage {
+        val (width, height) = outputSize()
+        val image = ExportImage.create(dir, width, height)
+        var rendered = false
+        try {
+            val tilesX = (width + TileDecoder.TILE - 1) / TileDecoder.TILE
+            val tilesY = (height + TileDecoder.TILE - 1) / TileDecoder.TILE
+            var done = 0
+            renderFullResolution({ tx, ty, w, h, pixels ->
+                image.putTile(tx * TileDecoder.TILE, ty * TileDecoder.TILE, w, h, pixels)
+                progress(++done / (tilesX * tilesY).toFloat())
+            })
+            rendered = true
+            return image
+        } finally {
+            if (!rendered) image.close() // cancelled or failed: free the mapped file now
+        }
+    }
+
     override fun close() {
         if (closed) return
         closed = true

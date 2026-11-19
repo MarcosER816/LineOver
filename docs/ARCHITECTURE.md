@@ -349,12 +349,42 @@ Native **C++17, OpenGL ES 3**, in `:core:engine-native`; Kotlin reaches it throu
   (`smallThumbnail`); holding one sets `compareGraph`, which the canvas shows instead of the
   edit until release.
 
+### Export (Stage 12)
+
+```
+EngineSession.renderForExport (CPU reference path, 512 px output tiles)
+  -> ExportImage: float RGBA in a temp file mapped into memory (never the Java heap)
+  -> resize (Lanczos-3, linear light, never enlarges) -> sharpen for screen -> watermark
+  -> encoder:  PNG / TIFF  native (libspng / own TIFF writer), 8 or 16 bit, ICC embedded
+               JPEG / WebP / Ultra HDR  8-bit Bitmap in sRGB or P3 -> Bitmap.compress,
+                            then EXIF + ICC inserted (JpegSegments / WebpChunks)
+               HEIF / AVIF  androidx.heifwriter (device encoders), sRGB, EXIF item
+  -> ExportDestinations: MediaStore Pictures/LineOver (pending until complete) or a SAF document
+```
+
+- `output.h` / `output.cpp` (resize, sharpen, watermark, conversion, ICC v4.3 matrix/TRC
+  profiles, Ultra HDR gain map rebuild) and `tools/golden/export_reference.py` change together;
+  ctest `output_test` (ICC byte-exact, steps within 1e-3 / one code, PNG / TIFF round trips)
+  and `check_export_files.py` (OpenCV + LittleCMS read the files) check them.
+- Conversion: sRGB / Display P3 are gamut-mapped like the display (OKLab chroma bisection);
+  Rec. 2020 (16-bit files only) uses the BT.2020 curve Android's `ColorSpace.BT2020` has, so
+  decoders recognise the profile. Values above 1 clip in the SDR base; Ultra HDR keeps the
+  photo's gain map (warped with the geometry) or rebuilds one from the render's highlights.
+- `ExportService`: foreground (mediaProcessing on 15+, dataSync on 14), one export at a time,
+  progress in a notification and in `ExportJobs.status` (the sheet); Cancel stops between tiles.
+- Metadata (`ExportMetadata`): Keep all (location off by default) / Copyright only / None,
+  written by ExifInterface into a carrier JPEG and moved as a TIFF block (APP1, eXIf, EXIF
+  chunk, HEIF item). EXIF text is ASCII.
+- The sheet remembers its settings (`AppPreferences.exportSettings`); Quick export uses the
+  defaults (`ExportSettings.QUICK`); HEIF / AVIF show only when the device has an encoder.
+
 `core/engine-native/src/main/cpp`:
 
 ```
-include/lineover/   public C++ API (portable): color, ops, light, color_ops, grade_ops, graph, tiling, tile_store, geometry, lines, thumbnail, detail, lut, auto_adjust
+include/lineover/   public C++ API (portable): color, ops, light, color_ops, grade_ops, graph, tiling, tile_store, geometry, lines, thumbnail, detail, lut, auto_adjust, output
 src/                portable engine core                         -> lo_engine (static)
 third_party/zstd    zstd 1.5.7 sources (BSD), spilled tiles      -> lo_zstd (static)
+third_party/spng    libspng 0.7.4 (BSD-2), PNG export            -> lo_spng (static)
 android/            render thread, EGL, GL pipeline, C API (lo_api.h), JNI -> liblineover_engine.so
 testing/            GoldenAssert, PNG / NPY readers (host only)
 tests/              ctest executables (host only)

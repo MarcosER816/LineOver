@@ -2,6 +2,22 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 12 — Export (0.12.0)
+
+### Added
+
+- The Export sheet works: JPEG, PNG (8 / 16 bit), WebP (lossy / lossless), HEIF and AVIF (when
+  the phone has the encoder), TIFF (8 / 16 bit) and Ultra HDR JPEG (the photo's HDR gain map is
+  kept, or rebuilt from bright highlights).
+- Colour space sRGB, Display P3 or Rec. 2020 (16-bit files) with its ICC profile embedded.
+- Size: original, long edge, megapixels or percent (never enlarged), and sharpen for screen.
+- Metadata: keep all (location removed by default), copyright only, or none.
+- Watermark: text or your logo, position, opacity and size.
+- Saves to Pictures/LineOver or a place you pick; Open and Share when done.
+- Exports run in the background with a progress notification and Cancel; the sheet remembers
+  the last settings, shows the expected file size, and Quick export uses the defaults.
+- "Save project" in the sheet saves the .loproj project file.
+
 ## Lens profiles included (0.11.2)
 
 ### Changed

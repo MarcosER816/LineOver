@@ -75,7 +75,8 @@ class NavigationTest {
         }
         composeRule.onNodeWithContentDescription("Export").performClick()
         // The export sheet is a dialog: its window attaches asynchronously on a device.
-        val caption = "Exports are saved to Pictures/LineOver. The original photo is never changed."
+        // Its header (Stage 12): Quick export is only in the sheet.
+        val caption = "Quick export"
         try {
             composeRule.waitUntil(5_000) { composeRule.onAllNodesWithText(caption).fetchSemanticsNodes().isNotEmpty() }
         } catch (e: ComposeTimeoutException) {

@@ -196,6 +196,18 @@ python3 tools/golden/generate.py --check
 - Built-in presets and profiles are LineOver's own. Never bundle third-party presets or LUTs
   without a licence that allows it (and note it under R10).
 
+## Export (Stage 12)
+
+- `output.cpp` (C++), `tools/golden/export_reference.py` and its goldens change together;
+  `output_test` holds the ICC profiles byte-exact and the steps within 1e-3 / one code, and
+  `check_export_files.py` re-reads the PNG / TIFF files with OpenCV and LittleCMS in CI.
+- Precision: the export stays float (mapped `ExportImage`) until the encoder; never round to
+  8 or 16 bits before `convertRow8/16`.
+- A new format gets an `ExportFormat` (with its bit depths and colour spaces), an encoder in
+  `ExportEncoders`, a case in `ExportRoundTripTest` (decode and compare, ICC, EXIF) and runtime
+  detection in `ExportCapabilities` when it depends on a device codec (hide it when missing).
+- Metadata goes through `ExportMetadata` only; location is removed unless the person keeps it.
+
 ## History and projects (Stage 8)
 
 - Every edit goes through `EditorViewModel.reduce`, which records it in `EditHistory`; never

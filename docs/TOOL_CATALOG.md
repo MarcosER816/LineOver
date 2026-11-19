@@ -1,6 +1,6 @@
 # Tool catalog
 
-Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 57 done.**
+Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 68 done.**
 
 - **id**: stable identifier (`<group>.<tool>`), used in code, favourites and project files. Never renamed.
 - **UI slot**: where the tool lives. Slots are reserved now and are never moved (rule R9); a stage only *fills* slots.
@@ -291,17 +291,17 @@ Exports are written to `Pictures/LineOver`.
 
 | id | Name | Category | UI slot | Stage | Status |
 | --- | --- | --- | --- | --- | --- |
-| `export.jpeg` | JPEG | — (export sheet) | `sheet/export/format/01` | 12 | reserved |
-| `export.png` | PNG | — (export sheet) | `sheet/export/format/02` | 12 | reserved |
-| `export.webp` | WebP | — (export sheet) | `sheet/export/format/03` | 12 | reserved |
-| `export.heif` | HEIF | — (export sheet) | `sheet/export/format/04` | 12 | reserved |
-| `export.avif` | AVIF | — (export sheet) | `sheet/export/format/05` | 12 | reserved |
-| `export.tiff` | TIFF | — (export sheet) | `sheet/export/format/06` | 12 | reserved |
-| `export.ultra_hdr` | Ultra HDR | — (export sheet) | `sheet/export/format/07` | 12 | reserved |
-| `export.resize` | Resize | — (export sheet) | `sheet/export/options/01` | 12 | reserved |
-| `export.metadata` | Metadata | — (export sheet) | `sheet/export/options/02` | 12 | reserved |
-| `export.watermark` | Watermark | — (export sheet) | `sheet/export/options/03` | 12 | reserved |
-| `export.icc_profile` | ICC profile | — (export sheet) | `sheet/export/options/04` | 12 | reserved |
+| `export.jpeg` | JPEG | — (export sheet) | `sheet/export/format/01` | 12 | done |
+| `export.png` | PNG | — (export sheet) | `sheet/export/format/02` | 12 | done |
+| `export.webp` | WebP | — (export sheet) | `sheet/export/format/03` | 12 | done |
+| `export.heif` | HEIF | — (export sheet) | `sheet/export/format/04` | 12 | done |
+| `export.avif` | AVIF | — (export sheet) | `sheet/export/format/05` | 12 | done |
+| `export.tiff` | TIFF | — (export sheet) | `sheet/export/format/06` | 12 | done |
+| `export.ultra_hdr` | Ultra HDR | — (export sheet) | `sheet/export/format/07` | 12 | done |
+| `export.resize` | Resize | — (export sheet) | `sheet/export/options/01` | 12 | done |
+| `export.metadata` | Metadata | — (export sheet) | `sheet/export/options/02` | 12 | done |
+| `export.watermark` | Watermark | — (export sheet) | `sheet/export/options/03` | 12 | done |
+| `export.icc_profile` | ICC profile | — (export sheet) | `sheet/export/options/04` | 12 | done |
 
 ## Layers
 
