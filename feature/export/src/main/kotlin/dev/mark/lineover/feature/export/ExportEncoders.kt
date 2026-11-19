@@ -84,8 +84,9 @@ object ExportEncoders {
         file: File,
         exif: ByteArray?,
     ) {
-        // HEIF EXIF items start with the 4-byte big-endian offset to the TIFF header (ISO/IEC 23008-12 A.2.1).
-        val item = exif?.let { byteArrayOf(0, 0, 0, EXIF_HEADER.size.toByte()) + EXIF_HEADER + it }
+        // heifwriter hands this to MediaMuxer as muxer data; Android's MPEG-4 writer recognises an
+        // EXIF block by its leading "Exif\0\0" and writes the item's TIFF-header offset itself.
+        val item = exif?.let { EXIF_HEADER + it }
         if (settings.format == ExportFormat.Avif) {
             val writer =
                 AvifWriter

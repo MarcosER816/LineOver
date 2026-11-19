@@ -11,7 +11,9 @@ resize and sharpen for screen, metadata, watermark, MediaStore / SAF / Share.
 - [x] Round-trip tests (export -> decode -> compare to the render within tolerance):
       `ExportRoundTripTest` on the emulator decodes every format with Android's decoders and
       compares it with the render the export started from:
-      - PNG 8-bit and lossless WebP: exact.
+      - PNG 8-bit and lossless WebP: within one code, mean ≤ 0.1/255. The files hold the
+        exact codes, as the host tests show; the one code comes from Android colour-managing
+        the decode between two Display P3 profiles that differ by rounding.
       - JPEG q100 (Display P3): mean ≤ 1.5/255 and PSNR ≥ 38 dB.
       - 16-bit PNG against 16-bit TIFF: within 1/1024 (half-float decode).
       - HEIF / AVIF where the emulator has the encoder: PSNR ≥ 30 dB.
@@ -157,6 +159,8 @@ Screenshots changed, and why:
 | PNG round trip: ICC profile garbage although the chunk was there | `spng_set_iccp` keeps a pointer; the copy went out of scope before encoding | Keep the copy alive until the image is encoded |
 | "© Mark" came back as "? Mark" from EXIF | EXIF text tags are ASCII | Transliterate (`ExportMetadata.ascii`) |
 | Copyright-only export still showed LightSource = 0 | ExifInterface writes it as a compatibility default ("unknown") | Accepted (no information); the test names it |
+| Emulator: HEIF / AVIF exports had no readable EXIF | heifwriter passes the block to MediaMuxer, whose MPEG-4 writer recognises EXIF by a leading "Exif\0\0"; the 4-byte offset prefix hid it | Pass "Exif\0\0" + TIFF; the writer adds the offset |
+| Emulator: decoded PNG differed from the render by 1 code | Android colour-manages the decode from LineOver's P3 profile to its built-in one (colorants differ by s15Fixed16 rounding); the file itself is exact (host tests) | The device test allows one code (mean ≤ 0.1/255); exactness stays checked on the host |
 | Size slider showed 3008 px for 3000 | 16 px steps counted from the 256 px minimum | 1 px steps |
 
 Plan B used: no.

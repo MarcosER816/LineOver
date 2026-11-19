@@ -199,7 +199,7 @@ class ExportRoundTripTest {
     }
 
     @Test
-    fun pngAndWebpLosslessAreExact() {
+    fun pngAndWebpLosslessMatchTheRender() {
         for (settings in listOf(
             ExportSettings(format = ExportFormat.Png, colorSpace = ExportColorSpace.DisplayP3),
             ExportSettings(format = ExportFormat.Webp, webpLossless = true, colorSpace = ExportColorSpace.DisplayP3),
@@ -207,8 +207,14 @@ class ExportRoundTripTest {
             val file = export(settings)
             val decoded = decode(file)
             assertEquals(settings.format.label, ColorSpace.get(ColorSpace.Named.DISPLAY_P3), decoded.colorSpace)
-            val (worst, _, _) = compare(decoded, reference(settings))
-            assertEquals("${settings.format.label} max |diff|", 0, worst)
+            // The files hold the render's codes exactly (output_test and check_export_files.py read
+            // them back without colour management). Android colour-manages the decode from the
+            // embedded profile into its own Display P3, whose colorants differ from LineOver's by
+            // s15Fixed16 rounding: at most one code here and there.
+            val (worst, mean, _) = compare(decoded, reference(settings))
+            Log.i(TAG, "${settings.format.label}: max $worst mean $mean")
+            assertTrue("${settings.format.label} max |diff| $worst", worst <= 1)
+            assertTrue("${settings.format.label} mean |diff| $mean", mean <= 0.1)
         }
         val webp = WebpChunks.parse(export(ExportSettings(format = ExportFormat.Webp, colorSpace = ExportColorSpace.DisplayP3)).readBytes())
         assertArrayEquals(ExportImage.iccProfile(ExportColorSpace.DisplayP3), webp.first { it.fourcc == "ICCP" }.data)
