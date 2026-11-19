@@ -159,6 +159,7 @@ internal fun PhotoCanvas(
     val pickMode = state.pickMode
     val size = state.canvasSize
     val cropFrame = state.cropFrame
+    val oneToOne = state.oneToOneRequest
     val matrix = LocalCanvasMatrix.current
     AndroidView(
         factory = { CanvasView(it).also { view -> view.matrix = matrix } },
@@ -173,6 +174,7 @@ internal fun PhotoCanvas(
             view.cropFrame = cropFrame
             view.swipeMode = swipeMode
             view.pickMode = pickMode
+            view.requestOneToOne(oneToOne)
         },
         onRelease = { view -> view.setRenderer(null) },
     )

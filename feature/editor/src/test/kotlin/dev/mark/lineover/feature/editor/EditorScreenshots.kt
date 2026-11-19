@@ -20,6 +20,7 @@ import dev.mark.lineover.core.engine.CompareMode
 import dev.mark.lineover.core.engine.Histogram
 import dev.mark.lineover.core.model.CropAspect
 import dev.mark.lineover.core.model.CropMath
+import dev.mark.lineover.core.model.DetailTools
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.EditHistory
 import dev.mark.lineover.core.model.GeometryAdjustments
@@ -203,9 +204,14 @@ abstract class EditorScreenshots(
             base(ToolCategory.Favorites).copy(favorites = listOf("light.exposure", "retouch.spot_healing", "color.hsl_color_mixer")),
         )
 
-    // A tool that is still reserved (Light tools have real panels since Stage 5).
+    // A tool that is still reserved (Effects and Detail have real panels since Stage 10).
     @Test
-    fun toolPanelPlaceholder() = shot("tool_panel", base(ToolCategory.Effects).copy(panel = EditorPanel.Tool("effects.texture")))
+    fun toolPanelPlaceholder() = shot("tool_panel", base(ToolCategory.Presets).copy(panel = EditorPanel.Tool("presets.presets")))
+
+    /** Stage 10: Sharpen in the editor (the 1:1 toggle in its header). */
+    @Test
+    fun detailPanel() =
+        shot("detail_panel", base(ToolCategory.Detail).copy(panel = EditorPanel.Tool(DetailTools.SHARPEN), detail = SAMPLE_DETAIL))
 
     /** Stage 5: the Light panel (collapsed on phones: the selected slider; all of them when wide). */
     @Test

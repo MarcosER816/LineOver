@@ -165,6 +165,20 @@ python3 tools/golden/generate.py --check
   files pinned in `LensfunManifest` (SHA-256) on request. Change the commit and the hashes
   together.
 
+## Detail and effects (Stage 10)
+
+- `detail.cpp` (C++ and its GLSL), `tools/golden/detail_reference.py` and
+  `dehaze_reference.py` change together; ctest `detail_test` and `EngineGpuTest` check them.
+- Radii are in full-resolution pixels × `OpRegion::scale` / `u_scale`; never size a kernel in
+  buffer pixels. `preview_matches_the_downsampled_export` (PSNR > 35 dB) guards it.
+- An op that reads neighbours declares `apron()`; tiles and exports pad by the list's sum.
+  A multi-pass op uses `GpuOpContext::addPass`, never its own GL code.
+- Post-crop Vignette and Grain are output-space finishing, not source ops: they live in
+  `Finishing` / `kFinishingGlsl` (display, warp, export, thumbnails). Never add them to
+  `buildOps`.
+- Clarity / Texture / Dehaze fields are computed once per preview (`computeDetailFields`);
+  never per slider move.
+
 ## History and projects (Stage 8)
 
 - Every edit goes through `EditorViewModel.reduce`, which records it in `EditHistory`; never

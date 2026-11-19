@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -128,6 +130,28 @@ LO_TEST(graph_maps_the_stage_10_ops) {
     lo::Finishing f;
     LO_CHECK(lo::finishingOf(g, &f));
     LO_CHECK(f.vignette == -30.f && f.grain == 30.f);
+}
+
+// The graph Kotlin writes (testdata/graph/detail_v1.json, DetailAdjustmentsTest): read,
+// mapped to the five source ops and the finishing, and written back byte for byte.
+LO_TEST(kotlin_fixture_maps_and_round_trips) {
+    std::ifstream file(std::string(LO_TESTDATA_DIR) + "/graph/detail_v1.json");
+    std::stringstream text;
+    text << file.rdbuf();
+    std::string json = text.str();
+    while (!json.empty() && (json.back() == '\n' || json.back() == '\r')) json.pop_back();
+    lo::Graph g;
+    std::string error;
+    LO_CHECK(lo::parseGraph(json, &g, &error));
+    std::string skipped;
+    const auto ops = lo::buildOps(g, &skipped);
+    LO_CHECK(skipped.empty());
+    LO_CHECK(ops->ops().size() == 5);
+    LO_CHECK(ops->ops()[0]->type() == lo::OpType::NoiseReduction && ops->ops()[4]->type() == lo::OpType::Sharpen);
+    lo::Finishing f;
+    LO_CHECK(lo::finishingOf(g, &f));
+    LO_CHECK(f.vignette == -30.f && f.roundness == 20.f && f.feather == 60.f && f.highlights == 10.f && f.grain == 20.f);
+    LO_CHECK(lo::serializeGraph(g) == json);
 }
 
 namespace {

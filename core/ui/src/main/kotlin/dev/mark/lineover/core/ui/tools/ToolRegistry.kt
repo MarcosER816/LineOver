@@ -296,13 +296,13 @@ private fun buildTools(): List<ToolSpec> =
                 done = true,
             )
 
-            strip(Effects, "effects.texture", "Texture", 10, PanelType.Sliders, LoIcons.Texture)
-            strip(Effects, "effects.clarity", "Clarity", 10, PanelType.Sliders, LoIcons.Deblur, "local contrast", "structure")
-            strip(Effects, "effects.dehaze", "Dehaze", 10, PanelType.Sliders, LoIcons.FilterDrama, "haze", "fog")
-            strip(Effects, "effects.vignette", "Vignette", 10, PanelType.Sliders, LoIcons.Vignette, "dark corners")
-            strip(Effects, "effects.grain", "Grain", 10, PanelType.Sliders, LoIcons.Grain, "film grain", "noise")
+            strip(Effects, "effects.texture", "Texture", 10, PanelType.Sliders, LoIcons.Texture, done = true)
+            strip(Effects, "effects.clarity", "Clarity", 10, PanelType.Sliders, LoIcons.Deblur, "local contrast", "structure", done = true)
+            strip(Effects, "effects.dehaze", "Dehaze", 10, PanelType.Sliders, LoIcons.FilterDrama, "haze", "fog", done = true)
+            strip(Effects, "effects.vignette", "Vignette", 10, PanelType.Sliders, LoIcons.Vignette, "dark corners", done = true)
+            strip(Effects, "effects.grain", "Grain", 10, PanelType.Sliders, LoIcons.Grain, "film grain", "noise", done = true)
 
-            strip(Detail, "detail.sharpen", "Sharpen", 10, PanelType.Sliders, LoIcons.Deblur, "sharpness", "crisp")
+            strip(Detail, "detail.sharpen", "Sharpen", 10, PanelType.Sliders, LoIcons.Deblur, "sharpness", "crisp", done = true)
             strip(
                 Detail,
                 "detail.noise_reduction",
@@ -312,6 +312,7 @@ private fun buildTools(): List<ToolSpec> =
                 LoIcons.BlurMedium,
                 "denoise",
                 "grain removal",
+                done = true,
             )
 
             strip(

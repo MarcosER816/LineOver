@@ -343,8 +343,7 @@ class EngineGpuTest {
         )
 
     @Test
-    fun gpuGrainMatchesTheReference() =
-        checkDetail("effects/grain", """{"op":"grain","amount":60.0,"size":30.0,"roughness":40.0}""")
+    fun gpuGrainMatchesTheReference() = checkDetail("effects/grain", """{"op":"grain","amount":60.0,"size":30.0,"roughness":40.0}""")
 
     /** The compute-shader histogram against numpy (reference.histogram_srgb): within 1 count per bin. */
     @Test

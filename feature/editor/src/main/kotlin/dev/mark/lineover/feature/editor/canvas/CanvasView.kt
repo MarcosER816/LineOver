@@ -218,6 +218,21 @@ class CanvasView(
         publish()
     }
 
+    private var oneToOneSeen = -1
+
+    /**
+     * The 1:1 toggle: each new [request] count zooms to 100 % at the middle of the view (or
+     * back to fit). The first value seen is only remembered (a new view does not jump).
+     */
+    fun requestOneToOne(request: Int) {
+        if (request == oneToOneSeen) return
+        val first = oneToOneSeen < 0
+        oneToOneSeen = request
+        if (first) return
+        val fitted = transform.oneToOneTarget(target)
+        animateTo(target[0], target[1], target[2], fitted)
+    }
+
     /** Colour around the photo (Settings → Canvas surround). */
     fun setSurround(argb: Int) {
         if (argb == currentSurround) return

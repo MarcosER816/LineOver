@@ -192,6 +192,28 @@ class CanvasTransform {
         return false
     }
 
+    /**
+     * The 1:1 toggle of the detail tools (Stage 10): 100 % (one image pixel per screen pixel)
+     * around the middle of the view, or back to fit when already there. Writes (scale,
+     * centerX, centerY) into [out] and returns whether the target is "fitted".
+     */
+    fun oneToOneTarget(out: FloatArray): Boolean {
+        if (abs(scale - 1f) <= FIT_TOLERANCE) {
+            out[0] = fitScale()
+            out[1] = viewWidth / 2f
+            out[2] = viewHeight / 2f
+            return true
+        }
+        val target = 1f.coerceIn(minScale, maxScale)
+        val factor = target / scale
+        val midX = viewWidth / 2f
+        val midY = viewHeight / 2f
+        out[0] = target
+        out[1] = midX + (centerX - midX) * factor
+        out[2] = midY + (centerY - midY) * factor
+        return false
+    }
+
     /** Maps an image point to the view; writes x, y into [out]. */
     fun imageToView(
         x: Float,
