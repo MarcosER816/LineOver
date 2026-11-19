@@ -11,6 +11,7 @@ import dev.mark.lineover.core.io.project.ProjectLibraries
 import dev.mark.lineover.core.io.project.ProjectLibrary
 import dev.mark.lineover.feature.editor.canvas.EditorCanvasFactory
 import dev.mark.lineover.feature.editor.canvas.EngineCanvasFactory
+import dev.mark.lineover.feature.export.ExportEnvironment
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -20,8 +21,19 @@ import java.io.File
  * Application. onCreate does nothing on purpose (fast cold start): everything in the
  * container is created on first use.
  */
-class LineOverApp : Application() {
+class LineOverApp :
+    Application(),
+    ExportEnvironment.Provider {
     val container: AppContainer by lazy { AppContainer(this) }
+
+    /** The export service (Stage 12) reaches the projects and LUTs through this. */
+    override val exportEnvironment: ExportEnvironment by lazy {
+        object : ExportEnvironment {
+            override val projects get() = container.projects
+            override val looks get() = container.looks
+            override val versionName: String = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
+        }
+    }
 }
 
 /** Hand-written dependency container (no DI framework in the plan). */

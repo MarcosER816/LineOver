@@ -12,8 +12,8 @@ android {
 dependencies {
     api(project(":core:model"))
     api(libs.kotlinx.coroutines.core)
-    // EXIF orientation for tiles (BitmapRegionDecoder does not apply it).
-    implementation(libs.androidx.exifinterface)
+    // EXIF orientation for tiles (BitmapRegionDecoder does not apply it); export metadata (Stage 12).
+    api(libs.androidx.exifinterface)
 
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)

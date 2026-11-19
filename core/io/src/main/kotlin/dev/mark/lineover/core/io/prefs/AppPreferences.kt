@@ -2,6 +2,7 @@ package dev.mark.lineover.core.io.prefs
 
 import android.content.Context
 import android.content.SharedPreferences
+import dev.mark.lineover.core.model.ExportSettings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -64,6 +65,11 @@ interface AppPreferences {
     fun setSurround(surround: CanvasSurround)
 
     fun setTapGestures(gestures: TapGestures)
+
+    /** The export sheet's last settings (Stage 12). */
+    val exportSettings: StateFlow<ExportSettings>
+
+    fun setExportSettings(settings: ExportSettings)
 }
 
 /** [AppPreferences] in a SharedPreferences file (`lineover_ui`). */
@@ -109,6 +115,14 @@ class SharedAppPreferences(
         prefs.edit().putString(KEY_TAPS, gestures.id).apply()
     }
 
+    private val exportFlow = MutableStateFlow(ExportSettings.decode(prefs.getString(KEY_EXPORT, null)))
+    override val exportSettings = exportFlow.asStateFlow()
+
+    override fun setExportSettings(settings: ExportSettings) {
+        exportFlow.value = settings
+        prefs.edit().putString(KEY_EXPORT, ExportSettings.encode(settings)).apply()
+    }
+
     private companion object {
         const val FILE = "lineover_ui"
         const val KEY_CATEGORY = "editor.last_category"
@@ -116,6 +130,7 @@ class SharedAppPreferences(
         const val KEY_FAVORITES = "editor.favorites"
         const val KEY_SURROUND = "canvas.surround"
         const val KEY_TAPS = "canvas.tap_gestures"
+        const val KEY_EXPORT = "export.settings"
         const val SEPARATOR = ","
 
         fun decode(value: String?): List<String> = value?.split(SEPARATOR)?.filter { it.isNotBlank() }.orEmpty()
@@ -129,7 +144,14 @@ class InMemoryAppPreferences(
     favorites: List<String> = emptyList(),
     surround: CanvasSurround = CanvasSurround.Dark,
     tapGestures: TapGestures = TapGestures.Standard,
+    exportSettings: ExportSettings = ExportSettings(),
 ) : AppPreferences {
+    override val exportSettings = MutableStateFlow(exportSettings)
+
+    override fun setExportSettings(settings: ExportSettings) {
+        exportSettings.value = settings
+    }
+
     override val lastCategory = MutableStateFlow(lastCategory)
     override val coachMarksSeen = MutableStateFlow(coachMarksSeen)
     override val favorites = MutableStateFlow(favorites)
