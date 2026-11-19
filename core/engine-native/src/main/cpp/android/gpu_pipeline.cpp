@@ -1,5 +1,7 @@
 #include "gpu_pipeline.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <vector>
 
@@ -158,11 +160,12 @@ vec2 lo_outPx() { return u_drawRect.xy + v_uv * u_drawRect.zw; }
 
 // Output-space finishing (Stage 10, detail.h): footprint = output pixels per fragment.
 constexpr const char* kFinished = R"(
+// u_footprint: output pixels per fragment, set by the CPU from the draw's own mapping
+// (derivatives are not used: they differ between drivers).
+uniform float u_footprint;
 vec4 lo_finished() {
     vec4 c = lo_source();
-    vec2 o = lo_outPx();
-    float footprint = max(max(length(dFdx(o)), length(dFdy(o))), 1e-3);
-    return vec4(lo_finish(c.rgb, o, footprint), c.a);
+    return vec4(lo_finish(c.rgb, lo_outPx(), max(u_footprint, 1e-3)), c.a);
 }
 )";
 
@@ -267,7 +270,10 @@ uniform ivec2 u_hazeSize;
 uniform float u_scale;
 uniform vec3 u_air;
 ivec2 lo_px() { return ivec2(gl_FragCoord.xy); }
-vec4 lo_at(highp sampler2D s, ivec2 p) { return texelFetch(s, clamp(p, ivec2(0), textureSize(s, 0) - 1), 0); }
+// Every pass texture has the target's size u_size (textureSize of a sampler argument is
+// not reliable on every translator).
+uniform ivec2 u_size;
+vec4 lo_at(highp sampler2D s, ivec2 p) { return texelFetch(s, clamp(p, ivec2(0), u_size - 1), 0); }
 // Bilinear at a pixel position (centres at integers), clamped: reference.bilinear.
 vec4 lo_bilinear(highp sampler2D s, vec2 x) {
     vec2 f = floor(x);
@@ -480,6 +486,7 @@ bool GpuPipeline::runOps(const OpList& ops, GLuint source, GLuint target, int wi
             glUniform2i(glGetUniformLocation(program, "u_fieldsSize"), inputs.fieldsWidth, inputs.fieldsHeight);
             glUniform2i(glGetUniformLocation(program, "u_hazeSize"), inputs.hazeWidth, inputs.hazeHeight);
             glUniform1f(glGetUniformLocation(program, "u_scale"), inputs.scale);
+            glUniform2i(glGetUniformLocation(program, "u_size"), width, height);
             glUniform3fv(glGetUniformLocation(program, "u_air"), 1, inputs.air);
             for (const auto& [name, value] : rec.uniforms) glUniform1f(glGetUniformLocation(program, name.c_str()), value);
             for (const auto& [name, m] : rec.matrices) glUniformMatrix3fv(glGetUniformLocation(program, name.c_str()), 1, GL_TRUE, m.data());
@@ -572,6 +579,16 @@ void GpuPipeline::drawImage(GLuint texture, const float rect[4], const float ima
         glUniform4fv(glGetUniformLocation(program, "u_quad"), 1, rect);
     }
     setFinishingUniforms(program, options.finishing, geometry != nullptr ? geometry->outSize : options.outSize);
+    {
+        // Output pixels per screen pixel: the quad's output extent over its extent on screen.
+        GLint vp[4];
+        glGetIntegerv(GL_VIEWPORT, vp);
+        const float* quad = geometry != nullptr ? geometry->drawRect : rect;
+        const float lu = std::hypot(m[0] * vp[2] * 0.5f, m[3] * vp[3] * 0.5f);
+        const float lv = std::hypot(m[1] * vp[2] * 0.5f, m[4] * vp[3] * 0.5f);
+        const float footprint = std::max(lu > 0.f ? quad[2] / lu : 1.f, lv > 0.f ? quad[3] / lv : 1.f);
+        glUniform1f(glGetUniformLocation(program, "u_footprint"), footprint);
+    }
     glEnable(GL_BLEND);
     glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
@@ -600,6 +617,7 @@ bool GpuPipeline::warp(GLuint texture, const GeometryDraw& geometry, GLuint targ
     glUniformMatrix3fv(glGetUniformLocation(warpProgram_, "u_matrix"), 1, GL_TRUE, toNdc);
     setGeometryUniforms(warpProgram_, geometry);
     setFinishingUniforms(warpProgram_, finishing, geometry.outSize);
+    glUniform1f(glGetUniformLocation(warpProgram_, "u_footprint"), geometry.drawRect[2] / static_cast<float>(width));
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     return true;
