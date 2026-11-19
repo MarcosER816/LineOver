@@ -22,6 +22,7 @@ import cv2
 import numpy as np
 
 import detail_reference as detail
+import export_reference as export
 import lensfun_reference
 import lut_reference as lut
 import reference
@@ -76,6 +77,7 @@ def build_outputs() -> dict[str, np.ndarray]:
     outputs.update(lensfun_outputs())
     outputs.update(detail_outputs())
     outputs.update(lut_outputs())
+    outputs.update(export_outputs())
     return outputs
 
 
@@ -320,6 +322,31 @@ def lut_outputs() -> dict:
     return out
 
 
+def export_outputs() -> dict:
+    """Stage 12: the export's pixel steps on the HDR scene (resize, sharpen, watermark,
+    conversion to 8 / 16-bit codes) and the three ICC profiles, byte for byte."""
+    scene = reference.scene_rec2020()
+    out = {}
+    out["export/resize_50x37_f32.npy"] = export.resize(scene, 50, 37)
+    out["export/resize_64x48_f32.npy"] = export.resize(scene, 64, 48)
+    out["export/sharpen_standard_f32.npy"] = export.sharpen(scene, export.SHARPEN_AMOUNTS["standard"])
+    mark = export.test_watermark()
+    out["export/watermark_rgba8.png"] = mark
+    out["export/watermark_f32.npy"] = export.watermark(scene, mark, 80, 78, 0.6)
+    out["export/watermark_clipped_f32.npy"] = export.watermark(scene, mark, 100, -4, 1.0)
+    for space, bits in (("srgb", 8), ("p3", 8), ("srgb", 16), ("p3", 16), ("rec2020", 16)):
+        out[f"export/convert_{space}_{bits}_f32.npy"] = export.convert(scene, space, bits)
+    for space in ("srgb", "p3"):
+        codes, ratio = export.gainmap(scene, space, 4)
+        g = np.zeros(codes.shape + (4,), dtype=np.float32)
+        g[..., 0] = codes
+        g[..., 1] = ratio
+        out[f"export/gainmap_{space}_f32.npy"] = g
+    for space in export.PRIMARIES:
+        out[f"export/icc/{space}.icc"] = export.icc_profile(space)
+    return out
+
+
 def write_file(path: Path, array: np.ndarray) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.suffix == ".png":
@@ -332,6 +359,8 @@ def write_file(path: Path, array: np.ndarray) -> None:
         np.save(path, np.ascontiguousarray(array.astype("<f4")))
     elif path.suffix in (".json", ".cube"):
         path.write_text(array)
+    elif path.suffix == ".icc":
+        path.write_bytes(array)
     else:
         raise ValueError(f"unsupported golden file type: {path}")
 
@@ -339,6 +368,8 @@ def write_file(path: Path, array: np.ndarray) -> None:
 def read_file(path: Path) -> np.ndarray:
     if path.suffix in (".json", ".cube"):
         return path.read_text()
+    if path.suffix == ".icc":
+        return path.read_bytes()
     if path.suffix == ".png":
         bgra = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
         if bgra is None:
@@ -352,8 +383,8 @@ def is_stale(path: Path, expected: np.ndarray) -> str | None:
     if not path.is_file():
         return "missing"
     actual = read_file(path)
-    if isinstance(expected, str):
-        return None if actual == expected else "text differs"
+    if isinstance(expected, (str, bytes)):
+        return None if actual == expected else "contents differ"
     if actual.shape != expected.shape or actual.dtype != expected.dtype:
         return f"shape/dtype {actual.shape} {actual.dtype}, expected {expected.shape} {expected.dtype}"
     if expected.dtype == np.uint8:
@@ -375,6 +406,7 @@ def main() -> int:
     reference.light_self_check()
     reference.color_self_check()
     reference.grade_self_check()
+    export.self_check()
     outputs = build_outputs()
 
     if args.check:
@@ -382,7 +414,7 @@ def main() -> int:
         for name, why in stale.items():
             print(f"STALE  {name}: {why}", file=sys.stderr)
         expected_files = set(outputs)
-        on_disk = {p.relative_to(GOLDEN_DIR).as_posix() for p in GOLDEN_DIR.rglob("*") if p.suffix in (".png", ".npy", ".json", ".cube")}
+        on_disk = {p.relative_to(GOLDEN_DIR).as_posix() for p in GOLDEN_DIR.rglob("*") if p.suffix in (".png", ".npy", ".json", ".cube", ".icc")}
         orphans = sorted(on_disk - expected_files)
         for name in orphans:
             print(f"ORPHAN {name}: not produced by generate.py", file=sys.stderr)

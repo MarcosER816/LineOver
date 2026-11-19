@@ -4,3 +4,5 @@ numpy==2.5.3
 # opencv-python without GUI dependencies (same cv2 module, works on headless CI).
 opencv-python-headless==5.0.0.93
 colour-science==0.4.7
+# Pillow (HPND): reads the ICC profiles of exported files in check_export_files.py (Stage 12).
+pillow==12.3.0
