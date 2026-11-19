@@ -394,6 +394,31 @@ The JNI bridge only marshals Java values to the C API (`android/lo_api.h`). The 
 `CMakeLists.txt` builds the Android shared library (through Gradle) and, on Linux, the
 host static library plus the ctest tests.
 
+### Layers (Stage 13)
+
+```
+background layer (the photo): develop ops (GPU tiles / CPU) -> geometry warp   = document space
+  -> layers::compositeLayers (CPU, any region of the document: preview, thumbnail, export tile)
+       raster / smart object: registered image placed by `transform` (source px -> document px), bilinear
+       adjustment: point ops on the backdrop          group: isolated or pass-through (recursive)
+       blend: W3C source-over with one of 27 modes, straight alpha, gamma or linear blending space
+  -> finishing (post-crop vignette, grain)
+```
+
+- `layers.cpp` and `tools/golden/blend_reference.py` change together; ctest `blend_test` holds
+  every mode (both spaces) and the compositor scene within 1e-3.
+- Layer images are registered process-wide by the graph's `source` name
+  (`EngineSession.registerLayerImage`): the preview set (≤ 2048 px) for the canvas and
+  thumbnails, the export set (≤ 4096 px) during an export. `sourceSize` maps any resolution
+  into the document.
+- The canvas of a layered document is a CPU composite of the preview, uploaded as one texture
+  (`Engine::renderComposite`); the export composites each output tile before finishing.
+- `LayerMath` (`:core:model`) does every tree operation. Merge down and flatten are
+  pass-through groups (non-destructive). `HistoryLabels` names layer changes; the Layers panel
+  drives `EditorLayersActions`.
+- Imported photos live in `files/layers` (`LayerSources`, SHA-256 names); the graph never
+  names the person's original.
+
 ## AI models
 
 `ModelSpec` (`:core:ml`) describes a model: id, name, URL, size, licence, SHA-256. A tool

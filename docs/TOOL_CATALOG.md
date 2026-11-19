@@ -1,6 +1,6 @@
 # Tool catalog
 
-Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 68 done.**
+Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 75 done.**
 
 - **id**: stable identifier (`<group>.<tool>`), used in code, favourites and project files. Never renamed.
 - **UI slot**: where the tool lives. Slots are reserved now and are never moved (rule R9); a stage only *fills* slots.
@@ -309,13 +309,13 @@ The 27 blend modes: Normal, Dissolve, Darken, Multiply, Color Burn, Linear Burn,
 
 | id | Name | Category | UI slot | Stage | Status |
 | --- | --- | --- | --- | --- | --- |
-| `layers.raster_layer` | Raster layer | — (layers panel) | `panel/layers/add/01` | 13 | reserved |
-| `layers.adjustment_layer` | Adjustment layer | — (layers panel) | `panel/layers/add/02` | 13 | reserved |
-| `layers.group` | Group | — (layers panel) | `panel/layers/add/03` | 13 | reserved |
-| `layers.smart_object` | Smart object | — (layers panel) | `panel/layers/add/04` | 13 | reserved |
-| `layers.opacity` | Opacity | — (layers panel) | `panel/layers/props/01` | 13 | reserved |
-| `layers.fill` | Fill | — (layers panel) | `panel/layers/props/02` | 13 | reserved |
-| `layers.blend_modes` | Blend modes (27) | — (layers panel) | `panel/layers/props/03` | 13 | reserved |
+| `layers.raster_layer` | Raster layer | — (layers panel) | `panel/layers/add/01` | 13 | done |
+| `layers.adjustment_layer` | Adjustment layer | — (layers panel) | `panel/layers/add/02` | 13 | done |
+| `layers.group` | Group | — (layers panel) | `panel/layers/add/03` | 13 | done |
+| `layers.smart_object` | Smart object | — (layers panel) | `panel/layers/add/04` | 13 | done |
+| `layers.opacity` | Opacity | — (layers panel) | `panel/layers/props/01` | 13 | done |
+| `layers.fill` | Fill | — (layers panel) | `panel/layers/props/02` | 13 | done |
+| `layers.blend_modes` | Blend modes (27) | — (layers panel) | `panel/layers/props/03` | 13 | done |
 | `layers.layer_mask` | Layer mask | — (layers panel) | `panel/layers/mask/01` | 14 | reserved |
 | `layers.clipping_mask` | Clipping mask | — (layers panel) | `panel/layers/mask/02` | 14 | reserved |
 | `layers.vector_mask` | Vector mask | — (layers panel) | `panel/layers/mask/03` | 24 | reserved |

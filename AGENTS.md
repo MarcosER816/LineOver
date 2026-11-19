@@ -208,6 +208,22 @@ python3 tools/golden/generate.py --check
   detection in `ExportCapabilities` when it depends on a device codec (hide it when missing).
 - Metadata goes through `ExportMetadata` only; location is removed unless the person keeps it.
 
+## Layers (Stage 13)
+
+- `layers.cpp` (C++), `tools/golden/blend_reference.py` and `testdata/golden/blend/` change
+  together; `blend_test` checks the 27 modes in both blending spaces and the compositor scene.
+  Never premultiply before blending; `SetLum` / `ClipColor` follow the W3C pseudocode.
+- Layers composite in document space after the background's geometry and before finishing
+  (`compositeLayers`); only the background layer feeds `buildOps`. Layers hold point ops only
+  (`buildPointOps`).
+- A layer image is registered (`registerLayerImage`) before a graph names it: the editor does
+  it in `EditorLayersActions.onCanvasGraph`, the export in `ExportRunner.render`. Exports release
+  their full-size images afterwards.
+- Layer fields are written only when not default (Kotlin `@EncodeDefault(NEVER)`, C++
+  `serializeLayer` in the same order); both round-trip `testdata/graph/edit_graph_layers.json`.
+- Merge down and flatten group layers (pass-through); never combine pixels outside export and
+  never merge into the photo.
+
 ## History and projects (Stage 8)
 
 - Every edit goes through `EditorViewModel.reduce`, which records it in `EditHistory`; never

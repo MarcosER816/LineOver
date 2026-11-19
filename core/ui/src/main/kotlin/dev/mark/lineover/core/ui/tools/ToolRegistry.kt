@@ -879,7 +879,10 @@ private class ToolListBuilder {
         @DrawableRes icon: Int,
         vararg synonyms: String,
     ) {
-        tools += ToolSpec(id, name, null, ToolPlace.LayersPanel, "panel/layers/$slot", stage, panelType, icon, synonyms.toList())
+        // Stage 13 built the layer list, its add menu and the layer properties.
+        val done = stage == LAYERS_STAGE
+        tools +=
+            ToolSpec(id, name, null, ToolPlace.LayersPanel, "panel/layers/$slot", stage, panelType, icon, synonyms.toList(), done = done)
     }
 
     @Suppress("LongParameterList")
@@ -896,5 +899,6 @@ private class ToolListBuilder {
 
     private companion object {
         const val EXPORT_STAGE = 12
+        const val LAYERS_STAGE = 13
     }
 }

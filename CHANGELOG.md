@@ -2,6 +2,27 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 13 — Layers (0.13.0)
+
+### Added
+
+- Layers (top bar → Layers):
+  - Add a second photo as a layer, an adjustment layer (Exposure, Contrast, Brightness,
+    Vibrance, Saturation, Temperature, Posterize, Threshold, Invert, or a copy of the photo's
+    own edit), a group, or a smart object (a photo with its own Exposure / Contrast /
+    Saturation).
+  - All 27 Photoshop blend modes. Scrolling the blend list previews each mode on the photo;
+    tap one to apply it.
+  - Opacity right in the selected layer's row, plus Fill, show / hide and lock.
+  - Groups pass through or are isolated.
+  - Size, angle and position for photo layers.
+- Drag a layer by its handle to reorder it (with haptics); swipe a layer left to delete it,
+  with Undo.
+- Duplicate, Merge down and Flatten. They keep the layers as groups, so nothing is lost until
+  you export.
+- Blending in gamma (like Photoshop, the default) or in linear light, per project.
+- Exports and thumbnails include the layers.
+
 ## Stage 12 — Export (0.12.0)
 
 ### Added
