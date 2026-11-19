@@ -91,7 +91,7 @@ class ExportEstimateTest {
         assertTrue(ExportEstimate.bytes(ExportSettings(format = ExportFormat.Avif), 4000, 3000, sample) < jpeg)
         assertTrue(ExportEstimate.bytes(ExportSettings(format = ExportFormat.UltraHdr), 4000, 3000, sample) > jpeg)
         assertEquals(jpeg / 4, ExportEstimate.bytes(ExportSettings(), 2000, 1500, sample), 2)
-        assertEquals("6.6 MB", ExportEstimate.label(jpeg))
+        assertEquals("4.0 MB", ExportEstimate.label(jpeg)) // 12 MP x 0.6 B/px x 0.55
         assertEquals("640 KB", ExportEstimate.label(640_000))
     }
 
