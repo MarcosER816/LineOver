@@ -179,6 +179,17 @@ python3 tools/golden/generate.py --check
 - Clarity / Texture / Dehaze fields are computed once per preview (`computeDetailFields`);
   never per slider move.
 
+## Presets and Auto (Stage 11)
+
+- `lut.cpp` (C++ and GLSL) and `tools/golden/lut_reference.py` change together; ctest
+  `lut_test` holds the tetrahedral LUT within 1/255 of Python, `EngineGpuTest` the GPU path.
+- A LUT's table never goes in the graph JSON: register it (`EngineSession.registerLut`) before
+  a graph names its id; `EditorLooksActions` does this for the editor.
+- Presets are partial graphs blended by `PresetMath`; a new blendable op gets a neutral entry
+  there. Every op belongs to one `SettingsGroup` (`SettingsGroupTest` checks it).
+- Built-in presets and profiles are LineOver's own. Never bundle third-party presets or LUTs
+  without a licence that allows it (and note it under R10).
+
 ## History and projects (Stage 8)
 
 - Every edit goes through `EditorViewModel.reduce`, which records it in `EditHistory`; never

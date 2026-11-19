@@ -253,12 +253,13 @@ JNIEXPORT jfloatArray LO_NATIVE(nativeAutoLevels)(JNIEnv* env, jobject, jlong en
 }
 
 // [width, height] in the first 8 bytes (little endian), then RGBA8; null before a preview.
-JNIEXPORT jbyteArray LO_NATIVE(nativeRenderThumbnail)(JNIEnv* env, jobject, jlong engine, jstring graph) {
+JNIEXPORT jbyteArray LO_NATIVE(nativeRenderThumbnail)(JNIEnv* env, jobject, jlong engine, jstring graph, jint maxEdge) {
     constexpr int kMaxEdge = 512;
     std::vector<std::uint8_t> rgba(static_cast<std::size_t>(kMaxEdge) * kMaxEdge * 4);
     int w = 0, h = 0;
     const char* text = env->GetStringUTFChars(graph, nullptr);
-    const int ok = lo_engine_render_thumbnail(handle(engine), text, rgba.data(), static_cast<int>(rgba.size()), &w, &h);
+    const int ok =
+        lo_engine_render_thumbnail_sized(handle(engine), text, maxEdge, rgba.data(), static_cast<int>(rgba.size()), &w, &h);
     env->ReleaseStringUTFChars(graph, text);
     if (ok == 0) return nullptr;
     const jsize size = static_cast<jsize>(w) * h * 4;
@@ -268,6 +269,36 @@ JNIEXPORT jbyteArray LO_NATIVE(nativeRenderThumbnail)(JNIEnv* env, jobject, jlon
     env->SetByteArrayRegion(result, 0, 8, reinterpret_cast<const jbyte*>(dims));
     env->SetByteArrayRegion(result, 8, size, reinterpret_cast<const jbyte*>(rgba.data()));
     return result;
+}
+
+// Auto (Stage 11): [temperature, tint, exposure, contrast, whites, blacks, vibrance], or null.
+JNIEXPORT jfloatArray LO_NATIVE(nativeAutoSettings)(JNIEnv* env, jobject, jlong engine) {
+    float out[7];
+    if (lo_engine_auto_settings(handle(engine), out) == 0) return nullptr;
+    jfloatArray result = env->NewFloatArray(7);
+    if (result != nullptr) env->SetFloatArrayRegion(result, 0, 7, out);
+    return result;
+}
+
+// 3D LUTs are process-wide (the engine handle is not used).
+JNIEXPORT jboolean LO_NATIVE(nativeRegisterLut)(JNIEnv* env, jobject, jstring id, jint size, jfloatArray domain, jfloatArray rgb) {
+    if (env->GetArrayLength(domain) != 6) return JNI_FALSE;
+    const auto expected = static_cast<jsize>(size) * size * size * 3;
+    if (size < 2 || size > 65 || env->GetArrayLength(rgb) != expected) return JNI_FALSE;
+    float d[6];
+    env->GetFloatArrayRegion(domain, 0, 6, d);
+    std::vector<float> table(static_cast<std::size_t>(expected));
+    env->GetFloatArrayRegion(rgb, 0, expected, table.data());
+    const char* text = env->GetStringUTFChars(id, nullptr);
+    const int ok = lo_register_lut(text, size, d, d + 3, table.data());
+    env->ReleaseStringUTFChars(id, text);
+    return ok != 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void LO_NATIVE(nativeUnregisterLut)(JNIEnv* env, jobject, jstring id) {
+    const char* text = env->GetStringUTFChars(id, nullptr);
+    lo_unregister_lut(text);
+    env->ReleaseStringUTFChars(id, text);
 }
 
 JNIEXPORT jfloatArray LO_NATIVE(nativeAutoLight)(JNIEnv* env, jobject, jlong engine) {

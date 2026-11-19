@@ -355,6 +355,32 @@ class EngineGpuTest {
     @Test
     fun gpuGrainMatchesTheReference() = checkDetail("effects/grain", """{"op":"grain","amount":60.0,"size":30.0,"roughness":40.0}""")
 
+    /**
+     * Stage 11: a 3D LUT (RGBA32F 3D texture, tetrahedral in the shader) registered by id, and
+     * a built-in profile, vs tools/golden/lut_reference.py, max 3/255.
+     */
+    @Test
+    fun gpuLutMatchesTheReference() {
+        val table = npy("luts/teal_amber_33_table_f32.npy") // rows b * 33 + g, columns r, RGBA
+        val rgb = FloatArray(table.data.size / 4 * 3) { i -> table.data[i / 3 * 4 + i % 3] }
+        val domain = floatArrayOf(0f, 0f, 0f, 1.25f, 1.25f, 1.25f)
+        assertTrue(engine.registerLut("test-teal", table.width, domain, rgb))
+        try {
+            val graph = """{"schemaVersion":1,"layers":[{"id":"background","ops":[{"op":"lut","id":"test-teal","amount":60.0}]}]}"""
+            val expected = premultiplied8(npy("luts/teal_amber_33_gpu_srgb_display_f32.npy"))
+            GoldenAssert.assertMatches(gpu(graph, SCENE), expected, "gpu_lut_teal_amber_srgb8", Tolerance.GPU_VS_CPU, diffDir)
+        } finally {
+            engine.unregisterLut("test-teal")
+        }
+    }
+
+    @Test
+    fun gpuProfileMatchesTheReference() {
+        val graph = """{"schemaVersion":1,"layers":[{"id":"background","ops":[{"op":"profile","name":"vivid","amount":100.0}]}]}"""
+        val expected = premultiplied8(npy("profiles/vivid_gpu_srgb_display_f32.npy"))
+        GoldenAssert.assertMatches(gpu(graph, SCENE), expected, "gpu_profile_vivid_srgb8", Tolerance.GPU_VS_CPU, diffDir)
+    }
+
     /** The compute-shader histogram against numpy (reference.histogram_srgb): within 1 count per bin. */
     @Test
     fun gpuHistogramMatchesNumpy() {

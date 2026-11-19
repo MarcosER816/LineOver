@@ -414,4 +414,29 @@ sealed interface OpParams {
     ) : OpParams {
         override val isIdentity: Boolean get() = amount == 0f
     }
+
+    /**
+     * An imported 3D LUT (Stage 11), by [id] (the SHA-256 of its .cube file; the table is
+     * registered with the engine, never written in the graph). [name] is for people (History,
+     * a LUT missing on this device). [amount] 0..100 %.
+     */
+    @Serializable
+    @SerialName("lut")
+    data class Lut(
+        val id: String,
+        val name: String = "",
+        val amount: Float = 100f,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = amount == 0f
+    }
+
+    /** A built-in profile (base look as a LUT, Stage 11): [name] vivid, mono or flat; [amount] 0..100 %. */
+    @Serializable
+    @SerialName("profile")
+    data class Profile(
+        val name: String,
+        val amount: Float = 100f,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = amount == 0f || name == LookAdjustments.NEUTRAL
+    }
 }

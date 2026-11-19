@@ -11,6 +11,8 @@ import dev.mark.lineover.core.io.project.PreviewImage
 import dev.mark.lineover.core.io.source.SourceInfo
 import dev.mark.lineover.core.io.source.SourceReader
 import dev.mark.lineover.core.io.source.TileDecoder
+import dev.mark.lineover.core.model.AutoResult
+import dev.mark.lineover.core.model.CubeLut
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.EditGraphJson
 import dev.mark.lineover.core.model.LineSegment
@@ -140,6 +142,15 @@ class EngineSession private constructor(
         n: Int,
     ): FloatArray? = if (closed) null else native.sampleGrid(u, v, n)
 
+    /** Auto (Stage 11) from the preview's analysis copy; null before the preview. */
+    fun autoSettings(): AutoResult? = if (closed) null else native.autoSettings()?.let { AutoResult.of(it) }
+
+    /** Registers [lut] under [id] (process-wide) so graphs can name it; false when refused. */
+    fun registerLut(
+        id: String,
+        lut: CubeLut,
+    ): Boolean = !closed && native.registerLut(id, lut.size, lut.domain, lut.table)
+
     /** Levels → Auto: the preview's per-channel encoded percentiles (low R, high R, low G, high G, low B, high B). */
     fun autoLevels(): FloatArray? = if (closed) null else native.autoLevels()
 
@@ -147,9 +158,12 @@ class EngineSession private constructor(
      * [graph] rendered small (long edge <= 512 px, sRGB) on the CPU reference path, for
      * thumbnails. Any thread but the main one; null before the preview is ready.
      */
-    fun thumbnail(graph: EditGraph): Bitmap? {
+    fun thumbnail(
+        graph: EditGraph,
+        maxEdge: Int = 512,
+    ): Bitmap? {
         if (closed) return null
-        val bytes = native.renderThumbnail(EditGraphJson.encode(graph)) ?: return null
+        val bytes = native.renderThumbnail(EditGraphJson.encode(graph), maxEdge) ?: return null
         val header = ByteBuffer.wrap(bytes, 0, THUMB_HEADER).order(ByteOrder.LITTLE_ENDIAN)
         val width = header.int
         val height = header.int

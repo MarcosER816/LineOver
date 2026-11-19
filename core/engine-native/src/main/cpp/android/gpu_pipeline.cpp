@@ -376,6 +376,8 @@ void GpuPipeline::release() {
     releaseReadback();
     for (auto& [hash, texture] : luts_) glDeleteTextures(1, &texture);
     luts_.clear();
+    for (auto& [hash, texture] : luts3d_) glDeleteTextures(1, &texture);
+    luts3d_.clear();
     if (fbo_ != 0) glDeleteFramebuffers(1, &fbo_);
     if (vbo_ != 0) glDeleteBuffers(1, &vbo_);
     if (vao_ != 0) glDeleteVertexArrays(1, &vao_);
@@ -422,6 +424,10 @@ public:
     void setUniformMat3(const char* name, const float* m) override { matrices.emplace_back(name, std::vector<float>(m, m + 9)); }
     void setUniform1fv(const char* name, const float* v, int n) override { arrays.emplace_back(name, std::vector<float>(v, v + n)); }
     void addPass(const char* d, const char* b) override { passes.emplace_back(d, b); }
+    void setUniform3f(const char* name, const float* v) override { vec3s.emplace_back(name, std::vector<float>(v, v + 3)); }
+    void setLut3d(const Lut3D* l) override { lut3d = l; }
+    std::vector<std::pair<std::string, std::vector<float>>> vec3s;
+    const Lut3D* lut3d = nullptr;
     std::vector<std::pair<std::string, std::string>> passes;  // multi-pass ops
     void setLut(const float* rgba, int w, int h) override {
         lut = rgba;
@@ -493,6 +499,10 @@ bool GpuPipeline::runOps(const OpList& ops, GLuint source, GLuint target, int wi
             bind(program, 5, "u_original", original);
             bind(program, 6, "u_fields", inputs.fields);
             bind(program, 7, "u_haze", inputs.haze);
+            // Unit 8: a 3D LUT (the LUT and profile ops).
+            glActiveTexture(GL_TEXTURE8);
+            glBindTexture(GL_TEXTURE_3D, rec.lut3d != nullptr ? lut3dTexture(*rec.lut3d) : 0);
+            glUniform1i(glGetUniformLocation(program, "u_lut3d"), 8);
             glActiveTexture(GL_TEXTURE0);
             glUniform4fv(glGetUniformLocation(program, "u_rect"), 1, inputs.rect);
             glUniform2i(glGetUniformLocation(program, "u_guidedSize"), inputs.guidedWidth, inputs.guidedHeight);
@@ -502,6 +512,7 @@ bool GpuPipeline::runOps(const OpList& ops, GLuint source, GLuint target, int wi
             glUniform2i(glGetUniformLocation(program, "u_size"), width, height);
             glUniform3fv(glGetUniformLocation(program, "u_air"), 1, inputs.air);
             for (const auto& [name, value] : rec.uniforms) glUniform1f(glGetUniformLocation(program, name.c_str()), value);
+            for (const auto& [name, v] : rec.vec3s) glUniform3fv(glGetUniformLocation(program, name.c_str()), 1, v.data());
             for (const auto& [name, m] : rec.matrices) glUniformMatrix3fv(glGetUniformLocation(program, name.c_str()), 1, GL_TRUE, m.data());
             for (const auto& [name, v] : rec.arrays) {
                 glUniform1fv(glGetUniformLocation(program, name.c_str()), static_cast<GLsizei>(v.size()), v.data());
@@ -518,6 +529,8 @@ bool GpuPipeline::runOps(const OpList& ops, GLuint source, GLuint target, int wi
         current = prev;
     }
     // Leave no unit bound to a texture another draw may render into.
+    glActiveTexture(GL_TEXTURE8);
+    glBindTexture(GL_TEXTURE_3D, 0);
     for (int unit = 7; unit >= 0; --unit) {
         glActiveTexture(GL_TEXTURE0 + unit);
         glBindTexture(GL_TEXTURE_2D, 0);
@@ -639,6 +652,36 @@ bool GpuPipeline::warp(GLuint texture, const GeometryDraw& geometry, GLuint targ
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     return true;
+}
+
+GLuint GpuPipeline::lut3dTexture(const Lut3D& lut) {
+    for (auto it = luts3d_.begin(); it != luts3d_.end(); ++it) {
+        if (it->first == lut.hash) {
+            luts3d_.splice(luts3d_.begin(), luts3d_, it);
+            return luts3d_.front().second;
+        }
+    }
+    // GLES 3.0 guarantees 3D textures of at least 256^3; LUTs are at most 65^3.
+    const int n = lut.size;
+    std::vector<float> rgba(static_cast<std::size_t>(n) * n * n * 4, 1.f);
+    for (std::size_t i = 0; i < static_cast<std::size_t>(n) * n * n; ++i)
+        for (int k = 0; k < 3; ++k) rgba[4 * i + k] = lut.rgb[3 * i + k];
+    GLuint texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_3D, texture);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    glTexImage3D(GL_TEXTURE_3D, 0, GL_RGBA32F, n, n, n, 0, GL_RGBA, GL_FLOAT, rgba.data());
+    luts3d_.emplace_front(lut.hash, texture);
+    if (luts3d_.size() > kMaxLuts) {
+        glDeleteTextures(1, &luts3d_.back().second);
+        luts3d_.pop_back();
+    }
+    return texture;
 }
 
 GLuint GpuPipeline::lutTexture(const float* rgba, int width, int height) {

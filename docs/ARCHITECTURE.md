@@ -319,10 +319,40 @@ Native **C++17, OpenGL ES 3**, in `:core:engine-native`; Kotlin reaches it throu
   finger on Sharpen's Masking puts `showMask` in the canvas graph only; the 1:1 chip zooms the
   canvas to 100 % at the middle (`CanvasTransform.oneToOneTarget`).
 
+### Presets and Auto (Stage 11)
+
+- **3D LUTs** (`lut.h/.cpp`; reference `tools/golden/lut_reference.py`): the op works on
+  sRGB-encoded Rec.709 values (what .cube files are made for), tetrahedral interpolation (the
+  six tetrahedra, the same comparisons in C++, GLSL and numpy), outside the domain a slope-1
+  continuation in Rec.709 luma (HDR highlights pass, out-of-gamut chroma is mapped), Amount
+  mixes in encoded space. On the GPU the table is an RGBA32F 3D texture (unit 8, `texelFetch`,
+  cached by content hash). GLES 3.0 guarantees 256^3 3D textures, so the 2D-atlas fallback of
+  the brief was not needed.
+- **LUT data never travels in the graph**: Kotlin parses the .cube (`CubeParser`), stores the
+  file under its SHA-256 (`LooksLibrary`, `files/looks/luts`) and registers the table with the
+  engine (`lo_register_lut`, process-wide) before a graph names it (`EditorLooksActions`);
+  the graph's `lut` op carries the id and a name. Graph JSON gained string fields.
+- **Profiles** (Neutral, Vivid, Mono, Flat) are 33^3 LUTs the engine makes from OKLab
+  formulas (`profileLut`); the `profile` op runs after white balance, the `lut` op after the
+  grading.
+- **Presets** are partial edit graphs (`Preset`): applying one replaces the ops it names.
+  `PresetMath` blends from the photo's own values (or neutral) towards the preset by Amount
+  (0–200 %); wheel hues, split points and LUT ids are the preset's. A preset and its Amount
+  are one History step (`recordEdit` stepKey). 20 built-ins (`BuiltInPresets`) are LineOver's
+  own combinations; user presets, favourites and copied settings live in `LooksLibrary`.
+- **Copy / paste**: `SettingsGroup` puts every op in one group; paste replaces the checked
+  groups (crop and optics are rebuilt for the target photo's size).
+- **Auto** (`auto_adjust.cpp`) on the analysis proxy: gray-world white balance (mireds x tint
+  grid + refinement on OKLab chroma), percentile exposure / contrast / whites / blacks, mild
+  vibrance fading out on colourful photos.
+- **Strips** render thumbnails from a 256 px proxy of the preview on the render dispatcher
+  (`smallThumbnail`); holding one sets `compareGraph`, which the canvas shows instead of the
+  edit until release.
+
 `core/engine-native/src/main/cpp`:
 
 ```
-include/lineover/   public C++ API (portable): color, ops, light, color_ops, grade_ops, graph, tiling, tile_store, geometry, lines, thumbnail, detail
+include/lineover/   public C++ API (portable): color, ops, light, color_ops, grade_ops, graph, tiling, tile_store, geometry, lines, thumbnail, detail, lut, auto_adjust
 src/                portable engine core                         -> lo_engine (static)
 third_party/zstd    zstd 1.5.7 sources (BSD), spilled tiles      -> lo_zstd (static)
 android/            render thread, EGL, GL pipeline, C API (lo_api.h), JNI -> liblineover_engine.so

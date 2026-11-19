@@ -204,9 +204,13 @@ abstract class EditorScreenshots(
             base(ToolCategory.Favorites).copy(favorites = listOf("light.exposure", "retouch.spot_healing", "color.hsl_color_mixer")),
         )
 
-    // A tool that is still reserved (Effects and Detail have real panels since Stage 10).
+    // A tool that is still reserved (Presets and Auto have real panels since Stage 11).
     @Test
-    fun toolPanelPlaceholder() = shot("tool_panel", base(ToolCategory.Presets).copy(panel = EditorPanel.Tool("presets.presets")))
+    fun toolPanelPlaceholder() = shot("tool_panel", base(ToolCategory.Retouch).copy(panel = EditorPanel.Tool("retouch.spot_healing")))
+
+    /** Stage 11: the Presets strip in the editor, a preset applied with its Amount. */
+    @Test
+    fun presetsPanel() = shot("presets_panel", base(ToolCategory.Presets).copy(panel = EditorPanel.Tool(PRESETS_TOOL)).withLooksSample())
 
     /** Stage 10: Sharpen in the editor (the 1:1 toggle in its header). */
     @Test

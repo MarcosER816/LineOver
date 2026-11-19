@@ -20,6 +20,18 @@ object EditGraphJson {
     /** One op as its JSON object (the "op" key holds its serial name). */
     fun opObject(op: OpParams): JsonObject = json.encodeToJsonElement(OpParams.serializer(), op).jsonObject
 
+    fun opFromObject(obj: JsonObject): OpParams = json.decodeFromJsonElement(OpParams.serializer(), obj)
+
+    /** A preset file (Stage 11). */
+    fun encodePreset(preset: Preset): String = json.encodeToString(Preset.serializer(), preset)
+
+    fun decodePreset(text: String): Preset = json.decodeFromString(Preset.serializer(), text)
+
+    /** The looks library's state file (favourites, copied settings, imported LUTs). */
+    fun encodeLooks(state: LooksState): String = json.encodeToString(LooksState.serializer(), state)
+
+    fun decodeLooks(text: String): LooksState = json.decodeFromString(LooksState.serializer(), text)
+
     /** The project document (versions with their histories, snapshots): document.json. */
     fun encodeDocument(document: ProjectDocument): String = json.encodeToString(ProjectDocument.serializer(), document)
 

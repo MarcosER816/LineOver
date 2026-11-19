@@ -114,6 +114,10 @@ private fun ToolPanelContent(
             GradePanel(id, state, onIntent, onClose = close, wide = wide)
         }
 
+        id in LOOKS_TOOLS -> {
+            LooksPanel(id, state, onIntent, onClose = close)
+        }
+
         id in DETAIL_TOOLS -> {
             DetailPanel(id, state, onIntent, onClose = close)
         }

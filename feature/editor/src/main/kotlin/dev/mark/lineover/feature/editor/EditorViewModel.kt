@@ -6,6 +6,7 @@ import dev.mark.lineover.core.engine.CompareMode
 import dev.mark.lineover.core.engine.RenderScheduler
 import dev.mark.lineover.core.io.lens.LensProfileState
 import dev.mark.lineover.core.io.lens.LensProfileStore
+import dev.mark.lineover.core.io.looks.LooksStore
 import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.CanvasSurround
 import dev.mark.lineover.core.io.prefs.TapGestures
@@ -23,8 +24,12 @@ import dev.mark.lineover.core.model.HslBand
 import dev.mark.lineover.core.model.HslChannel
 import dev.mark.lineover.core.model.LightAdjustments
 import dev.mark.lineover.core.model.LightParam
+import dev.mark.lineover.core.model.LookAdjustments
+import dev.mark.lineover.core.model.LooksState
+import dev.mark.lineover.core.model.Preset
 import dev.mark.lineover.core.model.Project
 import dev.mark.lineover.core.model.ProjectDocument
+import dev.mark.lineover.core.model.SettingsGroup
 import dev.mark.lineover.core.model.ToolCategory
 import dev.mark.lineover.core.model.editOps
 import dev.mark.lineover.core.ui.mvi.MviViewModel
@@ -100,6 +105,11 @@ sealed interface NameDialog {
         val id: String,
         override val initial: String,
     ) : NameDialog
+
+    /** Presets → Save current as preset (Stage 11). */
+    data class NewPreset(
+        override val initial: String,
+    ) : NameDialog
 }
 
 /** Menus that drop down from a button. */
@@ -171,6 +181,19 @@ data class EditorState(
     val sharpenMaskPreview: Boolean = false,
     /** Each increment asks the canvas for the 1:1 toggle (100 % at the middle, or back to fit). */
     val oneToOneRequest: Int = 0,
+    /** Profile and 3D LUT (Stage 11). */
+    val looks: LookAdjustments = LookAdjustments(),
+    /** Imported LUTs, favourite presets, copied settings. */
+    val looksLibrary: LooksState = LooksState(),
+    val userPresets: List<Preset> = emptyList(),
+    /** The preset whose Amount the slider moves (null once something else is edited). */
+    val appliedPreset: AppliedPreset? = null,
+    /** A thumbnail held down: the canvas shows its look until released. */
+    val compareGraph: EditGraph? = null,
+    /** Strip thumbnails (presets, profiles, LUTs) by [LookTarget.key], rendered from the 256 px proxy. */
+    val lookThumbnails: Map<String, Bitmap> = emptyMap(),
+    /** The copy / paste checklist. */
+    val copyGroups: Set<SettingsGroup> = SettingsGroup.DEFAULTS,
     /** The composition overlay shown while a crop handle or the straighten ruler is dragged. */
     val cropOverlay: CropOverlay = CropOverlay.Thirds,
     val cropDragging: Boolean = false,
@@ -432,6 +455,11 @@ sealed interface EditorIntent {
         val action: GeometryAction,
     ) : EditorIntent
 
+    /** Presets, Profiles, 3D LUTs, Copy / paste, Auto (Stage 11). */
+    data class Looks(
+        val action: LooksAction,
+    ) : EditorIntent
+
     /** Two- or three-finger tap on the canvas (Settings → Gestures maps it to undo / redo). */
     data class MultiFingerTap(
         val fingers: Int,
@@ -510,6 +538,7 @@ class EditorViewModel(
     private val clock: () -> Long = System::currentTimeMillis,
     private val autosaveMillis: Long = AUTOSAVE_MILLIS,
     lensProfiles: LensProfileStore? = null,
+    looks: LooksStore? = null,
 ) : MviViewModel<EditorState, EditorIntent, EditorEffect>(
         EditorState(
             debuggable = debuggable,
@@ -530,6 +559,35 @@ class EditorViewModel(
             message = { sendEffect(EditorEffect.Message(it)) },
             setState = { block -> setState(block) },
             lensProfiles = lensProfiles,
+        )
+
+    private val looksActions =
+        EditorLooksActions(
+            viewModelScope,
+            renderDispatcher,
+            object : EditorLooksActions.Host {
+                override val state get() = this@EditorViewModel.state.value
+
+                override fun reduce(
+                    label: String?,
+                    block: EditorState.() -> EditorState,
+                ) = this@EditorViewModel.reduce(label, block)
+
+                override fun reduceStep(
+                    label: String?,
+                    key: String?,
+                    block: EditorState.() -> EditorState,
+                ) = this@EditorViewModel.reduceStep(label, key, block)
+
+                override fun setState(block: EditorState.() -> EditorState) = this@EditorViewModel.setState(block)
+
+                override fun message(text: String) = sendEffect(EditorEffect.Message(text))
+
+                override fun resubmit() {
+                    scheduler?.submit(this@EditorViewModel.state.value.canvasGraph)
+                }
+            },
+            looks,
         )
 
     /** Crop handles, perspective corners and guide lines from CanvasView. */
@@ -592,6 +650,7 @@ class EditorViewModel(
         // Edits reach the engine through the scheduler: the latest graph wins.
         val renderScheduler = RenderScheduler({ graph -> canvas.setGraph(graph) }, viewModelScope, renderDispatcher)
         scheduler = renderScheduler
+        looksActions.onCanvasGraph(state.value.canvasGraph)
         renderScheduler.submit(state.value.shownGraph)
         syncCanvas(null, state.value)
         canvas.loading.collectLatest { loading ->
@@ -637,6 +696,8 @@ class EditorViewModel(
                         preview = null,
                         cropDragging = false,
                         history = history.close(),
+                        appliedPreset = null,
+                        compareGraph = null,
                     )
                 }
             }
@@ -676,6 +737,7 @@ class EditorViewModel(
     private fun onOtherIntent(intent: EditorIntent) {
         when {
             intent is EditorIntent.Geometry -> geometryActions.onAction(intent.action)
+            intent is EditorIntent.Looks -> looksActions.onAction(intent.action)
             !onHistoryIntent(intent) -> onEditIntent(intent)
         }
     }
@@ -836,9 +898,11 @@ class EditorViewModel(
             is NameDialog.NewSnapshot -> reduceHistory { withSnapshot(chosen, clock()) }
             is NameDialog.NewVersion -> reduceHistory { withNewVersion(chosen, clock()) }
             is NameDialog.RenameVersion -> reduceHistory { withVersionName(dialog.id, chosen) }
+            is NameDialog.NewPreset -> looksActions.savePreset(chosen)
         }
     }
 
+    /** Save current as preset: every group but crop and optics. */
     private var thumbnailJob: Job? = null
 
     /** Renders the versions' thumbnails while the Versions tab is open (off the main thread). */
@@ -931,13 +995,13 @@ class EditorViewModel(
     private fun PickMode.toggle(mode: PickMode) = if (this == mode) PickMode.None else mode
 
     private fun EditorState.withColor(next: ColorAdjustments): EditorState =
-        copy(color = next, graph = graph.withBackgroundOps(editOps(light, next, grade, geometryOp, detail)))
+        copy(color = next, graph = graph.withBackgroundOps(editOps(light, next, grade, geometryOp, detail, looks = looks)))
 
     private fun EditorState.withGrade(next: GradeAdjustments): EditorState =
-        copy(grade = next, graph = graph.withBackgroundOps(editOps(light, color, next, geometryOp, detail)))
+        copy(grade = next, graph = graph.withBackgroundOps(editOps(light, color, next, geometryOp, detail, looks = looks)))
 
     private fun EditorState.withDetail(next: DetailAdjustments): EditorState =
-        copy(detail = next, graph = graph.withBackgroundOps(editOps(light, color, grade, geometryOp, next)))
+        copy(detail = next, graph = graph.withBackgroundOps(editOps(light, color, grade, geometryOp, next, looks = looks)))
 
     private fun autoLevels() {
         val percentiles = state.value.canvas?.autoLevels()
@@ -1084,7 +1148,7 @@ class EditorViewModel(
         }
 
     private fun EditorState.withLight(next: LightAdjustments): EditorState =
-        copy(light = next, graph = graph.withBackgroundOps(editOps(next, color, grade, geometryOp, detail)))
+        copy(light = next, graph = graph.withBackgroundOps(editOps(next, color, grade, geometryOp, detail, looks = looks)))
 
     private fun autoLight() {
         val result = state.value.canvas?.autoLight()
@@ -1113,9 +1177,16 @@ class EditorViewModel(
     private fun reduce(
         label: String? = null,
         block: EditorState.() -> EditorState,
+    ) = reduceStep(label, null, block)
+
+    /** [reduce] as a keyed History step ([recordEdit]'s stepKey). */
+    private fun reduceStep(
+        label: String?,
+        stepKey: String?,
+        block: EditorState.() -> EditorState,
     ) {
         val before = state.value
-        setState { block().let { if (it.graph != it.history.current) it.recordEdit(label) else it } }
+        setState { block().let { if (it.graph != it.history.current) it.recordEdit(label, stepKey = stepKey) else it } }
         val after = state.value
         syncCanvas(before, after)
         if (after.history != before.history && after.document == before.document) scheduleSave()
@@ -1127,7 +1198,11 @@ class EditorViewModel(
     ) {
         val canvas = after.canvas ?: return
         // While cropping the canvas shows the whole frame (canvasGraph), else the shown edit.
-        if (before == null || before.canvasGraph != after.canvasGraph) scheduler?.submit(after.canvasGraph)
+        if (before == null || before.canvasGraph != after.canvasGraph) {
+            looksActions.onCanvasGraph(after.canvasGraph)
+            scheduler?.submit(after.canvasGraph)
+        }
+        looksActions.afterSync(before, after)
         if (before == null || before.clippingShown != after.clippingShown) canvas.setClipping(after.clippingShown)
         if (before == null || before.compare != after.compare || before.split != after.split) {
             canvas.setCompare(after.compare, after.split)
@@ -1179,6 +1254,9 @@ class EditorViewModel(
                 menu = null,
                 pickMode = PickMode.None,
                 searchOpen = false,
+                // A preset's Amount belongs to its panel; a held thumbnail never outlives it.
+                appliedPreset = null,
+                compareGraph = null,
             )
         }
     }

@@ -300,7 +300,7 @@ private fun VersionCard(
 }
 
 @Composable
-private fun NameDialogView(
+internal fun NameDialogView(
     dialog: NameDialog,
     onIntent: (EditorIntent) -> Unit,
 ) {
@@ -310,6 +310,7 @@ private fun NameDialogView(
             is NameDialog.NewSnapshot -> "Save snapshot"
             is NameDialog.NewVersion -> "New version"
             is NameDialog.RenameVersion -> "Rename version"
+            is NameDialog.NewPreset -> "Save preset"
         }
     AlertDialog(
         onDismissRequest = { onIntent(EditorIntent.OpenNameDialog(null)) },

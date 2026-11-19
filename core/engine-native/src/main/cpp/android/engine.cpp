@@ -177,6 +177,7 @@ namespace {
 constexpr int kThumbnailEdge = 512;
 // Long edge of the analysis copy (segments, horizon, chromatic aberration).
 constexpr int kAnalysisEdge = 1024;
+constexpr int kSmallThumbnailEdge = 256;
 // Most source tiles kept in view through a geometry (strong perspective magnifies far parts).
 constexpr std::size_t kMaxGeometryTiles = 48;
 // Export renders an output region in parts while its source footprint is larger than this.
@@ -275,11 +276,13 @@ void Engine::setPreview(std::vector<float> working, int width, int height) {
     grade::channelPercentiles(working.data(), pixels, 0.001f, 0.999f, channels, std::max<std::size_t>(1, pixels / 1000000));
     auto thumbSource = std::make_shared<const ImageF32>(boxDownsample(working.data(), width, height, kThumbnailEdge));
     auto analysis = std::make_shared<const ImageF32>(boxDownsample(working.data(), width, height, kAnalysisEdge));
+    auto thumbSmall = std::make_shared<const ImageF32>(boxDownsample(working.data(), width, height, kSmallThumbnailEdge));
     {
         std::lock_guard<std::mutex> lock(mutex_);
         guided_ = std::move(guided);
         fields_ = std::move(fields);
         thumbSource_ = std::move(thumbSource);
+        thumbSmall_ = std::move(thumbSmall);
         analysisSource_ = std::move(analysis);
         guidedChanged_ = true;
         havePercentiles_ = true;
@@ -339,14 +342,24 @@ bool Engine::autoLight(float* exposure, float* blacks) {
     return true;
 }
 
-bool Engine::renderThumbnail(const std::string& graphJson, std::vector<std::uint8_t>* rgba, int* width, int* height) {
+bool Engine::autoSettings(AutoSettings* out) {
+    std::shared_ptr<const ImageF32> source;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        source = analysisSource_;
+    }
+    return source && source->width > 0 && lo::autoSettings(source->rgba.data(), source->width, source->height, out);
+}
+
+bool Engine::renderThumbnail(const std::string& graphJson, std::vector<std::uint8_t>* rgba, int* width, int* height,
+                             int maxEdge) {
     std::shared_ptr<const ImageF32> source;
     std::shared_ptr<const GuidedCoefficients> guided;
     std::shared_ptr<const DetailFields> fields;
     int imageW;
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        source = thumbSource_;
+        source = maxEdge <= kSmallThumbnailEdge && thumbSmall_ ? thumbSmall_ : thumbSource_;
         guided = guided_;
         fields = fields_;
         imageW = imageWidth_;

@@ -13,6 +13,7 @@
 
 #include "lineover/color.h"
 #include "lineover/detail.h"
+#include "lineover/lut.h"
 #include "lineover/ops.h"
 
 namespace lo::android {
@@ -119,6 +120,9 @@ private:
     GLuint lutTexture(const float* rgba, int width, int height);
     static constexpr std::size_t kMaxLuts = 8;
     std::list<std::pair<std::uint64_t, GLuint>> luts_;
+    // RGBA32F 3D textures of LUTs (lut.h), cached by content hash, most recent first.
+    GLuint lut3dTexture(const Lut3D& lut);
+    std::list<std::pair<std::uint64_t, GLuint>> luts3d_;
 
     bool halfFloat_ = true;
     GLuint vao_ = 0;

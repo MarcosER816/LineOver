@@ -10,6 +10,8 @@ import dev.mark.lineover.core.engine.EngineSession
 import dev.mark.lineover.core.engine.EngineStats
 import dev.mark.lineover.core.engine.Histogram
 import dev.mark.lineover.core.engine.NativeOp
+import dev.mark.lineover.core.model.AutoResult
+import dev.mark.lineover.core.model.CubeLut
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.LineSegment
 import dev.mark.lineover.core.model.PhotoExif
@@ -67,6 +69,18 @@ interface EditorCanvas :
 
     /** [graph] rendered small (<= 512 px, sRGB) for thumbnails; blocks, call off the main thread. */
     fun thumbnail(graph: EditGraph): android.graphics.Bitmap?
+
+    /** [graph] from the <= 256 px proxy (preset, profile and LUT strips). Off the main thread. */
+    fun smallThumbnail(graph: EditGraph): android.graphics.Bitmap? = thumbnail(graph)
+
+    /** Auto (Stage 11): the engine's proposal from the preview, null before it. Off the main thread. */
+    fun autoSettings(): AutoResult? = null
+
+    /** Registers a 3D LUT so graphs can name [id]; false when refused. */
+    fun registerLut(
+        id: String,
+        lut: CubeLut,
+    ): Boolean = false
 
     /**
      * Eyedropper: the white balance (K, tint) that makes the 5 x 5 patch at image point
@@ -193,6 +207,15 @@ private class EngineCanvas(
 
     override fun thumbnail(graph: EditGraph): android.graphics.Bitmap? = session.thumbnail(graph)
 
+    override fun smallThumbnail(graph: EditGraph): android.graphics.Bitmap? = session.thumbnail(graph, SMALL_THUMBNAIL)
+
+    override fun autoSettings(): AutoResult? = session.autoSettings()
+
+    override fun registerLut(
+        id: String,
+        lut: CubeLut,
+    ): Boolean = session.registerLut(id, lut)
+
     override fun whiteBalanceAt(
         u: Float,
         v: Float,
@@ -222,5 +245,6 @@ private class EngineCanvas(
         const val BYTE = 0xFF
         const val MAX = 255f
         const val LOUPE_PIXELS = 9
+        const val SMALL_THUMBNAIL = 256
     }
 }

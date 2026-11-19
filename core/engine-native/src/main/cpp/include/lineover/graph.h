@@ -19,6 +19,9 @@ struct OpParams {
     // Number arrays (e.g. the HSL mixer's 8 bands), written after the scalars: Kotlin
     // ops declare their list fields last.
     std::vector<std::pair<std::string, std::vector<double>>> arrays;
+    // String fields (Stage 11: a LUT's id, a profile's name), written first: Kotlin ops
+    // declare their string fields first.
+    std::vector<std::pair<std::string, std::string>> strings;
 };
 
 struct Layer {

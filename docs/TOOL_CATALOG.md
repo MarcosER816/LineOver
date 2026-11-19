@@ -1,6 +1,6 @@
 # Tool catalog
 
-Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 52 done.**
+Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 57 done.**
 
 - **id**: stable identifier (`<group>.<tool>`), used in code, favourites and project files. Never renamed.
 - **UI slot**: where the tool lives. Slots are reserved now and are never moved (rule R9); a stage only *fills* slots.
@@ -61,16 +61,16 @@ The Favorites strip shows the tools the user pinned; it has no tools of its own.
 
 | id | Name | Category | UI slot | Stage | Status |
 | --- | --- | --- | --- | --- | --- |
-| `presets.presets` | Presets | Presets | `cat/Presets/01` | 11 | reserved |
-| `presets.profiles` | Profiles | Presets | `cat/Presets/02` | 11 | reserved |
-| `presets.3d_luts` | 3D LUTs | Presets | `cat/Presets/03` | 11 | reserved |
-| `presets.copy_paste_settings` | Copy/paste settings | Presets | `cat/Presets/04` | 11 | reserved |
+| `presets.presets` | Presets | Presets | `cat/Presets/01` | 11 | done |
+| `presets.profiles` | Profiles | Presets | `cat/Presets/02` | 11 | done |
+| `presets.3d_luts` | 3D LUTs | Presets | `cat/Presets/03` | 11 | done |
+| `presets.copy_paste_settings` | Copy/paste settings | Presets | `cat/Presets/04` | 11 | done |
 
 ## Auto
 
 | id | Name | Category | UI slot | Stage | Status |
 | --- | --- | --- | --- | --- | --- |
-| `auto.auto` | Auto | Auto | `cat/Auto/01` | 11 | reserved |
+| `auto.auto` | Auto | Auto | `cat/Auto/01` | 11 | done |
 
 ## Light
 

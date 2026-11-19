@@ -33,6 +33,7 @@
 #include "lineover/light.h"
 #include "lineover/color.h"
 #include "lineover/detail.h"
+#include "lineover/auto_adjust.h"
 #include "lineover/ops.h"
 #include "lineover/tile_store.h"
 #include "lineover/tiling.h"
@@ -93,7 +94,11 @@ public:
     bool autoLevels(float out[6]);
     // `graphJson` rendered on a <= 512 px copy of the preview (CPU reference ops, sRGB
     // display RGBA8) for thumbnails; any thread. False before a preview or on a bad graph.
-    bool renderThumbnail(const std::string& graphJson, std::vector<std::uint8_t>* rgba, int* width, int* height);
+    // `maxEdge` <= 256 renders from the 256 px proxy (the preset strips), else the 512 px one.
+    bool renderThumbnail(const std::string& graphJson, std::vector<std::uint8_t>* rgba, int* width, int* height,
+                         int maxEdge = 512);
+    // Auto (Stage 11) on the analysis proxy of the preview; false before a preview.
+    bool autoSettings(AutoSettings* out);
     // The average working-space RGB of the 5 x 5 preview pixels around image point (u, v)
     // (0..1, oriented image), run through the ops that come before the first op of type
     // `before` (all ops if there is none). The eyedropper samples before White balance,
@@ -238,6 +243,7 @@ private:
     Finishing finishing_;                                // of the current graph
     int apron_ = 0;                                      // of the current ops (full-resolution pixels)
     std::shared_ptr<const ImageF32> thumbSource_;       // the preview box-filtered to <= 512 px
+    std::shared_ptr<const ImageF32> thumbSmall_;        // ... and to <= 256 px (preset thumbnails)
     std::shared_ptr<const ImageF32> analysisSource_;    // the preview box-filtered to <= 1024 px
     bool hasGeometry_ = false;
     Geometry geometry_;     // fitted to the image size (sourceWidth = imageWidth_)

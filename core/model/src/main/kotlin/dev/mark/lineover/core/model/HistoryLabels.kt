@@ -188,6 +188,8 @@ object HistoryLabels {
             "dehaze" to "Dehaze",
             "post_crop_vignette" to "Vignette",
             "grain" to "Grain",
+            "profile" to "Profile",
+            "lut" to "3D LUT",
         )
 
     /** Ops with one meaningful value: the label is the op's name. */
@@ -212,5 +214,5 @@ object HistoryLabels {
     private val FIELD_TITLED = setOf("highlights_shadows", "white_balance")
 
     private val UNSIGNED = setOf("temperature", "levels", "level", "density", "hue", "scale", "vignettingMidpoint")
-    private val UNSIGNED_OPS = setOf("posterize", "threshold", "sharpen", "noise_reduction", "grain")
+    private val UNSIGNED_OPS = setOf("posterize", "threshold", "sharpen", "noise_reduction", "grain", "profile", "lut")
 }

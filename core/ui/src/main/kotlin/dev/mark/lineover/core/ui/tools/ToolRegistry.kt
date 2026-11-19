@@ -108,9 +108,30 @@ private fun buildTools(): List<ToolSpec> =
         .apply {
             strip(Favorites, "favorites.favorites", "Favorites", 28, PanelType.Gallery, LoIcons.Star, "pinned", "starred", "my tools")
 
-            strip(Presets, "presets.presets", "Presets", 11, PanelType.Gallery, LoIcons.Style, "looks", "filters", "styles")
-            strip(Presets, "presets.profiles", "Profiles", 11, PanelType.Gallery, LoIcons.PhotoCamera, "camera profile", "base look")
-            strip(Presets, "presets.3d_luts", "3D LUTs", 11, PanelType.Gallery, LoIcons.FilterVintage, "lut", "cube", "color lookup")
+            strip(Presets, "presets.presets", "Presets", 11, PanelType.Gallery, LoIcons.Style, "looks", "filters", "styles", done = true)
+            strip(
+                Presets,
+                "presets.profiles",
+                "Profiles",
+                11,
+                PanelType.Gallery,
+                LoIcons.PhotoCamera,
+                "camera profile",
+                "base look",
+                done = true,
+            )
+            strip(
+                Presets,
+                "presets.3d_luts",
+                "3D LUTs",
+                11,
+                PanelType.Gallery,
+                LoIcons.FilterVintage,
+                "lut",
+                "cube",
+                "color lookup",
+                done = true,
+            )
             strip(
                 Presets,
                 "presets.copy_paste_settings",
@@ -121,9 +142,22 @@ private fun buildTools(): List<ToolSpec> =
                 "copy settings",
                 "paste settings",
                 "copy edits",
+                done = true,
             )
 
-            strip(Auto, "auto.auto", "Auto", 11, PanelType.Action, LoIcons.AutoAwesome, "auto fix", "auto enhance", "one tap", "magic")
+            strip(
+                Auto,
+                "auto.auto",
+                "Auto",
+                11,
+                PanelType.Action,
+                LoIcons.AutoAwesome,
+                "auto fix",
+                "auto enhance",
+                "one tap",
+                "magic",
+                done = true,
+            )
 
             strip(
                 Light,
