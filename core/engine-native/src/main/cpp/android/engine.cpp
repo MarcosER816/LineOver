@@ -104,6 +104,8 @@ bool Engine::start(std::string* error) {
             if (context_ != EGL_NO_CONTEXT && pbuffer_ != EGL_NO_SURFACE) {
                 eglMakeCurrent(display_, pbuffer_, pbuffer_, context_);
                 dropGpuTiles();
+                if (compositeTexture_ != 0) glDeleteTextures(1, &compositeTexture_);
+                compositeTexture_ = 0;
                 if (previewSource_ != 0) glDeleteTextures(1, &previewSource_);
                 if (previewResult_ != 0) glDeleteTextures(1, &previewResult_);
                 if (guidedTexture_ != 0) glDeleteTextures(1, &guidedTexture_);
@@ -178,6 +180,8 @@ constexpr int kThumbnailEdge = 512;
 // Long edge of the analysis copy (segments, horizon, chromatic aberration).
 constexpr int kAnalysisEdge = 1024;
 constexpr int kSmallThumbnailEdge = 256;
+// Long edge of a layered document's composite on the canvas (Stage 13).
+constexpr int kCompositeEdge = 2048;
 // Most source tiles kept in view through a geometry (strong perspective magnifies far parts).
 constexpr std::size_t kMaxGeometryTiles = 48;
 // Export renders an output region in parts while its source footprint is larger than this.
@@ -277,12 +281,17 @@ void Engine::setPreview(std::vector<float> working, int width, int height) {
     auto thumbSource = std::make_shared<const ImageF32>(boxDownsample(working.data(), width, height, kThumbnailEdge));
     auto analysis = std::make_shared<const ImageF32>(boxDownsample(working.data(), width, height, kAnalysisEdge));
     auto thumbSmall = std::make_shared<const ImageF32>(boxDownsample(working.data(), width, height, kSmallThumbnailEdge));
+    auto compositeSource = std::make_shared<ImageF32>();
+    compositeSource->width = width;
+    compositeSource->height = height;
+    compositeSource->rgba = working;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         guided_ = std::move(guided);
         fields_ = std::move(fields);
         thumbSource_ = std::move(thumbSource);
         thumbSmall_ = std::move(thumbSmall);
+        compositeSource_ = std::move(compositeSource);
         analysisSource_ = std::move(analysis);
         guidedChanged_ = true;
         havePercentiles_ = true;
@@ -349,6 +358,37 @@ bool Engine::autoSettings(AutoSettings* out) {
         source = analysisSource_;
     }
     return source && source->width > 0 && lo::autoSettings(source->rgba.data(), source->width, source->height, out);
+}
+
+void Engine::renderComposite() {
+    std::shared_ptr<const Graph> graph;
+    std::shared_ptr<const ImageF32> source;
+    std::shared_ptr<const GuidedCoefficients> guided;
+    std::shared_ptr<const DetailFields> fields;
+    bool layered;
+    int imageW;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        graph = graph_;
+        source = compositeSource_;
+        guided = guided_;
+        fields = fields_;
+        layered = layered_;
+        imageW = imageWidth_;
+    }
+    ImageF32 image;
+    if (layered && graph && source && source->width > 0) {
+        renderGraphImage(*source, guided.get(), *graph, &image, fields.get(), imageW, kCompositeEdge);
+    }
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (graph != graph_) return;  // a newer graph arrived meanwhile: its own call follows
+        pendingComposite_.swap(image.rgba);
+        pendingCompositeW_ = image.width;
+        pendingCompositeH_ = image.height;
+        compositeChanged_ = true;
+    }
+    requestRedraw();
 }
 
 bool Engine::renderThumbnail(const std::string& graphJson, std::vector<std::uint8_t>* rgba, int* width, int* height,
@@ -498,8 +538,16 @@ bool Engine::setGraph(const std::string& json, std::string* error) {
     Finishing finishing;
     finishingOf(graph, &finishing);
     const int apron = ops->apron();
+    const bool layered = layers::hasLayers(graph);
+    auto shared = std::make_shared<const Graph>(std::move(graph));
     {
         std::lock_guard<std::mutex> lock(mutex_);
+        graph_ = shared;
+        if (layered_ && !layered) {
+            pendingComposite_.clear();
+            compositeChanged_ = true;
+        }
+        layered_ = layered;
         finishing_ = finishing;
         apron_ = apron;
         hasRawGeometry_ = hasGeometry;
@@ -727,7 +775,7 @@ bool Engine::exportGeometry(Geometry* out, int* imageW, int* imageH) {
         *out = geometry_;
         return true;
     }
-    if (imageWidth_ <= 0 || imageHeight_ <= 0 || (apron_ == 0 && !finishing_.active())) return false;
+    if (imageWidth_ <= 0 || imageHeight_ <= 0 || (apron_ == 0 && !finishing_.active() && !layered_)) return false;
     *out = identityGeometry(imageWidth_, imageHeight_);
     return true;
 }
@@ -846,6 +894,15 @@ void Engine::frame() {
             guidedChanged_ = false;
         }
         frameFinishing_ = finishing_;
+        if (compositeChanged_) {
+            compositeChanged_ = false;
+            if (compositeTexture_ != 0) glDeleteTextures(1, &compositeTexture_);
+            compositeTexture_ = 0;
+            if (!pendingComposite_.empty()) {
+                compositeTexture_ = createTexture(pendingCompositeW_, pendingCompositeH_, gpu_.halfFloat(), pendingComposite_.data());
+                std::vector<float>().swap(pendingComposite_);
+            }
+        }
         showOriginal = showOriginal_;
         clipping = clipping_;
         compare = compareMode_;
@@ -875,6 +932,8 @@ void Engine::frame() {
         if (previewResult_ != 0) glDeleteTextures(1, &previewResult_);
         previewSource_ = previewResult_ = 0;
         previewW_ = previewH_ = 0;
+        if (compositeTexture_ != 0) glDeleteTextures(1, &compositeTexture_);
+        compositeTexture_ = 0;
         gpuGeneration_ = generation;
     }
     if (previewChanged && !preview.empty()) {
@@ -954,6 +1013,11 @@ void Engine::frame() {
                 }
             }
         }
+    }
+    // A layered document shows its composite (preview size): no sharp tiles of the photo alone.
+    if (compositeTexture_ != 0) {
+        visible.clear();
+        level = -1;
     }
     level_ = level;
 
@@ -1176,6 +1240,18 @@ void Engine::frame() {
 
 void Engine::drawScene(bool original, const float ndc[9], int imageW, int imageH, int level,
                        const std::vector<TileKey>& drawable, bool clipping, const Geometry* geometry) {
+    if (!original && compositeTexture_ != 0) {
+        // Stage 13: the layered document, already finished, over the whole canvas.
+        DisplayOptions composite;
+        composite.clipping = clipping;
+        const float w = static_cast<float>(geometry != nullptr ? geometry->outputWidth : imageW);
+        const float h = static_cast<float>(geometry != nullptr ? geometry->outputHeight : imageH);
+        composite.outSize[0] = w;
+        composite.outSize[1] = h;
+        const float rect[4] = {0.f, 0.f, w, h};
+        gpu_.drawImage(compositeTexture_, rect, ndc, output_, shaderEncodes_, composite);
+        return;
+    }
     DisplayOptions options;
     options.clipping = clipping;
     // The original is shown without the edit's finishing.
@@ -1432,12 +1508,14 @@ bool Engine::renderOutputRegion(const Geometry& g, int imageW, int imageH, int x
     std::shared_ptr<const GuidedCoefficients> guided;
     std::shared_ptr<const DetailFields> fields;
     Finishing finishing;
+    bool layered;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         ops = ops_;
         guided = guided_;
         fields = fields_;
         finishing = finishing_;
+        layered = layered_;
     }
     // Spatial ops (Stage 10) read around each pixel: the footprint carries their apron.
     if (fp[2] > 0 && fp[3] > 0) expandFootprint(fp, ops->apron(), imageW, imageH);
@@ -1480,7 +1558,8 @@ bool Engine::renderOutputRegion(const Geometry& g, int imageW, int imageH, int x
         ws.scale = 1.0;
         warp(g, imageW, imageH, ws, 1.0, x0, y0, w, h, region.data());
     }
-    applyFinishing(finishing, region.data(), w, h, g.outputWidth, g.outputHeight, x0, y0, 1.0);
+    // With layers the finishing comes after them (renderOutputTile).
+    if (!layered) applyFinishing(finishing, region.data(), w, h, g.outputWidth, g.outputHeight, x0, y0, 1.0);
     for (int y = 0; y < h; ++y)
         std::copy(region.data() + static_cast<std::size_t>(y) * w * 4, region.data() + static_cast<std::size_t>(y + 1) * w * 4,
                   out + static_cast<std::size_t>(y) * stride * 4);
@@ -1497,6 +1576,27 @@ bool Engine::renderOutputTile(int tx, int ty, std::vector<float>* out, int* widt
     if (w <= 0 || h <= 0) return false;
     out->assign(static_cast<std::size_t>(w) * h * 4, 0.f);
     if (!renderOutputRegion(g, imageW, imageH, x0, y0, w, h, out->data(), w)) return false;
+    std::shared_ptr<const Graph> graph;
+    bool layered;
+    Finishing finishing;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        graph = graph_;
+        layered = layered_;
+        finishing = finishing_;
+    }
+    if (layered && graph) {
+        // Stage 13: the layers over this output tile (full-size layer images), then the finishing.
+        layers::Region region;
+        region.width = w;
+        region.height = h;
+        region.originX = x0;
+        region.originY = y0;
+        std::string skipped;
+        layers::compositeLayers(*graph, out->data(), region, true, &skipped);
+        if (!skipped.empty()) LOGW("export: layers skipped: %s", skipped.c_str());
+        applyFinishing(finishing, out->data(), w, h, g.outputWidth, g.outputHeight, x0, y0, 1.0);
+    }
     *width = w;
     *height = h;
     return true;

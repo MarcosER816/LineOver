@@ -29,6 +29,8 @@
 #include "lineover/geometry.h"
 #include "lineover/lines.h"
 #include "lineover/thumbnail.h"
+#include "lineover/graph.h"
+#include "lineover/layers.h"
 #include "lineover/grade_ops.h"
 #include "lineover/light.h"
 #include "lineover/color.h"
@@ -99,6 +101,10 @@ public:
                          int maxEdge = 512);
     // Auto (Stage 11) on the analysis proxy of the preview; false before a preview.
     bool autoSettings(AutoSettings* out);
+    // Stage 13: for a graph with layers, renders the whole document (background, geometry,
+    // layers, finishing) on the CPU at preview size and shows it on the canvas instead of
+    // the photo and its tiles; clears it otherwise. Any thread but the render thread.
+    void renderComposite();
     // The average working-space RGB of the 5 x 5 preview pixels around image point (u, v)
     // (0..1, oriented image), run through the ops that come before the first op of type
     // `before` (all ops if there is none). The eyedropper samples before White balance,
@@ -244,6 +250,14 @@ private:
     int apron_ = 0;                                      // of the current ops (full-resolution pixels)
     std::shared_ptr<const ImageF32> thumbSource_;       // the preview box-filtered to <= 512 px
     std::shared_ptr<const ImageF32> thumbSmall_;        // ... and to <= 256 px (preset thumbnails)
+    // Stage 13 layers: the parsed graph, whether it has layers above the photo, the preview
+    // copy the canvas composite is rendered from, and the composite waiting for the GPU.
+    std::shared_ptr<const Graph> graph_;
+    bool layered_ = false;
+    std::shared_ptr<const ImageF32> compositeSource_;
+    std::vector<float> pendingComposite_;
+    int pendingCompositeW_ = 0, pendingCompositeH_ = 0;
+    bool compositeChanged_ = false;
     std::shared_ptr<const ImageF32> analysisSource_;    // the preview box-filtered to <= 1024 px
     bool hasGeometry_ = false;
     Geometry geometry_;     // fitted to the image size (sourceWidth = imageWidth_)
@@ -275,6 +289,7 @@ private:
 
     // GPU state (render thread)
     GLuint previewSource_ = 0, previewResult_ = 0;
+    GLuint compositeTexture_ = 0;  // a layered document's whole image (output space), or 0
     int previewW_ = 0, previewH_ = 0;
     std::uint64_t previewVersion_ = 0;
     GLuint guidedTexture_ = 0;

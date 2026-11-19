@@ -92,6 +92,13 @@ int lo_engine_auto_settings(lo_engine* engine, float* out7);
 /* 3D LUTs (process-wide, lut.h): `rgb` holds size^3 RGB triples, red fastest. 0 when the
  * size (2..65), domain or table is invalid. */
 int lo_register_lut(const char* id, int size, const float* domain_min3, const float* domain_max3, const float* rgb);
+/* Stage 13 layers: a layer image (raster / smart object source) from decoded pixels (same
+ * formats as the preview), process-wide by id; full = the export set. 0 on bad input. */
+int lo_register_layer_image(const char* id, const void* pixels, size_t stride, int width, int height, int format,
+                            int premultiplied, int full);
+void lo_unregister_layer_image(const char* id);
+/* Renders a layered graph's composite for the canvas (or clears it); CPU, any thread. */
+void lo_engine_render_composite(lo_engine* engine);
 void lo_unregister_lut(const char* id);
 void lo_engine_set_show_original(lo_engine* engine, int original);
 void lo_engine_set_compare(lo_engine* engine, int mode, float split);
