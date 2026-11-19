@@ -32,6 +32,7 @@
 #include "lineover/grade_ops.h"
 #include "lineover/light.h"
 #include "lineover/color.h"
+#include "lineover/detail.h"
 #include "lineover/ops.h"
 #include "lineover/tile_store.h"
 #include "lineover/tiling.h"
@@ -161,10 +162,15 @@ public:
 
 private:
     struct GpuTile {
-        GLuint source = 0;
+        GLuint source = 0;  // the tile plus an apron of its neighbours (Stage 10)
         GLuint result = 0;  // 0 when the ops are identity (draw source)
-        int width = 0;
+        int width = 0;      // of the textures (apron included)
         int height = 0;
+        int padLeft = 0, padTop = 0;  // apron pixels before the tile's own pixels
+        int ownWidth = 0, ownHeight = 0;
+        int apron = 0;                // the apron (level pixels) it was built for
+        bool complete = true;         // false while a neighbour of the apron is missing
+        std::vector<TileKey> waiting; // those neighbours
         std::uint64_t graphVersion = 0;
         std::list<TileKey>::iterator lru;
     };
@@ -174,7 +180,17 @@ private:
     bool runSync(std::function<bool()> task);
     void requestRedraw();
     void frame();
-    bool ensureResult(GLuint source, GLuint* result, int width, int height, std::uint64_t* version, const float rect[4]);
+    bool ensureResult(GLuint source, GLuint* result, int width, int height, std::uint64_t* version, const float rect[4],
+                      float scale);
+    // The tile `key` with `apron` level pixels of its neighbours (clipped to the image; a
+    // missing neighbour is replaced by the tile's edge and clears `complete`).
+    std::vector<float> paddedTile(const TileKey& key, const Tile& tile, int imageW, int imageH, int apron, GpuTile* layout,
+                                  std::vector<TileKey>* missing);
+    // The apron of the current ops at `level` (level pixels).
+    int apronAt(int level) const;
+    // The geometry an export goes through: the graph's, or the identity when spatial or
+    // finishing ops need the region path (false: plain source tiles).
+    bool exportGeometry(Geometry* out, int* imageW, int* imageH);
     void tileRectNormalised(const TileKey& key, float rect[4]) const;
     void serviceHistogram();
     bool histogramAvailable() const;
@@ -218,6 +234,9 @@ private:
     float surround_[3] = {0.0706f, 0.0706f, 0.0706f};
     std::vector<float> pendingPreview_;
     std::shared_ptr<const GuidedCoefficients> guided_;  // of the current preview
+    std::shared_ptr<const DetailFields> fields_;        // Stage 10 fields of the current preview
+    Finishing finishing_;                                // of the current graph
+    int apron_ = 0;                                      // of the current ops (full-resolution pixels)
     std::shared_ptr<const ImageF32> thumbSource_;       // the preview box-filtered to <= 512 px
     std::shared_ptr<const ImageF32> analysisSource_;    // the preview box-filtered to <= 1024 px
     bool hasGeometry_ = false;
@@ -253,6 +272,10 @@ private:
     int previewW_ = 0, previewH_ = 0;
     std::uint64_t previewVersion_ = 0;
     GLuint guidedTexture_ = 0;
+    GLuint fieldsTexture_ = 0, hazeTexture_ = 0;
+    int fieldsW_ = 1, fieldsH_ = 1, hazeW_ = 1, hazeH_ = 1;
+    float airlight_[3] = {1.f, 1.f, 1.f};
+    Finishing frameFinishing_;  // the graph's finishing for this frame's draws
     GLuint histogramWarp_ = 0;  // the warped preview the histogram reads when there is a geometry
     int histogramWarpW_ = 0, histogramWarpH_ = 0;
     int guidedW_ = 1, guidedH_ = 1;

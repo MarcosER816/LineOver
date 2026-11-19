@@ -199,7 +199,7 @@ public:
         static const char* kDecl = LO_GLSL_DETAIL
             "uniform float u_radius;\nuniform float u_amount;\nuniform float u_limit;\nuniform float u_maskT;\n"
             "uniform float u_showMask;\n"
-            "float lo_gauss(sampler2D s, ivec2 p, ivec2 dir, bool fromColor) {\n"
+            "float lo_gauss(highp sampler2D s, ivec2 p, ivec2 dir, bool fromColor) {\n"
             "    float sigma = u_radius * u_scale;\n"
             "    if (sigma < 0.01) return fromColor ? lo_pl(lo_at(s, p)) : lo_at(s, p).r;\n"
             "    float k = min(12.0, ceil(3.0 * sigma));\n"

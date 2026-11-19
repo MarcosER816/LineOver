@@ -26,6 +26,11 @@ void uploadFloat(GLuint texture, int width, int height, bool halfFloat, const fl
 // RG32F texture of guided-filter coefficients (A, B), or a 1 x 1 (1, 0) when null.
 GLuint createGuidedTexture(const GuidedCoefficients* coefficients);
 
+// The Stage 10 fields (detail.h) of the preview: `detail` RGBA32F (clarity a, b, texture
+// a, b) and `haze` RG32F (a, b), read with texelFetch. Without fields: 1 x 1 textures that
+// leave every op unchanged (base = guide, refined dark channel 0).
+void createFieldTextures(const DetailFields* fields, GLuint* detail, GLuint* haze);
+
 bool hasExtension(const char* extensions, const char* name);
 
 // True when RGBA16F is colour-renderable (GLES 3.2, EXT_color_buffer_half_float or
