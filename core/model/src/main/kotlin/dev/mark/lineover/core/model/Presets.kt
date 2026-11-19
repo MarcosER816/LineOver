@@ -45,6 +45,7 @@ data class Preset(
  */
 object PresetMath {
     const val MAX_AMOUNT = 2f
+    private const val MIN_CURVE_FLOATS = 4 // two points
 
     fun apply(
         base: List<OpParams>,
@@ -69,8 +70,8 @@ object PresetMath {
     ): OpParams {
         if (preset is OpParams.Curves) return blendCurves(base as? OpParams.Curves, preset, a)
         val p = EditGraphJson.opObject(preset)
-        val name = (p["op"] as? JsonPrimitive)?.content ?: return preset
-        val fields = NEUTRAL[name] ?: return preset // not blendable: the preset's
+        // Ops without blendable fields (a black & white mix, levels…) are the preset's.
+        val fields = NEUTRAL[(p["op"] as? JsonPrimitive)?.content] ?: return preset
         val b = base?.let { EditGraphJson.opObject(it) }
         val out =
             p.mapValues { (key, value) ->
@@ -119,7 +120,7 @@ object PresetMath {
             b: List<Float>?,
         ): List<Float> {
             if (p.isEmpty()) return b.orEmpty()
-            val curve = b?.takeIf { it.size >= 4 }?.let { MonotoneCurve(MonotoneCurve.points(it)) }
+            val curve = b?.takeIf { it.size >= MIN_CURVE_FLOATS }?.let { MonotoneCurve(MonotoneCurve.points(it)) }
             return MonotoneCurve.points(p).flatMap { pt ->
                 val from = curve?.invoke(pt.x) ?: pt.x
                 listOf(pt.x, (from + a * (pt.y - from)).coerceIn(0f, 1f))

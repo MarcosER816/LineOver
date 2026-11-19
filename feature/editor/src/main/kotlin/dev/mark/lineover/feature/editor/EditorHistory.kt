@@ -8,6 +8,7 @@ import dev.mark.lineover.core.model.GeometryAdjustments
 import dev.mark.lineover.core.model.GradeAdjustments
 import dev.mark.lineover.core.model.HistoryLabels
 import dev.mark.lineover.core.model.LightAdjustments
+import dev.mark.lineover.core.model.LookAdjustments
 import dev.mark.lineover.core.model.ProjectDocument
 import dev.mark.lineover.core.model.Snapshot
 import dev.mark.lineover.core.model.Version
@@ -28,6 +29,9 @@ internal fun EditorState.showingGraph(graph: EditGraph): EditorState {
         grade = GradeAdjustments.fromOps(ops),
         geometry = GeometryAdjustments.fromOps(ops),
         detail = DetailAdjustments.fromOps(ops),
+        looks = LookAdjustments.fromOps(ops),
+        appliedPreset = null,
+        compareGraph = null,
         preview = null,
     )
 }
@@ -40,9 +44,11 @@ internal fun EditorState.showingGraph(graph: EditGraph): EditorState {
 internal fun EditorState.recordEdit(
     label: String? = null,
     open: Boolean = true,
+    stepKey: String? = null,
 ): EditorState {
     val h = history
     if (graph == h.current) return this
+    if (stepKey != null) return recordKeyed(label, stepKey)
     val top = h.entries[h.index]
     val stepBase = if (h.open && h.index == h.entries.lastIndex && h.index > 0) h.entries[h.index - 1].graph else null
     val fromBase = stepBase?.let { HistoryLabels.describe(it, graph) }
@@ -55,6 +61,21 @@ internal fun EditorState.recordEdit(
             if (label != null) "label:$label" else change.key,
             open = open && label == null,
         )
+    return copy(history = next, preview = null)
+}
+
+/**
+ * A keyed step (a preset and its Amount): while it is the top step, changes with the same key
+ * replace it, even after an autosave closed it (Amount belongs to that preset).
+ */
+private fun EditorState.recordKeyed(
+    label: String?,
+    stepKey: String,
+): EditorState {
+    val h = history
+    val top = h.entries[h.index]
+    val keeps = h.index == h.entries.lastIndex && h.index > 0 && top.key == stepKey
+    val next = (if (keeps) h.copy(open = true) else h.close()).record(graph, label ?: top.label, stepKey, open = true)
     return copy(history = next, preview = null)
 }
 

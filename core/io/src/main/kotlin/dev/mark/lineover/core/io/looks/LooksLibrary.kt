@@ -77,24 +77,20 @@ class LooksLibrary(
     override fun importCube(
         name: String,
         bytes: ByteArray,
-    ): Result<LutEntry> {
-        if (bytes.size > MAX_CUBE_BYTES) return Result.failure(CubeFormatException("the file is larger than 20 MB"))
-        val lut =
-            try {
-                CubeParser.parse(bytes.toString(Charsets.UTF_8))
-            } catch (e: CubeFormatException) {
-                return Result.failure(e)
+    ): Result<LutEntry> =
+        runCatching {
+            if (bytes.size > MAX_CUBE_BYTES) throw CubeFormatException("the file is larger than 20 MB")
+            val lut = CubeParser.parse(bytes.toString(Charsets.UTF_8))
+            val id = sha256(bytes)
+            stateFlow.value.luts.firstOrNull { it.id == id } ?: run {
+                AtomicFiles.write(File(lutDir, "$id.cube")) { it.write(bytes) }
+                val label = name.removeSuffix(".cube").removeSuffix(".CUBE").ifBlank { lut.title.ifBlank { "LUT" } }
+                val entry = LutEntry(id, label, lut.size)
+                cache[id] = lut
+                update { it.copy(luts = listOf(entry) + it.luts) }
+                entry
             }
-        val id = sha256(bytes)
-        stateFlow.value.luts
-            .firstOrNull { it.id == id }
-            ?.let { return Result.success(it) }
-        AtomicFiles.write(File(lutDir, "$id.cube")) { it.write(bytes) }
-        val entry = LutEntry(id, name.removeSuffix(".cube").removeSuffix(".CUBE").ifBlank { lut.title.ifBlank { "LUT" } }, lut.size)
-        cache[id] = lut
-        update { it.copy(luts = listOf(entry) + it.luts) }
-        return Result.success(entry)
-    }
+        }
 
     @Synchronized
     override fun loadLut(id: String): CubeLut? {

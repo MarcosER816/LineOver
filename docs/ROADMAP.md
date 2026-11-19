@@ -19,8 +19,8 @@ listed in `TOOL_CATALOG.md`; stages 1–4 build the foundation they plug into.
 | 8 | History and projects | Undo / redo, history list, snapshots, versions, `.loproj` project file (before / after moved to Stage 5) | ✅ |
 | 9 | Crop and optics | Crop, aspect ratios, Straighten, Rotate, Flip, perspective crop; Upright, lens distortion, chromatic aberration, lens vignetting | ✅ |
 | 10 | Effects and detail | Texture, Clarity, Dehaze, Vignette, Grain; Sharpen, Noise reduction | ✅ |
-| 11 | Presets and Auto | Presets, Profiles, 3D LUTs, copy / paste settings, Auto | 🔜 |
-| 12 | Export | JPEG, PNG, WebP, HEIF, AVIF, TIFF, Ultra HDR; resize, metadata, watermark, ICC; output to `Pictures/LineOver` | ⬜ |
+| 11 | Presets and Auto | Presets, Profiles, 3D LUTs, copy / paste settings, Auto | ✅ |
+| 12 | Export | JPEG, PNG, WebP, HEIF, AVIF, TIFF, Ultra HDR; resize, metadata, watermark, ICC; output to `Pictures/LineOver` | 🔜 |
 | 13 | Layers | Raster, adjustment, group, smart object; opacity, fill, 27 blend modes | ⬜ |
 | 14 | Layer masks | Layer mask, clipping mask | ⬜ |
 | 15 | Selections I | Marquee, lasso, polygonal lasso, magic wand, color range | ⬜ |

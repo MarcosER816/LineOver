@@ -97,6 +97,7 @@ fun LineOverNavigation(
                         onExport = { backStack.add(ExportRoute(key.projectId)) },
                         saveScope = container.appScope,
                         lensProfiles = container.lensProfiles,
+                        looks = container.looks,
                     )
                 }
                 entry<ExportRoute>(

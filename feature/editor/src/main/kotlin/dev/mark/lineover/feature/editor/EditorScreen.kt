@@ -67,6 +67,7 @@ import dev.mark.lineover.core.designsystem.component.LoToastHost
 import dev.mark.lineover.core.designsystem.component.LoToastResult
 import dev.mark.lineover.core.designsystem.component.LoToastState
 import dev.mark.lineover.core.io.lens.LensProfileStore
+import dev.mark.lineover.core.io.looks.LooksStore
 import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.CanvasSurround
 import dev.mark.lineover.core.io.project.ProjectLibrary
@@ -94,6 +95,7 @@ fun EditorRoute(
     /** Outlives the screen: the last save and the engine's close finish there. */
     saveScope: CoroutineScope,
     lensProfiles: LensProfileStore? = null,
+    looks: LooksStore? = null,
 ) {
     val context = LocalContext.current
     val debuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
@@ -107,6 +109,7 @@ fun EditorRoute(
                 debuggable = debuggable,
                 saveScope = saveScope,
                 lensProfiles = lensProfiles,
+                looks = looks,
             )
         }
     WideColorGamutWindow()

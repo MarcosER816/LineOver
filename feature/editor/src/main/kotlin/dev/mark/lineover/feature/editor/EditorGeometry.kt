@@ -153,7 +153,7 @@ internal val EditorState.geometryOp: OpParams.Geometry?
 /** [next] as the Crop / Optics values, the background ops rebuilt with it first. */
 internal fun EditorState.withGeometry(next: GeometryAdjustments): EditorState {
     val updated = copy(geometry = next)
-    return updated.copy(graph = graph.withBackgroundOps(editOps(light, color, grade, updated.geometryOp, detail)))
+    return updated.copy(graph = graph.withBackgroundOps(editOps(light, color, grade, updated.geometryOp, detail, looks = looks)))
 }
 
 /** The composed geometry of the current values (null without a photo). */
@@ -177,9 +177,11 @@ internal val EditorState.cropMode: CropMode?
 internal val EditorState.canvasGraph: EditGraph
     get() {
         val shown = shownGraph
+        // A look held down in a strip (Stage 11).
+        if (preview == null) compareGraph?.let { return it }
         // Sharpen's Masking held with a second finger: the mask in grey (never recorded).
         if (sharpenMaskPreview && selectedToolId == DetailTools.SHARPEN && preview == null) {
-            return shown.withBackgroundOps(editOps(light, color, grade, geometryOp, detail, sharpenMask = true))
+            return shown.withBackgroundOps(editOps(light, color, grade, geometryOp, detail, sharpenMask = true, looks = looks))
         }
         val mode = cropMode ?: return shown
         if (preview != null) return shown
@@ -189,7 +191,7 @@ internal val EditorState.canvasGraph: EditGraph
                 CropMode.Guides -> null
                 else -> frameOnly(geometry).toOp(w, h)
             }
-        return shown.withBackgroundOps(editOps(light, color, grade, op, detail))
+        return shown.withBackgroundOps(editOps(light, color, grade, op, detail, looks = looks))
     }
 
 private fun frameOnly(g: GeometryAdjustments) =

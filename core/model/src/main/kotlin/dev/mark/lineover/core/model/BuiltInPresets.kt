@@ -4,6 +4,7 @@ package dev.mark.lineover.core.model
  * LineOver's own presets (Stage 11): combinations of LineOver's tools made for this app,
  * not copies of any commercial look or film stock. Each sets only the ops it names.
  */
+@Suppress("MagicNumber") // the presets are their numbers
 object BuiltInPresets {
     const val NATURAL = "Natural"
     const val COLOR = "Color"
@@ -42,7 +43,7 @@ object BuiltInPresets {
         vararg ops: OpParams,
     ) = Preset.of("builtin.$id", name, group, ops.toList(), builtIn = true)
 
-    @Suppress("MagicNumber", "LongMethod") // the presets are their numbers
+    @Suppress("LongMethod") // one entry per preset
     val ALL: List<Preset> =
         listOf(
             preset("clean", "Clean", NATURAL, OpParams.Contrast(10f), OpParams.Vibrance(12f), OpParams.Clarity(8f)),

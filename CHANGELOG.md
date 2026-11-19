@@ -2,6 +2,21 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 11 — Presets and Auto (0.11.0)
+
+### Added
+
+- Presets → Presets: 20 LineOver presets (Natural, Color, Black & white, Mood) in a strip of
+  live thumbnails of your photo. Tap to apply, hold to compare, star to keep a favourite at
+  the front; an Amount slider (0–200 %) takes the photo from where it was towards the preset
+  and beyond. "Save current as preset" keeps your own.
+- Presets → Profiles: base looks Neutral, Vivid, Mono and Flat, with an Amount.
+- Presets → 3D LUTs: import .cube files (2 to 65 points) from your files, apply with an
+  Amount; a broken file is refused with the reason. LUTs stay on the phone.
+- Copy / paste settings (Presets, or the More menu): a checklist of groups (Light, White
+  balance, Color, Curves, Grading, Profile and LUT, Effects, Detail, Crop and optics).
+- Auto: white balance, exposure, contrast, whites, blacks and a mild vibrance in one step.
+
 ## Stage 10 — Effects and detail (0.10.0)
 
 ### Added

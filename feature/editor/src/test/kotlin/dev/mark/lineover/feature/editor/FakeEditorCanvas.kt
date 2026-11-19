@@ -78,6 +78,24 @@ class FakeEditorCanvas(
         }
     }
 
+    /** Auto (Stage 11): what the engine would propose (null = no preview yet). */
+    var autoResult: dev.mark.lineover.core.model.AutoResult? =
+        dev.mark.lineover.core.model
+            .AutoResult(5600f, 4f, 0.6f, 15f, 20f, -10f, 18f)
+
+    override fun autoSettings() = autoResult
+
+    /** 3D LUTs registered with this canvas, by id. */
+    val registeredLuts = mutableMapOf<String, dev.mark.lineover.core.model.CubeLut>()
+
+    override fun registerLut(
+        id: String,
+        lut: dev.mark.lineover.core.model.CubeLut,
+    ): Boolean {
+        registeredLuts[id] = lut
+        return true
+    }
+
     /** Upright input: the preview's line segments (null = no preview yet). */
     var segments: List<dev.mark.lineover.core.model.LineSegment>? = emptyList()
 
