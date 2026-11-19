@@ -162,6 +162,9 @@ jobs:
           LINEOVER_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           LINEOVER_KEY_PASS: ${{ secrets.KEY_PASS }}
         run: ./gradlew assembleDebug assembleRelease
+      - name: JNI callbacks kept by R8
+        # The emulator runs the unminified debug build; this checks the release one.
+        run: python3 tools/ci/check_jni_keep.py
       - name: Collect APKs
         id: apks
         run: |

@@ -336,6 +336,15 @@ private fun CanvasArea(
                 )
             }
 
+            state.engineError != null -> {
+                LoEmptyState(
+                    LoIcons.Image,
+                    "The image engine could not start",
+                    body = "${state.engineError}\n\nThe project is kept; your original is never changed.",
+                    modifier = Modifier.align(Alignment.Center),
+                )
+            }
+
             state.previewUnavailable -> {
                 LoEmptyState(
                     LoIcons.Image,

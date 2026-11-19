@@ -109,6 +109,7 @@ Screenshots changed, and why:
 | `editor/expanded/category_presets`, `category_auto` | The five tools say "Ready" instead of "Arrives in Stage 11" |
 | `editor/*/menu_more` | Copy settings and Paste settings lost their "Stage 11" line (they open the Copy / paste panel) |
 | `editor/*/presets_panel`, `editor/looks_panel/*` | New: the Stage 11 panels |
+| `editor/*/engine_error` | New (0.11.1): the editor when the image engine cannot start |
 
 ## Troubleshooting log (R11)
 
@@ -120,6 +121,7 @@ Screenshots changed, and why:
 | Preset Amount became a second History step | The autosave closes an idle open step | A keyed step reopens while it is the top step |
 | Holding a thumbnail did not change the canvas | `setState` does not sync the canvas | `reduce` (graph unchanged, no History step) |
 | An imported LUT's op had no name | The library's flow had not reached the state yet | The import passes the name it has |
+| (0.11.1, after merge) The signed release closed when a photo was opened; the debug build and CI were fine | R8 removed `NativeEngine.onLoadingChanged` / `onHistogram`: only native code calls them (`GetMethodID` in `nativeCreate`), and the keep rule covered `native` methods only. Present since Stage 4; CI's instrumented tests run the unminified debug build | Keep rule in `core/engine/consumer-rules.pro`; `nativeCreate` checks the method ids and fails cleanly; the editor catches an engine that cannot start (`CanvasOpenException`) and shows the reason; CI runs `tools/ci/check_jni_keep.py` on the release build's R8 seeds |
 
 Plan B used: no.
 

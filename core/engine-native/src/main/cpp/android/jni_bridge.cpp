@@ -114,10 +114,22 @@ JNIEXPORT jlong LO_NATIVE(nativeCreate)(JNIEnv* env, jobject self, jstring cache
         throwIllegalState(env, error);
         return 0;
     }
+    // The render thread calls these back; a release build that lost them (R8) must fail here,
+    // as an exception, not later on the render thread with a null method id.
+    jclass type = env->GetObjectClass(self);
+    const jmethodID onLoadingId = env->GetMethodID(type, "onLoadingChanged", "(Z)V");
+    const jmethodID onHistogramId = onLoadingId != nullptr ? env->GetMethodID(type, "onHistogram", "([I)V") : nullptr;
+    env->DeleteLocalRef(type);
+    if (onLoadingId == nullptr || onHistogramId == nullptr) {
+        env->ExceptionClear();
+        lo_engine_destroy(engine);
+        throwIllegalState(env, "the engine's Kotlin callbacks are missing from this build (onLoadingChanged / onHistogram)");
+        return 0;
+    }
     auto* callbacks = new Callbacks();
     callbacks->target = env->NewGlobalRef(self);
-    callbacks->onLoading = env->GetMethodID(env->GetObjectClass(self), "onLoadingChanged", "(Z)V");
-    callbacks->onHistogram = env->GetMethodID(env->GetObjectClass(self), "onHistogram", "([I)V");
+    callbacks->onLoading = onLoadingId;
+    callbacks->onHistogram = onHistogramId;
     lo_engine_set_callbacks(engine, onLoading, onThreadExit, callbacks);
     lo_engine_set_histogram_callback(engine, onHistogram, callbacks);
     return reinterpret_cast<jlong>(engine);

@@ -2,6 +2,15 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 11 fix (0.11.1)
+
+### Fixed
+
+- The signed app closed as soon as a photo was opened. The release build had dropped two
+  functions the image engine calls back (loading state and histogram). They are kept now,
+  and CI checks the release build for them.
+- If the image engine cannot start on a device, the editor now says why instead of closing.
+
 ## Stage 11 — Presets and Auto (0.11.0)
 
 ### Added
