@@ -524,6 +524,17 @@ private fun LayerProperties(
         )
         return
     }
+    KindControls(state, layer, editable, onIntent)
+}
+
+/** What the layer's kind adds: group isolation, the adjustment, a photo layer's placement and own edit. */
+@Composable
+private fun KindControls(
+    state: EditorState,
+    layer: Layer,
+    editable: Boolean,
+    onIntent: (EditorIntent) -> Unit,
+) {
     when (layer.type) {
         LayerType.Group -> {
             LoSwitchRow(

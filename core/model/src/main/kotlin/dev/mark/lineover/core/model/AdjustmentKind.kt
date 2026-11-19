@@ -41,21 +41,7 @@ enum class AdjustmentKind(
         }
 
     /** This kind's value in [ops], or null when they hold no op of this kind. */
-    fun valueIn(ops: List<OpParams>): Float? =
-        ops.firstNotNullOfOrNull { op ->
-            when {
-                this == Exposure && op is OpParams.Exposure -> op.ev
-                this == Contrast && op is OpParams.Contrast -> op.amount
-                this == Brightness && op is OpParams.Brightness -> op.amount
-                this == Vibrance && op is OpParams.Vibrance -> op.amount
-                this == Saturation && op is OpParams.Saturation -> op.amount
-                this == Temperature && op is OpParams.WhiteBalance -> op.temperature
-                this == Posterize && op is OpParams.Posterize -> op.levels
-                this == Threshold && op is OpParams.Threshold -> op.level
-                this == Invert && op is OpParams.Invert -> 0f
-                else -> null
-            }
-        }
+    fun valueIn(ops: List<OpParams>): Float? = ops.firstNotNullOfOrNull { op -> kindValue(op)?.takeIf { it.first == this }?.second }
 
     /** [ops] with this kind's op set to [value] (added at the end when missing). */
     fun withValue(
@@ -68,6 +54,21 @@ enum class AdjustmentKind(
     }
 
     companion object {
+        /** The kind of [op] and its value, or null when no kind holds it. */
+        private fun kindValue(op: OpParams): Pair<AdjustmentKind, Float>? =
+            when (op) {
+                is OpParams.Exposure -> Exposure to op.ev
+                is OpParams.Contrast -> Contrast to op.amount
+                is OpParams.Brightness -> Brightness to op.amount
+                is OpParams.Vibrance -> Vibrance to op.amount
+                is OpParams.Saturation -> Saturation to op.amount
+                is OpParams.WhiteBalance -> Temperature to op.temperature
+                is OpParams.Posterize -> Posterize to op.levels
+                is OpParams.Threshold -> Threshold to op.level
+                is OpParams.Invert -> Invert to 0f
+                else -> null
+            }
+
         /** The kind of a one-op adjustment layer, or null for anything else ("From current edit"). */
         fun of(ops: List<OpParams>): AdjustmentKind? =
             ops.singleOrNull()?.let { op -> entries.firstOrNull { it.valueIn(listOf(op)) != null } }

@@ -15,12 +15,17 @@ import dev.mark.lineover.core.engine.EngineSession
 import dev.mark.lineover.core.engine.ExportImage
 import dev.mark.lineover.core.io.export.JpegSegments
 import dev.mark.lineover.core.io.export.WebpChunks
+import dev.mark.lineover.core.io.layers.LayerSource
+import dev.mark.lineover.core.io.layers.LayerSources
 import dev.mark.lineover.core.io.looks.LooksStore
 import dev.mark.lineover.core.io.project.ProjectLibrary
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.ExportColorSpace
 import dev.mark.lineover.core.model.ExportFormat
 import dev.mark.lineover.core.model.ExportSettings
+import dev.mark.lineover.core.model.Layer
+import dev.mark.lineover.core.model.LayerMath
+import dev.mark.lineover.core.model.LayerType
 import dev.mark.lineover.core.model.MetadataMode
 import dev.mark.lineover.core.model.OpParams
 import dev.mark.lineover.core.model.ResizeMode
@@ -60,6 +65,12 @@ class ExportRoundTripTest {
                 override val projects: ProjectLibrary get() = error("not used")
                 override val looks: LooksStore? = null
                 override val versionName = "test"
+                override val layers =
+                    object : LayerSources {
+                        override fun import(uri: String): LayerSource? = null
+
+                        override fun file(name: String): File? = File(dir, name).takeIf { it.isFile }
+                    }
             },
         )
 
@@ -274,6 +285,47 @@ class ExportRoundTripTest {
         assertEquals(0, changed(0, 0, 200, 150))
     }
 
+    /** Stage 13: a photo layer is composited into the export (at export size), hidden or 0 % layers are not. */
+    @Test
+    fun layersCompositeIntoTheExport() {
+        val red = Bitmap.createBitmap(LAYER_W, LAYER_H, Bitmap.Config.ARGB_8888)
+        red.eraseColor(Color.RED)
+        File(dir, "red.png").outputStream().use { red.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        red.recycle()
+        val scale = W.toFloat() / LAYER_W
+        val layer =
+            Layer(
+                "red",
+                type = LayerType.Raster,
+                name = "Red",
+                source = "red.png",
+                sourceSize = listOf(LAYER_W.toFloat(), LAYER_H.toFloat()),
+                transform = listOf(scale, 0f, 0f, scale, 0f, 0f),
+            )
+        val settings = ExportSettings(format = ExportFormat.Png, colorSpace = ExportColorSpace.Srgb)
+        val plain = pixels(decode(export(settings)))
+
+        fun withLayer(l: Layer) = pixels(decode(export(settings, graph = LayerMath.add(EditGraph().withBackgroundOps(emptyList()), l))))
+        val covered = withLayer(layer)
+        // Inside the frame (bilinear edges blend with the transparent outside): pure red.
+        for (y in BORDER until H - BORDER step STEP) {
+            for (x in BORDER until W - BORDER step STEP) {
+                val c = covered[y * W + x]
+                assertTrue("($x, $y) = ${Integer.toHexString(c)}", Color.red(c) >= 252 && Color.green(c) <= 3 && Color.blue(c) <= 3)
+            }
+        }
+        for (off in listOf(layer.copy(visible = false), layer.copy(opacity = 0f))) {
+            val same = withLayer(off)
+            val worst = plain.indices.maxOf { i -> channelDiff(plain[i], same[i]) }
+            assertTrue("an invisible layer changed the export by $worst", worst <= 1)
+        }
+    }
+
+    private fun channelDiff(
+        a: Int,
+        b: Int,
+    ): Int = maxOf(abs(Color.red(a) - Color.red(b)), abs(Color.green(a) - Color.green(b)), abs(Color.blue(a) - Color.blue(b)))
+
     @Test
     fun exifIsStrippedOfTheLocationByDefault() {
         val kept = ExifInterface(export(ExportSettings()))
@@ -405,5 +457,9 @@ class ExportRoundTripTest {
         const val TAG = "ExportRoundTripTest"
         const val W = 1200
         const val H = 900
+        const val LAYER_W = 120
+        const val LAYER_H = 90
+        const val BORDER = 12
+        const val STEP = 37
     }
 }

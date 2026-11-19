@@ -86,6 +86,16 @@ class FakeEditorCanvas(
     override fun autoSettings() = autoResult
 
     /** 3D LUTs registered with this canvas, by id. */
+    val registeredLayers = mutableListOf<String>()
+
+    override fun registerLayerImage(
+        id: String,
+        file: java.io.File,
+    ): Boolean {
+        synchronized(registeredLayers) { registeredLayers += id }
+        return file.isFile
+    }
+
     val registeredLuts = mutableMapOf<String, dev.mark.lineover.core.model.CubeLut>()
 
     override fun registerLut(

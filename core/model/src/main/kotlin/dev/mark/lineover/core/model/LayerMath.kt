@@ -15,6 +15,7 @@ import kotlin.math.sin
  * Merge down and flatten are non-destructive: they put the layers into a pass-through group
  * (which looks exactly like the layers on their own); pixels are only combined when exporting.
  */
+@Suppress("TooManyFunctions") // the layer tree's operations, one function each (like OpParams' ops)
 object LayerMath {
     fun newId(): String =
         "l" +
@@ -304,11 +305,10 @@ data class LayerPlacement(
             sourceH: Float,
         ): LayerPlacement {
             val t = transform.takeIf { it.size == TRANSFORM_SIZE } ?: listOf(1f, 0f, 0f, 1f, 0f, 0f)
-            val (a, b, c, d) = t
-            val e = t[4]
-            val f = t[5]
-            val cx = a * sourceW / 2 + c * sourceH / 2 + e
-            val cy = b * sourceW / 2 + d * sourceH / 2 + f
+            val a = t[0]
+            val b = t[1]
+            val cx = a * sourceW / 2 + t[C] * sourceH / 2 + t[E]
+            val cy = b * sourceW / 2 + t[D] * sourceH / 2 + t[F]
             return LayerPlacement(cx, cy, hypot(a, b), Math.toDegrees(atan2(b, a).toDouble()).toFloat())
         }
 
@@ -321,5 +321,9 @@ data class LayerPlacement(
         ): LayerPlacement = LayerPlacement(docW / 2, docH / 2, min(docW / sourceW, docH / sourceH), 0f)
 
         const val TRANSFORM_SIZE = 6
+        private const val C = 2
+        private const val D = 3
+        private const val E = 4
+        private const val F = 5
     }
 }

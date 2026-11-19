@@ -36,45 +36,47 @@ class FileLayerSources(
 ) : LayerSources {
     override fun import(uri: String): LayerSource? {
         val source = Uri.parse(uri)
-        val reader = SourceReader(resolver)
         // Read the size first: anything the decoder cannot open is refused before it is copied.
-        val original = reader.info(source) ?: return null
-        val extension = extensionOf(original.mimeType)
+        val original = SourceReader(resolver).info(source) ?: return null
         dir.mkdirs()
         val temp = File.createTempFile("import", ".tmp", dir)
-        try {
-            val digest = MessageDigest.getInstance("SHA-256")
-            val copied =
-                resolver.openInputStream(source)?.use { input ->
-                    temp.outputStream().use { output ->
-                        val buffer = ByteArray(BUFFER)
-                        while (true) {
-                            val n = input.read(buffer)
-                            if (n < 0) break
-                            digest.update(buffer, 0, n)
-                            output.write(buffer, 0, n)
-                        }
-                    }
-                    true
-                } ?: false
-            if (!copied) return null
-            val name = digest.digest().joinToString("") { "%02x".format(it) }.take(HASH_CHARS) + "." + extension
-            val target = File(dir, name)
-            if (target.isFile) {
-                temp.delete()
-            } else if (!temp.renameTo(target)) {
-                return null
+        return try {
+            copyHashed(source, temp)?.let { hash ->
+                val name = hash + "." + extensionOf(original.mimeType)
+                val target = File(dir, name)
+                // The same photo imported again is stored once.
+                if (target.isFile || temp.renameTo(target)) LayerSource(name, original.width, original.height) else null
             }
-            return LayerSource(name, original.width, original.height)
         } catch (e: IOException) {
             Log.w(TAG, "import of $uri failed", e)
-            return null
+            null
         } catch (e: SecurityException) {
             Log.w(TAG, "import of $uri failed", e)
-            return null
+            null
         } finally {
             temp.delete()
         }
+    }
+
+    /** Copies [source] into [target]; returns the content's SHA-256 (hex, shortened), or null when it cannot be opened. */
+    private fun copyHashed(
+        source: Uri,
+        target: File,
+    ): String? {
+        val digest = MessageDigest.getInstance("SHA-256")
+        val input = resolver.openInputStream(source) ?: return null
+        input.use { stream ->
+            target.outputStream().use { output ->
+                val buffer = ByteArray(BUFFER)
+                var n = stream.read(buffer)
+                while (n >= 0) {
+                    digest.update(buffer, 0, n)
+                    output.write(buffer, 0, n)
+                    n = stream.read(buffer)
+                }
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }.take(HASH_CHARS)
     }
 
     override fun file(name: String): File? {

@@ -573,60 +573,39 @@ class EditorViewModel(
             lensProfiles = lensProfiles,
         )
 
-    private val looksActions =
-        EditorLooksActions(
-            viewModelScope,
-            renderDispatcher,
-            object : EditorLooksActions.Host {
-                override val state get() = this@EditorViewModel.state.value
+    /** What the Stage 11 and Stage 13 actions need of this ViewModel. */
+    private val actionsHost =
+        object : EditorLooksActions.Host, EditorLayersActions.Host {
+            override val state get() = this@EditorViewModel.state.value
 
-                override fun reduce(
-                    label: String?,
-                    block: EditorState.() -> EditorState,
-                ) = this@EditorViewModel.reduce(label, block)
+            override fun reduce(
+                label: String?,
+                block: EditorState.() -> EditorState,
+            ) = this@EditorViewModel.reduce(label, block)
 
-                override fun reduceStep(
-                    label: String?,
-                    key: String?,
-                    block: EditorState.() -> EditorState,
-                ) = this@EditorViewModel.reduceStep(label, key, block)
+            override fun reduceStep(
+                label: String?,
+                key: String?,
+                block: EditorState.() -> EditorState,
+            ) = this@EditorViewModel.reduceStep(label, key, block)
 
-                override fun setState(block: EditorState.() -> EditorState) = this@EditorViewModel.setState(block)
+            override fun setState(block: EditorState.() -> EditorState) = this@EditorViewModel.setState(block)
 
-                override fun message(text: String) = sendEffect(EditorEffect.Message(text))
+            override fun message(text: String) = sendEffect(EditorEffect.Message(text))
 
-                override fun resubmit() {
-                    scheduler?.submit(this@EditorViewModel.state.value.canvasGraph)
-                }
-            },
-            looks,
-        )
+            override fun undoable(
+                text: String,
+                undo: EditorIntent,
+            ) = sendEffect(EditorEffect.Undoable(text, undo))
 
-    private val layersActions =
-        EditorLayersActions(
-            viewModelScope,
-            renderDispatcher,
-            object : EditorLayersActions.Host {
-                override val state get() = this@EditorViewModel.state.value
+            override fun resubmit() {
+                scheduler?.submit(this@EditorViewModel.state.value.canvasGraph)
+            }
+        }
 
-                override fun reduce(
-                    label: String?,
-                    block: EditorState.() -> EditorState,
-                ) = this@EditorViewModel.reduce(label, block)
+    private val looksActions = EditorLooksActions(viewModelScope, renderDispatcher, actionsHost, looks)
 
-                override fun message(text: String) = sendEffect(EditorEffect.Message(text))
-
-                override fun undoable(
-                    text: String,
-                    undo: EditorIntent,
-                ) = sendEffect(EditorEffect.Undoable(text, undo))
-
-                override fun resubmit() {
-                    scheduler?.submit(this@EditorViewModel.state.value.canvasGraph)
-                }
-            },
-            layers,
-        )
+    private val layersActions = EditorLayersActions(viewModelScope, renderDispatcher, actionsHost, layers)
 
     /** Crop handles, perspective corners and guide lines from CanvasView. */
     val cropGestures get() = geometryActions.gestures

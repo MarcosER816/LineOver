@@ -134,12 +134,7 @@ class ExportRunner(
             val (file, size) =
                 session.use {
                     registerLuts(session, LayerMath.allOps(graph))
-                    registerLayers(session, graph)
-                    try {
-                        render(session, RenderJob(graph, settings, project.name), work, ::step)
-                    } finally {
-                        session.releaseFullLayerImages()
-                    }
+                    render(session, RenderJob(graph, settings, project.name), work, ::step)
                 }
             step(ExportStep.Saving, ENCODE_SHARE)
             val uri = ExportDestinations(context.contentResolver).publish(file, request.target, file.name, settings.format.mimeType)
@@ -176,8 +171,15 @@ class ExportRunner(
     ): Pair<File, Pair<Int, Int>> {
         val (graph, settings, name) = job
         val source = session.info.uri
-        session.setGraph(graph)?.let { fail("The edit could not be applied: $it") }
-        val image = session.renderForExport(work) { step(ExportStep.Rendering, RENDER_SHARE * it) }
+        // Layer images at export size (Stage 13), dropped again once the pixels are rendered.
+        registerLayers(session, graph)
+        val image =
+            try {
+                session.setGraph(graph)?.let { fail("The edit could not be applied: $it") }
+                session.renderForExport(work) { step(ExportStep.Rendering, RENDER_SHARE * it) }
+            } finally {
+                session.releaseFullLayerImages()
+            }
         image.use {
             val (width, height) = settings.outputSize(image.width, image.height)
             checkLimits(settings.format, width, height)
