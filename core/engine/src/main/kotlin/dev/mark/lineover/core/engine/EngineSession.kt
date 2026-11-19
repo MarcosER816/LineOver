@@ -15,6 +15,7 @@ import dev.mark.lineover.core.model.AutoResult
 import dev.mark.lineover.core.model.CubeLut
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.EditGraphJson
+import dev.mark.lineover.core.model.LayerMath
 import dev.mark.lineover.core.model.LineSegment
 import dev.mark.lineover.core.model.OpParams
 import kotlinx.coroutines.CoroutineDispatcher
@@ -116,8 +117,41 @@ class EngineSession private constructor(
         if (!closed) native.setSurround(r, g, b)
     }
 
-    /** Hands the graph to the render thread (it re-renders the preview and visible tiles). */
-    fun setGraph(graph: EditGraph): String? = if (closed) "closed" else native.setGraph(EditGraphJson.encode(graph))
+    @Volatile private var layered = false
+
+    /**
+     * Hands the graph to the render thread (it re-renders the preview and visible tiles). A
+     * graph with layers (Stage 13) also renders its composite for the canvas, here on the
+     * calling (background) thread.
+     */
+    fun setGraph(graph: EditGraph): String? {
+        if (closed) return "closed"
+        val error = native.setGraph(EditGraphJson.encode(graph))
+        val hasLayers = LayerMath.hasLayers(graph)
+        if (error == null && (hasLayers || layered)) native.renderComposite()
+        layered = hasLayers
+        return error
+    }
+
+    /**
+     * Stage 13: decodes the layer image [file] and registers it as [id] for every engine of the
+     * process: preview size (long edge <= 2048) for the canvas, or its full size ([full]) for
+     * exports. False when it cannot be read. Blocking; not on the main thread.
+     */
+    fun registerLayerImage(
+        id: String,
+        file: File,
+        full: Boolean,
+    ): Boolean {
+        val info = reader.info(Uri.fromFile(file)) ?: return false
+        val edge = if (full) maxOf(info.width, info.height) else LAYER_PREVIEW_EDGE
+        val image = reader.decodePreview(info, edge) ?: return false
+        return try {
+            native.registerLayerImage(id, image.bitmap, info.format.id, full)
+        } finally {
+            image.bitmap.recycle()
+        }
+    }
 
     fun stats(): EngineStats = native.stats()
 
@@ -402,6 +436,7 @@ class EngineSession private constructor(
             }
 
         private const val MB_SHIFT = 20
+        private const val LAYER_PREVIEW_EDGE = 2048
         private const val REQUEST_SIZE = 3
         private const val THUMB_HEADER = 8
 
