@@ -21,6 +21,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+import detail_reference as detail
 import lensfun_reference
 import reference
 
@@ -72,6 +73,7 @@ def build_outputs() -> dict[str, np.ndarray]:
     outputs.update(photo_outputs())
     outputs.update(geometry_outputs())
     outputs.update(lensfun_outputs())
+    outputs.update(detail_outputs())
     return outputs
 
 
@@ -211,6 +213,63 @@ def lensfun_outputs() -> dict:
     fixture lenses (testdata/lensfun/fixture.xml, CC BY-SA 3.0)."""
     golden = lensfun_reference.corrections_golden(REPO_ROOT / "testdata" / "lensfun" / "fixture.xml")
     return {"lensfun/corrections.json": json.dumps(golden, indent=1) + "\n"}
+
+
+# Stage 10 settings (also in detail_test.cpp and EngineGpuTest).
+SHARPEN_SETTINGS = [(80.0, 1.0, 25.0, 0.0, 1.0, False), (150.0, 2.5, 80.0, 40.0, 1.0, False),
+                    (60.0, 1.5, 25.0, 60.0, 1.0, True), (120.0, 2.0, 50.0, 30.0, 0.5, False)]
+NR_SETTINGS = [(60.0, 50.0, 0.0, 25.0, 1.0), (100.0, 0.0, 60.0, 100.0, 1.0), (80.0, 30.0, 30.0, 60.0, 0.5)]
+CLARITY_SETTINGS = [60.0, -50.0]
+TEXTURE_SETTINGS = [70.0, -60.0]
+DEHAZE_SETTINGS = [100.0, 40.0, -50.0]
+VIGNETTE_SETTINGS = [(-60.0, 50.0, 0.0, 50.0, 0.0), (-100.0, 20.0, -80.0, 10.0, 60.0), (50.0, 70.0, 100.0, 80.0, 0.0)]
+GRAIN_SETTINGS = [(60.0, 30.0, 40.0, 1.0), (100.0, 100.0, 100.0, 1.0), (60.0, 30.0, 40.0, 0.5)]
+
+
+def detail_outputs() -> dict:
+    """Stage 10: Detail and Effects on the HDR scene (dehaze on a hazy version of it)."""
+    scene = reference.scene_rec2020()
+    h, w = scene.shape[:2]
+    encoded = np.clip(detail.encode(scene[..., :3].astype(np.float64)), 0.0, 1.0)
+    hazy = np.ones_like(scene, dtype=np.float64)
+    hazy[..., :3] = detail.decode(detail.hazy(encoded))
+    hazy = hazy.astype(np.float32)
+    out = {"input/hazy_rec2020_f32.npy": hazy}
+    f32 = lambda a: a.astype(np.float32)  # noqa: E731
+    for i, s in enumerate(SHARPEN_SETTINGS, start=1):
+        out[f"detail/sharpen_{i}_f32.npy"] = f32(detail.sharpen(scene, *s[:4], scale=s[4], show_mask=s[5]))
+    for i, s in enumerate(NR_SETTINGS, start=1):
+        out[f"detail/noise_reduction_{i}_f32.npy"] = f32(detail.noise_reduction(scene, *s[:4], scale=s[4]))
+    fields = detail.detail_fields(scene)
+    for i, a in enumerate(CLARITY_SETTINGS, start=1):
+        out[f"effects/clarity_{i}_f32.npy"] = f32(detail.clarity(scene, a, fields))
+    for i, a in enumerate(TEXTURE_SETTINGS, start=1):
+        out[f"effects/texture_{i}_f32.npy"] = f32(detail.texture(scene, a, fields))
+    haze_fields = detail.detail_fields(hazy)
+    for i, a in enumerate(DEHAZE_SETTINGS, start=1):
+        out[f"effects/dehaze_{i}_f32.npy"] = f32(detail.dehaze(hazy, a, haze_fields))
+    for i, s in enumerate(VIGNETTE_SETTINGS, start=1):
+        out[f"effects/vignette_{i}_f32.npy"] = f32(detail.vignette(scene, *s, out_w=w, out_h=h))
+    for i, s in enumerate(GRAIN_SETTINGS, start=1):
+        sc = s[3]
+        out[f"effects/grain_{i}_f32.npy"] = f32(detail.grain(scene, *s[:3], scale=sc))
+    # The He 2009 script itself: amount 100 is exactly its recovery (omega 0.95, t0 0.1).
+    he_j = np.ones_like(hazy, dtype=np.float64)
+    he_j[..., :3] = detail.decode(detail.he.dehaze(np.clip(detail.encode(hazy[..., :3].astype(np.float64)), 0.0, 1.0)))
+    assert np.max(np.abs(he_j - out["effects/dehaze_1_f32.npy"])) < 1e-5, "Dehaze 100 must equal He et al."
+    # GPU (display transform, float16 textures) for one setting each.
+    gpu = {
+        "detail/sharpen_gpu": (lambda im: detail.sharpen(im, *SHARPEN_SETTINGS[1][:4]), scene),
+        "detail/noise_reduction_gpu": (lambda im: detail.noise_reduction(im, *NR_SETTINGS[0][:4]), scene),
+        "effects/clarity_gpu": (lambda im: detail.clarity(im, CLARITY_SETTINGS[0], fields), scene),
+        "effects/texture_gpu": (lambda im: detail.texture(im, TEXTURE_SETTINGS[0], fields), scene),
+        "effects/dehaze_gpu": (lambda im: detail.dehaze(im, DEHAZE_SETTINGS[0], haze_fields), hazy),
+        "effects/vignette_gpu": (lambda im: detail.vignette(im, *VIGNETTE_SETTINGS[0], out_w=w, out_h=h), scene),
+        "effects/grain_gpu": (lambda im: detail.grain(im, *GRAIN_SETTINGS[0][:3]), scene),
+    }
+    for name, (fn, image) in gpu.items():
+        out[f"{name}_srgb_display_f32.npy"] = reference.gpu_display(lambda im, fn=fn: f32(fn(im)), image)
+    return out
 
 
 # GPU cases of the step ops: (input, params); see color_outputs.

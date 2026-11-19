@@ -54,7 +54,23 @@ bool OpList::isIdentity() const {
 
 void OpList::cpuRefRegion(const float* in, float* out, const OpRegion& region) const {
     if (in != out) std::memcpy(out, in, region.pixels() * 4 * sizeof(float));
-    for (const auto& op : ops_) op->cpuRefRegion(out, out, region);
+    std::vector<float> original;
+    OpRegion r = region;
+    for (const auto& op : ops_) {
+        if (op->isIdentity()) continue;
+        if (op->readsOriginal() && r.original == nullptr) {
+            original.assign(out, out + region.pixels() * 4);
+            r.original = original.data();
+        }
+        op->cpuRefRegion(out, out, r);
+    }
+}
+
+int OpList::apron() const {
+    int total = 0;
+    for (const auto& op : ops_)
+        if (!op->isIdentity()) total += op->apron();
+    return total;
 }
 
 void sampleGuided(const GuidedCoefficients& c, float u, float v, float* a, float* b) {
