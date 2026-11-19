@@ -144,6 +144,16 @@ class EngineGpuTest {
         GoldenAssert.assertMatches(gpu(EXPOSURE_MINUS_1), expected, "gpu_exposure_minus1_srgb8", Tolerance.GPU_VS_CPU, diffDir)
     }
 
+    /** Two ops in one graph (the scratch ping-pong of runOps): -0.5 twice is the -1 golden. */
+    @Test
+    fun gpuOpChainMatchesTheCpuReference() {
+        val expected = premultiplied8(npy("exposure_test/minus1_srgb_display_f32.npy"))
+        val graph =
+            """{"schemaVersion":1,"layers":[{"id":"background","ops":[{"op":"exposure_test","stops":-0.5},""" +
+                """{"op":"exposure_test","stops":-0.5}]}]}"""
+        GoldenAssert.assertMatches(gpu(graph), expected, "gpu_op_chain_srgb8", Tolerance.GPU_VS_CPU, diffDir)
+    }
+
     /** Stage 5: each Light op (middle golden setting) on the HDR scene, GPU vs reference. */
     private fun checkLight(
         name: String,

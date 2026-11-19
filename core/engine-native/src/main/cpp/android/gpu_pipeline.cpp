@@ -38,7 +38,7 @@ void main() {
 // shadows (linear < 0.5 / 255 / 12.92).
 // Gamut mapping (color::gamutMap, reference.gamut_map): out-of-gamut colours keep their
 // OKLab lightness (clamped) and hue; 16 bisection steps of chroma towards the grey L^3.
-constexpr const char* kDisplayHead = "#version 300 es\nprecision highp float;\n" LO_GLSL_OKLAB R"(
+constexpr const char* kDisplayHead = "#version 300 es\nprecision highp float;\nprecision highp int;\n" LO_GLSL_OKLAB R"(
 uniform sampler2D u_texture;
 uniform mat3 u_toDisplay;
 uniform int u_encode;
@@ -368,7 +368,7 @@ GLuint GpuPipeline::programFor(const std::string& declarations, const std::strin
     auto it = opPrograms_.find(key);
     if (it != opPrograms_.end()) return it->second;
     // The op's declarations may use the prelude (u_scale, lo_at, ...): it comes first.
-    const std::string fragment = std::string("#version 300 es\nprecision highp float;\nuniform highp sampler2D u_source;\n") +
+    const std::string fragment = std::string("#version 300 es\nprecision highp float;\nprecision highp int;\nuniform highp sampler2D u_source;\n") +
                                  "in vec2 v_uv;\nout vec4 o_color;\n" + kOpPrelude + declarations + "\n" +
                                  (pass ? "vec4 lo_pass() {\n" + body + "\n}\nvoid main() { o_color = lo_pass(); }\n"
                                        : "vec4 lo_op(vec4 c) {\n" + body + "\n}\nvoid main() { o_color = lo_op(texture(u_source, v_uv)); }\n");
@@ -487,6 +487,11 @@ bool GpuPipeline::runOps(const OpList& ops, GLuint source, GLuint target, int wi
                 glUniform1fv(glGetUniformLocation(program, name.c_str()), static_cast<GLsizei>(v.size()), v.data());
             }
             glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+            // The next draw samples what this one wrote: detach it and rebind the framebuffer so
+            // every driver (the emulator's translator too) resolves the texture before it is read.
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
             if (p == 0) pass0 = out;
             prev = out;
         }
