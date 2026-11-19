@@ -181,15 +181,36 @@ object HistoryLabels {
             "gradient_map" to "Gradient map",
             "calibration" to "Calibration",
             "geometry" to "Geometry",
+            "sharpen" to "Sharpen",
+            "noise_reduction" to "Noise reduction",
+            "clarity" to "Clarity",
+            "texture" to "Texture",
+            "dehaze" to "Dehaze",
+            "post_crop_vignette" to "Vignette",
+            "grain" to "Grain",
         )
 
     /** Ops with one meaningful value: the label is the op's name. */
     private val SINGLE_FIELD =
-        setOf("exposure_test", "exposure", "contrast", "brightness", "whites", "blacks", "vibrance", "saturation", "posterize", "threshold")
+        setOf(
+            "exposure_test",
+            "exposure",
+            "contrast",
+            "brightness",
+            "whites",
+            "blacks",
+            "vibrance",
+            "saturation",
+            "posterize",
+            "threshold",
+            "clarity",
+            "texture",
+            "dehaze",
+        )
 
     /** Ops whose fields read well alone: "Highlights -40", "Temperature 5600 K". */
     private val FIELD_TITLED = setOf("highlights_shadows", "white_balance")
 
     private val UNSIGNED = setOf("temperature", "levels", "level", "density", "hue", "scale", "vignettingMidpoint")
-    private val UNSIGNED_OPS = setOf("posterize", "threshold")
+    private val UNSIGNED_OPS = setOf("posterize", "threshold", "sharpen", "noise_reduction", "grain")
 }

@@ -4,6 +4,7 @@
 #include <cmath>
 
 #include "lineover/color.h"
+#include "lineover/detail.h"
 #include "lineover/geometry.h"
 #include "lineover/graph.h"
 
@@ -39,21 +40,29 @@ ImageF32 boxDownsample(const float* rgba, int width, int height, int maxEdge) {
 }
 
 bool renderThumbnail(const ImageF32& source, const GuidedCoefficients* coefficients, const std::string& graphJson,
-                     std::vector<std::uint8_t>* out, std::string* error, int* width, int* height) {
+                     std::vector<std::uint8_t>* out, std::string* error, int* width, int* height,
+                     const DetailFields* fields, int fullWidth) {
     Graph graph;
     if (!parseGraph(graphJson, &graph, error)) return false;
     std::string skipped;
     const auto ops = buildOps(graph, &skipped);
     std::vector<float> working = source.rgba;
+    Geometry g;
+    const bool hasGeometry = geometryOf(graph, &g);
+    if (fullWidth <= 0) fullWidth = hasGeometry && g.sourceWidth > 0 ? g.sourceWidth : source.width;
+    const double sourceScale = static_cast<double>(source.width) / fullWidth;
     OpRegion region;
     region.width = source.width;
     region.height = source.height;
     region.coefficients = coefficients;
+    region.fields = fields;
+    region.scale = static_cast<float>(sourceScale);
     ops->cpuRefRegion(working.data(), working.data(), region);
     *width = source.width;
     *height = source.height;
-    Geometry g;
-    if (geometryOf(graph, &g)) {
+    // The output in full-resolution pixels and the thumbnail's pixels per output pixel.
+    double outW = fullWidth, outH = static_cast<double>(source.height) / sourceScale, outScale = sourceScale;
+    if (hasGeometry) {
         // One resample from the (already edited) source copy to the output, at its scale.
         const int fullW = g.sourceWidth > 0 ? g.sourceWidth : source.width;
         const int fullH = g.sourceHeight > 0 ? g.sourceHeight : source.height;
@@ -69,7 +78,12 @@ bool renderThumbnail(const ImageF32& source, const GuidedCoefficients* coefficie
         std::vector<float> warped(static_cast<std::size_t>(*width) * *height * 4);
         warp(g, fullW, fullH, s, static_cast<double>(*width) / g.outputWidth, 0, 0, *width, *height, warped.data());
         working.swap(warped);
+        outW = g.outputWidth;
+        outH = g.outputHeight;
+        outScale = static_cast<double>(*width) / g.outputWidth;
     }
+    Finishing finishing;
+    if (finishingOf(graph, &finishing)) applyFinishing(finishing, working.data(), *width, *height, outW, outH, 0, 0, outScale);
     out->resize(working.size());
     color::workingToDisplay8(working.data(), out->data(), working.size() / 4, color::Display::Srgb);
     return true;

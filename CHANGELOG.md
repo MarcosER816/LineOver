@@ -2,6 +2,21 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 10 — Effects and detail (0.10.0)
+
+### Added
+
+- Detail → Sharpen: Amount, Radius (0.5–3 px), Detail and Masking. Hold a second finger on
+  the Masking slider to see the mask in grey (white = sharpened, black = protected).
+- Detail → Noise reduction: Luminance (with Detail and Contrast) and Color.
+- Effects → Clarity (midtone local contrast), Texture (fine detail), Dehaze (removes haze;
+  negative values add it).
+- Effects → Vignette (after the crop: Amount, Midpoint, Roundness, Feather, Highlights) and
+  Grain (Amount, Size, Roughness; stronger in the midtones).
+- A 1:1 button on Sharpen, Noise reduction and Texture zooms to 100 % to judge them.
+- The canvas, the zoomed-in tiles, thumbnails and the full-resolution export all show the same
+  result: radii follow the resolution.
+
 ## Stage 9 follow-up — Lens profiles (0.9.1)
 
 ### Added

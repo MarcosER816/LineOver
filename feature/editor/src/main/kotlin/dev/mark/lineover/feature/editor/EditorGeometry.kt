@@ -7,6 +7,7 @@ import dev.mark.lineover.core.model.ComposedGeometry
 import dev.mark.lineover.core.model.CropAspect
 import dev.mark.lineover.core.model.CropMath
 import dev.mark.lineover.core.model.CropOverlay
+import dev.mark.lineover.core.model.DetailTools
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.GeometryAdjustments
 import dev.mark.lineover.core.model.GeometryMath
@@ -152,7 +153,7 @@ internal val EditorState.geometryOp: OpParams.Geometry?
 /** [next] as the Crop / Optics values, the background ops rebuilt with it first. */
 internal fun EditorState.withGeometry(next: GeometryAdjustments): EditorState {
     val updated = copy(geometry = next)
-    return updated.copy(graph = graph.withBackgroundOps(editOps(light, color, grade, updated.geometryOp)))
+    return updated.copy(graph = graph.withBackgroundOps(editOps(light, color, grade, updated.geometryOp, detail)))
 }
 
 /** The composed geometry of the current values (null without a photo). */
@@ -176,6 +177,10 @@ internal val EditorState.cropMode: CropMode?
 internal val EditorState.canvasGraph: EditGraph
     get() {
         val shown = shownGraph
+        // Sharpen's Masking held with a second finger: the mask in grey (never recorded).
+        if (sharpenMaskPreview && selectedToolId == DetailTools.SHARPEN && preview == null) {
+            return shown.withBackgroundOps(editOps(light, color, grade, geometryOp, detail, sharpenMask = true))
+        }
         val mode = cropMode ?: return shown
         if (preview != null) return shown
         val (w, h) = sourceSize ?: return shown
@@ -184,7 +189,7 @@ internal val EditorState.canvasGraph: EditGraph
                 CropMode.Guides -> null
                 else -> frameOnly(geometry).toOp(w, h)
             }
-        return shown.withBackgroundOps(editOps(light, color, grade, op))
+        return shown.withBackgroundOps(editOps(light, color, grade, op, detail))
     }
 
 private fun frameOnly(g: GeometryAdjustments) =

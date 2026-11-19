@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 namespace lo {
 namespace opsutil {
@@ -77,6 +78,31 @@ inline void toLab(const double rgb[3], double lab[3]) {
     mul(kRgbToLms, rgb, l);
     for (double& x : l) x = std::cbrt(x);
     mul(kLmsToLab, l, lab);
+}
+
+// Mean over the (2r+1)^2 window clipped to the image, separably (the clipped window's
+// mean is the mean over rows of the row means, as the column count is the same in
+// every row). In place on `data`.
+inline void boxMean(std::vector<double>& data, int w, int h, int r) {
+    std::vector<double> prefix(static_cast<std::size_t>(w) + 1);
+    for (int y = 0; y < h; ++y) {
+        double* line = &data[static_cast<std::size_t>(y) * w];
+        prefix[0] = 0.0;
+        for (int x = 0; x < w; ++x) prefix[x + 1] = prefix[x] + line[x];
+        for (int x = 0; x < w; ++x) {
+            const int x0 = std::max(x - r, 0), x1 = std::min(x + r + 1, w);
+            line[x] = (prefix[x1] - prefix[x0]) / (x1 - x0);
+        }
+    }
+    std::vector<double> column(static_cast<std::size_t>(h) + 1);
+    for (int x = 0; x < w; ++x) {
+        column[0] = 0.0;
+        for (int y = 0; y < h; ++y) column[y + 1] = column[y] + data[static_cast<std::size_t>(y) * w + x];
+        for (int y = 0; y < h; ++y) {
+            const int y0 = std::max(y - r, 0), y1 = std::min(y + r + 1, h);
+            data[static_cast<std::size_t>(y) * w + x] = (column[y1] - column[y0]) / (y1 - y0);
+        }
+    }
 }
 
 inline float spow(float v, float p) { return std::copysign(std::pow(std::fabs(v), p), v) * (v == 0.f ? 0.f : 1.f); }

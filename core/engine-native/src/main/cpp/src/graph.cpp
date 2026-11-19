@@ -2,6 +2,7 @@
 
 #include "lineover/geometry.h"
 #include "lineover/color_ops.h"
+#include "lineover/detail.h"
 #include "lineover/grade_ops.h"
 #include "lineover/light.h"
 
@@ -520,6 +521,21 @@ std::unique_ptr<OpList> buildOps(const Graph& graph, std::string* skipped) {
                     list->add(makeVignetting(amount, static_cast<float>(param("vignetteMid", 50.0)), static_cast<float>(w / h),
                                              profile));
                 }
+            } else if (params.op == "sharpen") {
+                list->add(makeSharpen(static_cast<float>(param("amount", 0.0)), static_cast<float>(param("radius", 1.0)),
+                                      static_cast<float>(param("detail", 25.0)), static_cast<float>(param("masking", 0.0)),
+                                      param("showMask", 0.0) > 0.5));
+            } else if (params.op == "noise_reduction") {
+                list->add(makeNoiseReduction(static_cast<float>(param("luminance", 0.0)), static_cast<float>(param("detail", 50.0)),
+                                             static_cast<float>(param("contrast", 0.0)), static_cast<float>(param("color", 0.0))));
+            } else if (params.op == "clarity") {
+                list->add(makeClarity(static_cast<float>(param("amount", 0.0))));
+            } else if (params.op == "texture") {
+                list->add(makeTexture(static_cast<float>(param("amount", 0.0))));
+            } else if (params.op == "dehaze") {
+                list->add(makeDehaze(static_cast<float>(param("amount", 0.0))));
+            } else if (params.op == "post_crop_vignette" || params.op == "grain") {
+                // Stage 10: output-space finishing, applied where pixels are sampled (detail.h).
             } else if (skipped != nullptr) {
                 if (!skipped->empty()) skipped->push_back(',');
                 skipped->append(params.op);

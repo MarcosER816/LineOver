@@ -85,6 +85,8 @@ object EditorTags {
     const val SPINNER = "tile-spinner"
     const val SEARCH_FIELD = "tool-search-field"
     const val LIGHT_PANEL = "light-panel"
+    const val DETAIL_PANEL = "detail-panel"
+    const val ONE_TO_ONE = "one-to-one"
     const val LIGHT_AUTO = "light-auto"
     const val LIGHT_SWIPE = "light-swipe-mode"
     const val BEFORE_LABEL = "before-label"

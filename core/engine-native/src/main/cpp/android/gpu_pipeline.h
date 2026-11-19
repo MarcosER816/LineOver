@@ -7,10 +7,12 @@
 #include <list>
 #include <map>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
 #include "lineover/color.h"
+#include "lineover/detail.h"
 #include "lineover/ops.h"
 
 namespace lo::android {
@@ -21,6 +23,14 @@ struct OpPassInputs {
     GLuint guided = 0;                     // RG32F guided-filter coefficients (createGuidedTexture)
     int guidedWidth = 1;
     int guidedHeight = 1;
+    // Stage 10: target pixels per full-resolution pixel, and the preview's fields
+    // (createFieldTextures) with the haze model's airlight.
+    float scale = 1.f;
+    GLuint fields = 0;  // RGBA32F clarity a, b, texture a, b
+    int fieldsWidth = 1, fieldsHeight = 1;
+    GLuint haze = 0;    // RG32F a, b
+    int hazeWidth = 1, hazeHeight = 1;
+    float air[3] = {1.f, 1.f, 1.f};
 };
 
 // The geometry of one draw (Stage 9, kGeometrySource): matrices row major.
@@ -33,12 +43,19 @@ struct GeometryDraw {
     float tcaRed[3] = {0, 0, 0};                      // lens profile TCA (tv, tc, tb)
     float tcaBlue[3] = {0, 0, 0};
     float srcRect[4] = {0, 0, 1, 1};                  // the texture's rect, normalised source coordinates
+    float ownRect[4] = {0, 0, 1, 1};                  // a tile's own rect (the texture may carry an apron)
     float drawRect[4] = {0, 0, 1, 1};                 // the drawn quad, output pixels
     bool clampTile = false;                           // a tile: clamp taps, discard outside its rect
 };
 
 struct DisplayOptions {
     bool clipping = false;  // paint clipped highlights clipHi and crushed shadows clipLo
+    // The texture's part drawn in the quad (plain path; a tile with an apron draws its middle).
+    float texRect[4] = {0.f, 0.f, 1.f, 1.f};
+    // Stage 10 output-space finishing (vignette, grain) and the output's size in
+    // full-resolution pixels (the geometry's output size, else the image's).
+    Finishing finishing;
+    float outSize[2] = {1.f, 1.f};
 };
 
 class GpuPipeline {
@@ -70,7 +87,8 @@ public:
                    const DisplayOptions& options = {}, const GeometryDraw* geometry = nullptr);
     // Renders the geometry of `texture` into `target` (width x height, the whole output at
     // that size), working-space values: the output's histogram and the GPU self test.
-    bool warp(GLuint texture, const GeometryDraw& geometry, GLuint target, int width, int height, std::string* error);
+    bool warp(GLuint texture, const GeometryDraw& geometry, GLuint target, int width, int height, std::string* error,
+              const Finishing& finishing = {});
 
     // Starts counting the 256-bin R, G, B, L histogram of `texture` (working space;
     // sRGB display values) into the histogram buffer. False without compute support.
@@ -92,8 +110,11 @@ public:
     bool readRegion(GLuint texture, int x, int y, int width, int height, float* out);
 
 private:
-    GLuint programFor(const std::string& declarations, const std::string& body, std::string* error);
-    GLuint scratch(int width, int height);
+    // A single-pass op (`vec4 lo_op(vec4 c)`) or, with `pass`, one pass of a multi-pass op
+    // (`vec4 lo_pass()`).
+    GLuint programFor(const std::string& declarations, const std::string& body, bool pass, std::string* error);
+    // Scratch texture `slot` of the size (runOps keeps up to five alive at once).
+    GLuint scratch(int width, int height, int slot);
     // An RGBA32F texture holding an op's LUT (cached by content, most recent first).
     GLuint lutTexture(const float* rgba, int width, int height);
     static constexpr std::size_t kMaxLuts = 8;
@@ -106,6 +127,7 @@ private:
     GLuint displayProgram_ = 0;
     GLuint displayGeomProgram_ = 0;
     GLuint warpProgram_ = 0;
+    GLuint grainTable_ = 0;  // RG8 grainGradientTable, read by the finishing
     std::string histogramError_;
     GLuint histogramProgram_ = 0;
     GLuint histogramBuffer_ = 0;
@@ -114,7 +136,7 @@ private:
     std::size_t packBytes_ = 0;
     int packWidth_ = 0, packHeight_ = 0;
     std::map<std::string, GLuint> opPrograms_;
-    std::map<std::pair<int, int>, GLuint> scratch_;
+    std::map<std::tuple<int, int, int>, GLuint> scratch_;
 };
 
 }  // namespace lo::android

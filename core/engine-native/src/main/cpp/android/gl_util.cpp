@@ -154,6 +154,43 @@ GLuint createGuidedTexture(const GuidedCoefficients* coefficients) {
     return texture;
 }
 
+namespace {
+GLuint nearestFloatTexture(GLenum internal, GLenum format, int width, int height, const float* data) {
+    GLuint texture = 0;
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    glTexImage2D(GL_TEXTURE_2D, 0, internal, width, height, 0, format, GL_FLOAT, data);
+    return texture;
+}
+}  // namespace
+
+void createFieldTextures(const DetailFields* fields, GLuint* detail, GLuint* haze) {
+    const bool has = fields != nullptr && !fields->clarity.ab.empty() && fields->clarity.width == fields->texture.width &&
+                     fields->clarity.height == fields->texture.height && !fields->haze.ab.empty();
+    if (!has) {
+        const float identity[4] = {1.f, 0.f, 1.f, 0.f};
+        const float none[2] = {0.f, 0.f};
+        *detail = nearestFloatTexture(GL_RGBA32F, GL_RGBA, 1, 1, identity);
+        *haze = nearestFloatTexture(GL_RG32F, GL_RG, 1, 1, none);
+        return;
+    }
+    const std::size_t n = static_cast<std::size_t>(fields->clarity.width) * fields->clarity.height;
+    std::vector<float> packed(4 * n);
+    for (std::size_t i = 0; i < n; ++i) {
+        packed[4 * i] = fields->clarity.ab[2 * i];
+        packed[4 * i + 1] = fields->clarity.ab[2 * i + 1];
+        packed[4 * i + 2] = fields->texture.ab[2 * i];
+        packed[4 * i + 3] = fields->texture.ab[2 * i + 1];
+    }
+    *detail = nearestFloatTexture(GL_RGBA32F, GL_RGBA, fields->clarity.width, fields->clarity.height, packed.data());
+    *haze = nearestFloatTexture(GL_RG32F, GL_RG, fields->haze.width, fields->haze.height, fields->haze.ab.data());
+}
+
 bool hasExtension(const char* extensions, const char* name) {
     if (extensions == nullptr) return false;
     const std::size_t n = std::strlen(name);

@@ -287,10 +287,42 @@ Native **C++17, OpenGL ES 3**, in `:core:engine-native`; Kotlin reaches it throu
   terms, TCA on the distorted radius, "pa" vignetting). The profile is part of the geometry
   op (`lensDistortion`, `lensTcaRed` / `lensTcaBlue`, `vignetteProfile`).
 
+### Detail and effects (Stage 10)
+
+- **Ops** (`detail.h/.cpp`; formulas `tools/golden/detail_reference.py`, Dehaze on
+  `dehaze_reference.py`, He et al. 2009 with guided-filter refinement): Noise reduction
+  (a-trous B3 wavelet soft threshold on Y', 4 levels; chroma bilateral in Y'CbCr), Clarity and
+  Texture (log-luminance detail against the guided-filter base, radius 2 % / 0.3 %), Dehaze
+  (dark channel prior; negative adds haze) run right after the geometry's vignetting, on the
+  image as decoded; Sharpen (unsharp mask on encoded luminance, Sobel masking) runs last in
+  source space. Post-crop Vignette and Grain are **output-space finishing**
+  (`Finishing`, `kFinishingGlsl`): the display and warp programs apply them after sampling,
+  the CPU export after the warp, thumbnails after their warp.
+- **Scale.** `OpRegion::scale` / `u_scale` = buffer pixels per full-resolution pixel; every
+  radius is in full-resolution pixels and multiplied by it, so the preview matches the
+  downsampled export (ctest `preview_matches_the_downsampled_export`: PSNR 40.9 dB).
+- **Fields once per preview** (`computeDetailFields`, in `Engine::setPreview` beside the
+  Highlights / Shadows coefficients): Clarity / Texture guided coefficients and the haze model
+  (airlight, refined dark channel coefficients). They do not depend on the sliders, so a
+  slider move only reruns the passes (the brief's "compute base layers once" rule).
+- **The original.** Clarity, Texture and Dehaze read the image as it entered the first of them
+  (`Op::readsOriginal`; CPU `OpRegion::original`, GPU `lo_original()`).
+- **Multi-pass ops.** `GpuOpContext::addPass` (Sharpen: 3 passes, Noise reduction: up to 6):
+  each pass reads `u_source` (the op's input), `u_prev`, `u_pass0` and `u_original` with
+  `lo_at` / `lo_bilinear`; `runOps` picks scratch slots nothing still reads.
+- **Tile aprons.** `Op::apron()` (full-resolution pixels, summed over the list): a sharp tile's
+  texture carries its neighbours' pixels that far (clipped to the image; a missing neighbour
+  is clamped and the tile rebuilt when it arrives) and draws only its own rect (`texRect` /
+  `ownRect`). Exports grow the footprint by the apron and go through the identity geometry
+  when there is no geometry but spatial or finishing ops.
+- **Editor**: `DetailAdjustments` / `DetailParam` (`:core:model`); `DetailPanel`; a second
+  finger on Sharpen's Masking puts `showMask` in the canvas graph only; the 1:1 chip zooms the
+  canvas to 100 % at the middle (`CanvasTransform.oneToOneTarget`).
+
 `core/engine-native/src/main/cpp`:
 
 ```
-include/lineover/   public C++ API (portable): color, ops, light, color_ops, grade_ops, graph, tiling, tile_store, geometry, lines, thumbnail
+include/lineover/   public C++ API (portable): color, ops, light, color_ops, grade_ops, graph, tiling, tile_store, geometry, lines, thumbnail, detail
 src/                portable engine core                         -> lo_engine (static)
 third_party/zstd    zstd 1.5.7 sources (BSD), spilled tiles      -> lo_zstd (static)
 android/            render thread, EGL, GL pipeline, C API (lo_api.h), JNI -> liblineover_engine.so

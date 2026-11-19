@@ -114,6 +114,10 @@ private fun ToolPanelContent(
             GradePanel(id, state, onIntent, onClose = close, wide = wide)
         }
 
+        id in DETAIL_TOOLS -> {
+            DetailPanel(id, state, onIntent, onClose = close)
+        }
+
         id in CROP_TOOLS -> {
             CropPanel(id, state, onIntent, onClose = close)
         }

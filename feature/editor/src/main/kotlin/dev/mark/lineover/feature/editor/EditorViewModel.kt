@@ -13,6 +13,8 @@ import dev.mark.lineover.core.io.project.DocumentLoad
 import dev.mark.lineover.core.io.project.ProjectLibrary
 import dev.mark.lineover.core.model.ColorAdjustments
 import dev.mark.lineover.core.model.CropOverlay
+import dev.mark.lineover.core.model.DetailAdjustments
+import dev.mark.lineover.core.model.DetailParam
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.EditHistory
 import dev.mark.lineover.core.model.GeometryAdjustments
@@ -163,6 +165,12 @@ data class EditorState(
     val grade: GradeAdjustments = GradeAdjustments(),
     /** Crop and Optics (Stage 9): one geometry op, applied first. */
     val geometry: GeometryAdjustments = GeometryAdjustments(),
+    /** Detail and Effects (Stage 10). */
+    val detail: DetailAdjustments = DetailAdjustments(),
+    /** A second finger is down on Sharpen's Masking slider: the canvas shows the mask in grey. */
+    val sharpenMaskPreview: Boolean = false,
+    /** Each increment asks the canvas for the 1:1 toggle (100 % at the middle, or back to fit). */
+    val oneToOneRequest: Int = 0,
     /** The composition overlay shown while a crop handle or the straighten ruler is dragged. */
     val cropOverlay: CropOverlay = CropOverlay.Thirds,
     val cropDragging: Boolean = false,
@@ -388,6 +396,20 @@ sealed interface EditorIntent {
     ) : EditorIntent
 
     data object TargetedEnd : EditorIntent
+
+    /** Detail and Effects (Stage 10): one slider. */
+    data class SetDetail(
+        val param: DetailParam,
+        val value: Float,
+    ) : EditorIntent
+
+    /** The second finger on Sharpen's Masking slider: the grey mask preview while it stays. */
+    data class SharpenMaskPreview(
+        val on: Boolean,
+    ) : EditorIntent
+
+    /** The detail tools' 1:1 button. */
+    data object ToggleOneToOne : EditorIntent
 
     /** Curves and grading (Stage 7): any change of [GradeAdjustments]. */
     class EditGrade(
@@ -886,6 +908,9 @@ class EditorViewModel(
             is EditorIntent.SetPosterize -> reduce { withColor(color.copy(posterize = intent.levels.coerceIn(0, MAX_POSTERIZE))) }
             is EditorIntent.SetThreshold -> reduce { withColor(color.copy(threshold = intent.level?.coerceIn(0f, 1f))) }
             is EditorIntent.EditGrade -> reduce { withGrade(intent.edit(grade)) }
+            is EditorIntent.SetDetail -> reduce { withDetail(detail.with(intent.param, intent.value)) }
+            is EditorIntent.SharpenMaskPreview -> reduce { copy(sharpenMaskPreview = intent.on) }
+            is EditorIntent.ToggleOneToOne -> setState { copy(oneToOneRequest = oneToOneRequest + 1) }
             is EditorIntent.AutoLevels -> autoLevels()
             else -> onPickIntent(intent)
         }
@@ -906,10 +931,13 @@ class EditorViewModel(
     private fun PickMode.toggle(mode: PickMode) = if (this == mode) PickMode.None else mode
 
     private fun EditorState.withColor(next: ColorAdjustments): EditorState =
-        copy(color = next, graph = graph.withBackgroundOps(editOps(light, next, grade, geometryOp)))
+        copy(color = next, graph = graph.withBackgroundOps(editOps(light, next, grade, geometryOp, detail)))
 
     private fun EditorState.withGrade(next: GradeAdjustments): EditorState =
-        copy(grade = next, graph = graph.withBackgroundOps(editOps(light, color, next, geometryOp)))
+        copy(grade = next, graph = graph.withBackgroundOps(editOps(light, color, next, geometryOp, detail)))
+
+    private fun EditorState.withDetail(next: DetailAdjustments): EditorState =
+        copy(detail = next, graph = graph.withBackgroundOps(editOps(light, color, grade, geometryOp, next)))
 
     private fun autoLevels() {
         val percentiles = state.value.canvas?.autoLevels()
@@ -1056,7 +1084,7 @@ class EditorViewModel(
         }
 
     private fun EditorState.withLight(next: LightAdjustments): EditorState =
-        copy(light = next, graph = graph.withBackgroundOps(editOps(next, color, grade, geometryOp)))
+        copy(light = next, graph = graph.withBackgroundOps(editOps(next, color, grade, geometryOp, detail)))
 
     private fun autoLight() {
         val result = state.value.canvas?.autoLight()

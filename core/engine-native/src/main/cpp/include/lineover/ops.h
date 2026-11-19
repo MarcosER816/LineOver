@@ -45,6 +45,12 @@ enum class OpType : int {
     GradientMap = 24,
     Calibration = 25,
     Vignetting = 26,
+    // Stage 10
+    NoiseReduction = 27,
+    Clarity = 28,
+    Texture = 29,
+    Dehaze = 30,
+    Sharpen = 31,
 };
 
 // Guided-filter coefficients of an image's log2 luminance, at preview resolution:
@@ -55,6 +61,16 @@ struct GuidedCoefficients {
     std::vector<float> ab;
 };
 
+// Image-wide fields of the unedited preview for Clarity, Texture and Dehaze (Stage 10,
+// detail.h): fast guided-filter coefficients (base = a * guide + b), each at preview size,
+// and the haze model's atmospheric light (encoded RGB).
+struct DetailFields {
+    GuidedCoefficients clarity;  // guide: log2 luminance
+    GuidedCoefficients texture;  // guide: log2 luminance
+    GuidedCoefficients haze;     // guide: encoded grey; a * grey + b = refined dark channel of I / A
+    float airlight[3] = {1.f, 1.f, 1.f};
+};
+
 // Where a buffer of pixels lies in the image, for ops that read image-wide data.
 struct OpRegion {
     int width = 0;   // pixels of the buffer
@@ -63,6 +79,12 @@ struct OpRegion {
     // (0, 0, 1, 1). Pixel (i, j) has image uv = rect.xy + ((i, j) + 0.5) / size * rect.zw.
     float rect[4] = {0.f, 0.f, 1.f, 1.f};
     const GuidedCoefficients* coefficients = nullptr;  // null: none yet (base = L)
+    // Stage 10: buffer pixels per full-resolution pixel (radii are given in full-resolution
+    // pixels: 1 at export, < 1 on the preview and zoomed-out tiles).
+    float scale = 1.f;
+    const DetailFields* fields = nullptr;  // null: Clarity / Texture / Dehaze do nothing
+    // The buffer as it entered the first op that reads the original (OpList fills it).
+    const float* original = nullptr;
 
     std::size_t pixels() const { return static_cast<std::size_t>(width) * static_cast<std::size_t>(height); }
 };
@@ -87,6 +109,15 @@ public:
         (void)name;
         (void)values;
         (void)count;
+    }
+    // A multi-pass op (Stage 10): pass k is a full-screen draw into a buffer the size of the
+    // target; `body` is the body of `vec4 lo_pass()`, which reads u_source (the op's input),
+    // u_prev (pass k - 1's output) and u_original with lo_at(sampler, ivec2) (clamped) or
+    // lo_bilinear(sampler, vec2 pixel position), at lo_px(). The last pass is the op's output.
+    // Uniforms set by the op apply to every pass.
+    virtual void addPass(const char* declarations, const char* body) {
+        (void)declarations;
+        (void)body;
     }
     // A lookup table the shader reads with lo_lut1(row, e) / lo_lut3(row, t): `width` x
     // `height` RGBA float texels, row-major (the backend caches it by content).
@@ -113,6 +144,12 @@ public:
     virtual void cpuRefRegion(const float* in, float* out, const OpRegion& region) const {
         cpuRef(in, out, region.pixels());
     }
+    // Stage 10. How far (full-resolution pixels) the op reads around a pixel: tiles carry an
+    // apron this wide (summed over the list) so they match the whole image.
+    virtual int apron() const { return 0; }
+    // True when the op reads the image as it entered the first such op (OpRegion::original,
+    // GLSL lo_original()): Clarity, Texture and Dehaze take their base from it.
+    virtual bool readsOriginal() const { return false; }
 };
 
 // Bilinear sample of `c` at image uv (pixel centres at (i + 0.5) / size, edges clamped).
@@ -134,8 +171,11 @@ public:
     bool isIdentity() const;
     // Applies every op's cpuRef in order (in == out is allowed).
     void cpuRef(const float* in, float* out, std::size_t pixels) const;
-    // Applies every op's cpuRefRegion in order (in == out is allowed).
+    // Applies every op's cpuRefRegion in order (in == out is allowed). Before the first op
+    // that readsOriginal() the buffer is copied and handed to the rest as region.original.
     void cpuRefRegion(const float* in, float* out, const OpRegion& region) const;
+    // The sum of the ops' aprons (full-resolution pixels).
+    int apron() const;
 
 private:
     std::vector<std::unique_ptr<Op>> ops_;

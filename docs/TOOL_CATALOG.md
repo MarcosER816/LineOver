@@ -1,6 +1,6 @@
 # Tool catalog
 
-Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 45 done.**
+Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 52 done.**
 
 - **id**: stable identifier (`<group>.<tool>`), used in code, favourites and project files. Never renamed.
 - **UI slot**: where the tool lives. Slots are reserved now and are never moved (rule R9); a stage only *fills* slots.
@@ -119,18 +119,18 @@ The Favorites strip shows the tools the user pinned; it has no tools of its own.
 
 | id | Name | Category | UI slot | Stage | Status |
 | --- | --- | --- | --- | --- | --- |
-| `effects.texture` | Texture | Effects | `cat/Effects/01` | 10 | reserved |
-| `effects.clarity` | Clarity | Effects | `cat/Effects/02` | 10 | reserved |
-| `effects.dehaze` | Dehaze | Effects | `cat/Effects/03` | 10 | reserved |
-| `effects.vignette` | Vignette | Effects | `cat/Effects/04` | 10 | reserved |
-| `effects.grain` | Grain | Effects | `cat/Effects/05` | 10 | reserved |
+| `effects.texture` | Texture | Effects | `cat/Effects/01` | 10 | done |
+| `effects.clarity` | Clarity | Effects | `cat/Effects/02` | 10 | done |
+| `effects.dehaze` | Dehaze | Effects | `cat/Effects/03` | 10 | done |
+| `effects.vignette` | Vignette | Effects | `cat/Effects/04` | 10 | done |
+| `effects.grain` | Grain | Effects | `cat/Effects/05` | 10 | done |
 
 ## Detail
 
 | id | Name | Category | UI slot | Stage | Status |
 | --- | --- | --- | --- | --- | --- |
-| `detail.sharpen` | Sharpen | Detail | `cat/Detail/01` | 10 | reserved |
-| `detail.noise_reduction` | Noise reduction | Detail | `cat/Detail/02` | 10 | reserved |
+| `detail.sharpen` | Sharpen | Detail | `cat/Detail/01` | 10 | done |
+| `detail.noise_reduction` | Noise reduction | Detail | `cat/Detail/02` | 10 | done |
 
 ## Optics
 

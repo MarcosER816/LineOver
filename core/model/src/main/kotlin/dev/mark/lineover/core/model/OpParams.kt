@@ -325,4 +325,93 @@ sealed interface OpParams {
                     (lensDistortion + lensTcaRed + lensTcaBlue + vignetteProfile).all { it == 0.0 } &&
                     matrix == listOf(sourceWidth.toDouble(), 0.0, 0.0, 0.0, sourceHeight.toDouble(), 0.0, 0.0, 0.0, 1.0)
     }
+
+    /**
+     * Sharpen (Stage 10): unsharp mask on encoded luminance. [amount] 0..150, [radius] 0.5..3
+     * full-resolution pixels, [detail] 0..100 (how much of the wide halo passes), [masking]
+     * 0..100 (Sobel edge mask: flat areas are protected). [showMask] 1 shows the mask in grey
+     * (the canvas only, while the second finger holds Masking; never saved as 1).
+     */
+    @Serializable
+    @SerialName("sharpen")
+    data class Sharpen(
+        val amount: Float,
+        val radius: Float = 1f,
+        val detail: Float = 25f,
+        val masking: Float = 0f,
+        val showMask: Float = 0f,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = amount == 0f && showMask == 0f
+    }
+
+    /**
+     * Noise reduction (Stage 10): luminance by an a-trous wavelet soft threshold (4 levels;
+     * [detail] keeps the finest two, [contrast] puts back the coarse ones' loss), colour by a
+     * chroma bilateral in Y'CbCr. All 0..100.
+     */
+    @Serializable
+    @SerialName("noise_reduction")
+    data class NoiseReduction(
+        val luminance: Float,
+        val detail: Float = 50f,
+        val contrast: Float = 0f,
+        val color: Float = 0f,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = luminance == 0f && contrast == 0f && color == 0f
+    }
+
+    /** Clarity (−100..100): midtone local contrast against a guided-filter base (radius 2 %). */
+    @Serializable
+    @SerialName("clarity")
+    data class Clarity(
+        val amount: Float,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = amount == 0f
+    }
+
+    /** Texture (−100..100): the small-scale band (guided filter, radius 0.3 %). */
+    @Serializable
+    @SerialName("texture")
+    data class Texture(
+        val amount: Float,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = amount == 0f
+    }
+
+    /** Dehaze (−100..100): He et al. dark channel prior; negative values add haze. */
+    @Serializable
+    @SerialName("dehaze")
+    data class Dehaze(
+        val amount: Float,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = amount == 0f
+    }
+
+    /**
+     * Post-crop vignette (Stage 10), applied to the output (after the geometry): [amount]
+     * −100..100 (darken / lighten), [midpoint] 0..100, [roundness] −100 (rectangle) .. 100
+     * (circle), [feather] 0..100, [highlights] 0..100 (bright areas kept when darkening).
+     */
+    @Serializable
+    @SerialName("post_crop_vignette")
+    data class PostCropVignette(
+        val amount: Float,
+        val midpoint: Float = 50f,
+        val roundness: Float = 0f,
+        val feather: Float = 50f,
+        val highlights: Float = 0f,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = amount == 0f
+    }
+
+    /** Film grain (Stage 10), on the output: [amount], [size], [roughness] 0..100, luminance-weighted. */
+    @Serializable
+    @SerialName("grain")
+    data class Grain(
+        val amount: Float,
+        val size: Float = 25f,
+        val roughness: Float = 50f,
+    ) : OpParams {
+        override val isIdentity: Boolean get() = amount == 0f
+    }
 }

@@ -144,6 +144,16 @@ class EngineGpuTest {
         GoldenAssert.assertMatches(gpu(EXPOSURE_MINUS_1), expected, "gpu_exposure_minus1_srgb8", Tolerance.GPU_VS_CPU, diffDir)
     }
 
+    /** Two ops in one graph (the scratch ping-pong of runOps): -0.5 twice is the -1 golden. */
+    @Test
+    fun gpuOpChainMatchesTheCpuReference() {
+        val expected = premultiplied8(npy("exposure_test/minus1_srgb_display_f32.npy"))
+        val graph =
+            """{"schemaVersion":1,"layers":[{"id":"background","ops":[{"op":"exposure_test","stops":-0.5},""" +
+                """{"op":"exposure_test","stops":-0.5}]}]}"""
+        GoldenAssert.assertMatches(gpu(graph), expected, "gpu_op_chain_srgb8", Tolerance.GPU_VS_CPU, diffDir)
+    }
+
     /** Stage 5: each Light op (middle golden setting) on the HDR scene, GPU vs reference. */
     private fun checkLight(
         name: String,
@@ -299,6 +309,52 @@ class EngineGpuTest {
     fun gpuCalibrationMatchesTheReference() =
         checkGrade("calibration", """{"op":"calibration","hue":[0,-30,40],"saturation":[30,20,-20]}""", CHART)
 
+    /**
+     * Stage 10: Detail and Effects through the canvas's shaders (multi-pass Sharpen and Noise
+     * reduction, Clarity / Texture / Dehaze on the preview's fields, Vignette and Grain in the
+     * display pass) vs tools/golden/detail_reference.py, max 3/255.
+     */
+    private fun checkDetail(
+        name: String,
+        op: String,
+        input: String = SCENE,
+    ) {
+        val expected = premultiplied8(npy("${name}_gpu_srgb_display_f32.npy"))
+        val graph = """{"schemaVersion":1,"layers":[{"id":"background","ops":[$op]}]}"""
+        GoldenAssert.assertMatches(gpu(graph, input), expected, "gpu_${name.substringAfter('/')}_srgb8", Tolerance.GPU_VS_CPU, diffDir)
+    }
+
+    @Test
+    fun gpuSharpenMatchesTheReference() =
+        checkDetail("detail/sharpen", """{"op":"sharpen","amount":150.0,"radius":2.5,"detail":80.0,"masking":40.0}""")
+
+    @Test
+    fun gpuNoiseReductionMatchesTheReference() =
+        checkDetail(
+            "detail/noise_reduction",
+            """{"op":"noise_reduction","luminance":60.0,"detail":50.0,"contrast":0.0,"color":25.0}""",
+        )
+
+    @Test
+    fun gpuClarityMatchesTheReference() = checkDetail("effects/clarity", """{"op":"clarity","amount":60.0}""")
+
+    @Test
+    fun gpuTextureMatchesTheReference() = checkDetail("effects/texture", """{"op":"texture","amount":70.0}""")
+
+    /** Dehaze 100 is He et al. 2009 (tools/golden/dehaze_reference.py) on the hazy scene. */
+    @Test
+    fun gpuDehazeMatchesTheReference() = checkDetail("effects/dehaze", """{"op":"dehaze","amount":100.0}""", HAZY)
+
+    @Test
+    fun gpuPostCropVignetteMatchesTheReference() =
+        checkDetail(
+            "effects/vignette",
+            """{"op":"post_crop_vignette","amount":-60.0,"midpoint":50.0,"roundness":0.0,"feather":50.0,"highlights":0.0}""",
+        )
+
+    @Test
+    fun gpuGrainMatchesTheReference() = checkDetail("effects/grain", """{"op":"grain","amount":60.0,"size":30.0,"roughness":40.0}""")
+
     /** The compute-shader histogram against numpy (reference.histogram_srgb): within 1 count per bin. */
     @Test
     fun gpuHistogramMatchesNumpy() {
@@ -327,6 +383,7 @@ class EngineGpuTest {
         const val PATTERN = "input/pattern_rec2020_f32.npy"
         const val SCENE = "input/scene_rec2020_f32.npy"
         const val CHART = "input/colors_rec2020_f32.npy"
+        const val HAZY = "input/hazy_rec2020_f32.npy"
         const val IDENTITY = """{"schemaVersion":1,"layers":[{"id":"background","ops":[{"op":"identity"}]}]}"""
         const val EXPOSURE_MINUS_1 = """{"schemaVersion":1,"layers":[{"id":"background","ops":[{"op":"exposure_test","stops":-1.0}]}]}"""
     }
