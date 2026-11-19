@@ -25,14 +25,22 @@ import java.io.IOException
 object ExportEncoders {
     private const val HEIF_TIMEOUT_MS = 120_000L
 
+    /** The EXIF block, the tags (TIFF text) and an Ultra HDR gain map. */
+    class Metadata(
+        val exif: ByteArray?,
+        val tags: Map<String, String>,
+        val gainmap: Gainmap?,
+    )
+
     fun encode(
         image: ExportImage,
         settings: ExportSettings,
         file: File,
-        exif: ByteArray?,
-        tags: Map<String, String>,
-        gainmap: Gainmap?,
+        metadata: Metadata,
     ) {
+        val exif = metadata.exif
+        val tags = metadata.tags
+        val gainmap = metadata.gainmap
         file.parentFile?.mkdirs()
         when (settings.format) {
             ExportFormat.Png -> {
@@ -57,7 +65,9 @@ object ExportEncoders {
                 withBitmap(image, settings) { bitmap ->
                     val format = if (settings.webpLossless) Bitmap.CompressFormat.WEBP_LOSSLESS else Bitmap.CompressFormat.WEBP_LOSSY
                     val bytes = compress(bitmap, format, if (settings.webpLossless) LOSSLESS_EFFORT else settings.quality)
-                    file.writeBytes(WebpChunks.rewrite(bytes, bitmap.width, bitmap.height, ExportImage.iccProfile(settings.colorSpace), exif))
+                    file.writeBytes(
+                        WebpChunks.rewrite(bytes, bitmap.width, bitmap.height, ExportImage.iccProfile(settings.colorSpace), exif),
+                    )
                 }
             }
 

@@ -90,7 +90,13 @@ class ExportFilesTest {
         assertEquals("(C) Mark", exif.getAttribute(ExifInterface.TAG_COPYRIGHT))
         for (tag in ExportMetadata.CAMERA_TAGS + ExportMetadata.GPS_TAGS) {
             // ExifInterface always writes LightSource = 0 ("unknown") as a compatibility default.
-            if (tag == ExifInterface.TAG_LIGHT_SOURCE) assertEquals("0", exif.getAttribute(tag) ?: "0") else assertNull(tag, exif.getAttribute(tag))
+            if (tag ==
+                ExifInterface.TAG_LIGHT_SOURCE
+            ) {
+                assertEquals("0", exif.getAttribute(tag) ?: "0")
+            } else {
+                assertNull(tag, exif.getAttribute(tag))
+            }
         }
         assertNull(exif.latLong)
     }
@@ -118,6 +124,7 @@ class ExportFilesTest {
     /** SOI, APP0, DQT-ish segment, SOS, scan bytes, EOI, then a second JPEG an MPF entry points to. */
     private fun ultraHdrLike(withIcc: Boolean): Pair<ByteArray, Int> {
         val out = ByteArrayOutputStream()
+
         fun seg(
             marker: Int,
             payload: ByteArray,
@@ -169,12 +176,17 @@ class ExportFilesTest {
         assertArrayEquals(icc, JpegSegments.iccOf(out))
         // Everything from the MPF segment on is the original bytes shifted by the inserted length.
         val shift = out.size - jpeg.size
-        val mpfAt = (0 until jpeg.size - 3).first { jpeg[it] == 'M'.code.toByte() && jpeg[it + 1] == 'P'.code.toByte() && jpeg[it + 2] == 'F'.code.toByte() }
+        val mpfAt =
+            (0 until jpeg.size - 3).first {
+                jpeg[it] == 'M'.code.toByte() && jpeg[it + 1] == 'P'.code.toByte() &&
+                    jpeg[it + 2] == 'F'.code.toByte()
+            }
         assertArrayEquals(jpeg.copyOfRange(mpfAt, jpeg.size), out.copyOfRange(mpfAt + shift, out.size))
         // The MPF offset (relative to its own header) still lands on the second image's SOI.
         val header = mpfAt + shift + 4
-        val rel = ((out[header + 4].toInt() and 0xFF) shl 24) or ((out[header + 5].toInt() and 0xFF) shl 16) or
-            ((out[header + 6].toInt() and 0xFF) shl 8) or (out[header + 7].toInt() and 0xFF)
+        val rel =
+            ((out[header + 4].toInt() and 0xFF) shl 24) or ((out[header + 5].toInt() and 0xFF) shl 16) or
+                ((out[header + 6].toInt() and 0xFF) shl 8) or (out[header + 7].toInt() and 0xFF)
         assertEquals(second + shift, header + rel)
         assertEquals(0xD8, out[header + rel + 1].toInt() and 0xFF)
     }

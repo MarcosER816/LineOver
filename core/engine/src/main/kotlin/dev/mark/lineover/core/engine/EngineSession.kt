@@ -284,6 +284,7 @@ class EngineSession private constructor(
     ): ExportImage {
         val (width, height) = outputSize()
         val image = ExportImage.create(dir, width, height)
+        var rendered = false
         try {
             val tilesX = (width + TileDecoder.TILE - 1) / TileDecoder.TILE
             val tilesY = (height + TileDecoder.TILE - 1) / TileDecoder.TILE
@@ -292,10 +293,10 @@ class EngineSession private constructor(
                 image.putTile(tx * TileDecoder.TILE, ty * TileDecoder.TILE, w, h, pixels)
                 progress(++done / (tilesX * tilesY).toFloat())
             })
+            rendered = true
             return image
-        } catch (e: Throwable) {
-            image.close()
-            throw e
+        } finally {
+            if (!rendered) image.close() // cancelled or failed: free the mapped file now
         }
     }
 

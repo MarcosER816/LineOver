@@ -69,3 +69,35 @@ class ExportSettingsTest {
         assertEquals("LineOver_LineOver.png", ExportSettings(format = ExportFormat.Png).fileName(""))
     }
 }
+
+class ExportEstimateTest {
+    private val sample = ExportEstimate.Sample(jpeg = 0.6f, png = 2f, webp = 0.4f, webpLossless = 1.6f)
+
+    @Test
+    fun tiffIsExactAndSixteenBitsDoubleIt() {
+        val tiff8 = ExportEstimate.bytes(ExportSettings(format = ExportFormat.Tiff), 4000, 3000, sample)
+        val tiff16 = ExportEstimate.bytes(ExportSettings(format = ExportFormat.Tiff, bits = 16).validated(), 4000, 3000, sample)
+        assertEquals(36_000_000L + 8_192, tiff8)
+        assertEquals(72_000_000L + 8_192, tiff16)
+        val png8 = ExportEstimate.bytes(ExportSettings(format = ExportFormat.Png), 4000, 3000, sample)
+        val png16 = ExportEstimate.bytes(ExportSettings(format = ExportFormat.Png, bits = 16).validated(), 4000, 3000, sample)
+        assertEquals(2 * png8, png16)
+    }
+
+    @Test
+    fun lossyFormatsAreSmallerThanJpegAndScaleWithPixels() {
+        val jpeg = ExportEstimate.bytes(ExportSettings(), 4000, 3000, sample)
+        assertTrue(ExportEstimate.bytes(ExportSettings(format = ExportFormat.Heif), 4000, 3000, sample) < jpeg)
+        assertTrue(ExportEstimate.bytes(ExportSettings(format = ExportFormat.Avif), 4000, 3000, sample) < jpeg)
+        assertTrue(ExportEstimate.bytes(ExportSettings(format = ExportFormat.UltraHdr), 4000, 3000, sample) > jpeg)
+        assertEquals(jpeg / 4, ExportEstimate.bytes(ExportSettings(), 2000, 1500, sample), 2)
+        assertEquals("6.6 MB", ExportEstimate.label(jpeg))
+        assertEquals("640 KB", ExportEstimate.label(640_000))
+    }
+
+    private fun assertEquals(
+        expected: Long,
+        actual: Long,
+        slack: Long,
+    ) = assertTrue("$actual vs $expected", abs(actual - expected) <= slack)
+}

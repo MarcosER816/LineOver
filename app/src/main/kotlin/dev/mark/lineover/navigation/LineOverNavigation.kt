@@ -112,7 +112,12 @@ fun LineOverNavigation(
                         ),
                         contentAlignment = Alignment.BottomCenter,
                     ) {
-                        ExportScreenRoute(projectId = key.projectId, library = container.projects, onClose = back)
+                        ExportScreenRoute(
+                            projectId = key.projectId,
+                            library = container.projects,
+                            onClose = back,
+                            preferences = container.preferences,
+                        )
                     }
                 }
                 entry<SettingsRoute> {

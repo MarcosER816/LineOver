@@ -5,13 +5,13 @@ import android.net.Uri
 import android.util.Log
 import androidx.exifinterface.media.ExifInterface
 import dev.mark.lineover.core.engine.EngineSession
-import dev.mark.lineover.core.engine.ExportImage
 import dev.mark.lineover.core.io.export.ExportDestinations
 import dev.mark.lineover.core.io.export.ExportMetadata
 import dev.mark.lineover.core.io.export.ExportTarget
 import dev.mark.lineover.core.io.looks.LooksStore
 import dev.mark.lineover.core.io.project.DocumentLoad
 import dev.mark.lineover.core.io.project.ProjectLibrary
+import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.ExportFormat
 import dev.mark.lineover.core.model.ExportSettings
 import dev.mark.lineover.core.model.OpParams
@@ -111,11 +111,12 @@ class ExportRunner(
         report: (ExportStatus.Running) -> Unit,
     ): ExportStatus.Done {
         val settings = request.settings.validated()
-        val project = environment.projects.observe(request.projectId).first() ?: throw IOException("The project no longer exists")
+        val project = environment.projects.observe(request.projectId).first() ?: fail("The project no longer exists")
         val document =
             (environment.projects.loadDocument(project) as? DocumentLoad.Loaded)?.document
-                ?: throw IOException("The project's edit cannot be read")
+                ?: fail("The project's edit cannot be read")
         val graph = document.graph
+
         fun step(
             s: ExportStep,
             p: Float,
@@ -124,43 +125,67 @@ class ExportRunner(
         val work = File(context.cacheDir, "export/${UUID.randomUUID()}")
         try {
             val source = Uri.parse(project.sourceUri)
-            val session = EngineSession.open(context, source) ?: throw IOException("This photo's format cannot be exported yet")
-            session.use {
-                registerLuts(session, graph.layers.flatMap { it.ops })
-                session.setGraph(graph)?.let { throw IOException("The edit could not be applied: $it") }
-                val image = session.renderForExport(work) { step(ExportStep.Rendering, RENDER_SHARE * it) }
-                image.use {
-                    val (width, height) = settings.outputSize(image.width, image.height)
-                    checkLimits(settings.format, width, height)
-                    step(ExportStep.Finishing, RENDER_SHARE)
-                    val mark = Watermarks.render(context, settings.watermark, width, height)
-                    image.process(width, height, settings.sharpen.amount, mark)
-                    val tags = ExportMetadata.tags(sourceExif(source), settings, width, height, "LineOver ${environment.versionName}")
-                    val exif = ExportMetadata.exifBlock(tags, work)
-                    step(ExportStep.Encoding, FINISH_SHARE)
-                    val file = File(work, settings.fileName(project.name))
-                    val gainmap =
-                        if (settings.format == ExportFormat.UltraHdr) {
-                            session.gainmapFor(graph) ?: image.rebuildGainmap(settings.colorSpace)
-                        } else {
-                            null
-                        }
-                    ExportEncoders.encode(image, settings, file, exif, tags, gainmap)
-                    step(ExportStep.Saving, ENCODE_SHARE)
-                    val uri = ExportDestinations(context.contentResolver).publish(file, request.target, file.name, settings.format.mimeType)
-                    return ExportStatus.Done(
-                        uri,
-                        file.name,
-                        settings.format.mimeType,
-                        file.length(),
-                        width,
-                        height,
-                        request.target == ExportTarget.Pictures,
-                    )
+            val session = EngineSession.open(context, source) ?: fail("This photo's format cannot be exported yet")
+            val (file, size) =
+                session.use {
+                    registerLuts(session, graph.layers.flatMap { it.ops })
+                    render(session, RenderJob(graph, settings, project.name), work, ::step)
                 }
-            }
+            step(ExportStep.Saving, ENCODE_SHARE)
+            val uri = ExportDestinations(context.contentResolver).publish(file, request.target, file.name, settings.format.mimeType)
+            return ExportStatus.Done(
+                uri,
+                file.name,
+                settings.format.mimeType,
+                file.length(),
+                size.first,
+                size.second,
+                request.target == ExportTarget.Pictures,
+            )
         } finally {
             work.deleteRecursively()
+        }
+    }
+
+    /** What [render] exports: an edit, its settings and the photo's name (for the file name). */
+    internal data class RenderJob(
+        val graph: EditGraph,
+        val settings: ExportSettings,
+        val name: String,
+    )
+
+    /**
+     * Renders [job]'s edit on [session] at full resolution and encodes it into a file in
+     * [work]; returns the file and its pixel size.
+     */
+    internal suspend fun render(
+        session: EngineSession,
+        job: RenderJob,
+        work: File,
+        step: (ExportStep, Float) -> Unit = { _, _ -> },
+    ): Pair<File, Pair<Int, Int>> {
+        val (graph, settings, name) = job
+        val source = session.info.uri
+        session.setGraph(graph)?.let { fail("The edit could not be applied: $it") }
+        val image = session.renderForExport(work) { step(ExportStep.Rendering, RENDER_SHARE * it) }
+        image.use {
+            val (width, height) = settings.outputSize(image.width, image.height)
+            checkLimits(settings.format, width, height)
+            step(ExportStep.Finishing, RENDER_SHARE)
+            val mark = Watermarks.render(context, settings.watermark, width, height)
+            image.process(width, height, settings.sharpen.amount, mark)
+            val tags = ExportMetadata.tags(sourceExif(source), settings, width, height, "LineOver ${environment.versionName}")
+            val exif = ExportMetadata.exifBlock(tags, work)
+            step(ExportStep.Encoding, FINISH_SHARE)
+            val file = File(work, settings.fileName(name))
+            val gainmap =
+                if (settings.format == ExportFormat.UltraHdr) {
+                    session.gainmapFor(graph) ?: image.rebuildGainmap(settings.colorSpace)
+                } else {
+                    null
+                }
+            ExportEncoders.encode(image, settings, file, ExportEncoders.Metadata(exif, tags, gainmap))
+            return file to (width to height)
         }
     }
 
@@ -171,7 +196,11 @@ class ExportRunner(
         val looks = environment.looks ?: return
         for (lut in ops.filterIsInstance<OpParams.Lut>()) {
             val table = looks.loadLut(lut.id)
-            if (table == null || !session.registerLut(lut.id, table)) Log.w(TAG, "LUT ${lut.name} is not on this device; exported without it")
+            if (table == null ||
+                !session.registerLut(lut.id, table)
+            ) {
+                Log.w(TAG, "LUT ${lut.name} is not on this device; exported without it")
+            }
         }
     }
 
@@ -184,9 +213,12 @@ class ExportRunner(
         height: Int,
     ) {
         if (format == ExportFormat.Webp && maxOf(width, height) > WEBP_MAX_EDGE) {
-            throw IOException("WebP is limited to $WEBP_MAX_EDGE px per side: choose a smaller size")
+            fail("WebP is limited to $WEBP_MAX_EDGE px per side: choose a smaller size")
         }
     }
+
+    /** A failed export: [message] is shown to the person. */
+    private fun fail(message: String): Nothing = throw IOException(message)
 
     companion object {
         private const val TAG = "LineOverExport"

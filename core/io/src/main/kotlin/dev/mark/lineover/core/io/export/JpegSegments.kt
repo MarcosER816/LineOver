@@ -1,3 +1,5 @@
+@file:Suppress("MagicNumber") // JPEG marker codes, byte offsets and shifts: named constants would not read better
+
 package dev.mark.lineover.core.io.export
 
 import java.io.ByteArrayOutputStream
@@ -36,6 +38,7 @@ object JpegSegments {
     }
 
     /** The header segments of [jpeg] and the offset where the scan (SOS) starts. */
+    @Suppress("ThrowsCount") // one message per way a file can be broken
     fun parse(jpeg: ByteArray): Pair<List<Segment>, Int> {
         if (jpeg.size < 4 || jpeg.u8(0) != 0xFF || jpeg.u8(1) != SOI) throw IOException("not a JPEG")
         val segments = ArrayList<Segment>()
@@ -85,14 +88,24 @@ object JpegSegments {
 
     /** The EXIF payload (TIFF structure) of [jpeg], or null. */
     fun exifOf(jpeg: ByteArray): ByteArray? =
-        parse(jpeg).first.firstOrNull { it.isExif }?.payload?.let { it.copyOfRange(EXIF.size, it.size) }
+        parse(jpeg)
+            .first
+            .firstOrNull { it.isExif }
+            ?.payload
+            ?.let { it.copyOfRange(EXIF.size, it.size) }
 
     /** The ICC profile of [jpeg] (chunks joined in sequence order), or null. */
     fun iccOf(jpeg: ByteArray): ByteArray? {
         val chunks = parse(jpeg).first.filter { it.isIcc }
         if (chunks.isEmpty()) return null
         val out = ByteArrayOutputStream()
-        chunks.sortedBy { it.payload[ICC.size].toInt() and 0xFF }.forEach { out.write(it.payload, ICC.size + 2, it.payload.size - ICC.size - 2) }
+        chunks.sortedBy { it.payload[ICC.size].toInt() and 0xFF }.forEach {
+            out.write(
+                it.payload,
+                ICC.size + 2,
+                it.payload.size - ICC.size - 2,
+            )
+        }
         return out.toByteArray()
     }
 

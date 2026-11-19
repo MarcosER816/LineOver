@@ -16,8 +16,8 @@ android {
 
     defaultConfig {
         applicationId = "dev.mark.lineover"
-        versionCode = 16
-        versionName = "0.11.2"
+        versionCode = 17
+        versionName = "0.12.0"
     }
 
     signingConfigs {

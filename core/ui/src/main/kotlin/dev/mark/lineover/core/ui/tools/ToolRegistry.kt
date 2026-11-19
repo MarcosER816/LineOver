@@ -855,7 +855,18 @@ private class ToolListBuilder {
         vararg synonyms: String,
     ) {
         tools +=
-            ToolSpec(id, name, null, ToolPlace.ExportSheet, "sheet/export/$slot", EXPORT_STAGE, PanelType.Sheet, icon, synonyms.toList())
+            ToolSpec(
+                id,
+                name,
+                null,
+                ToolPlace.ExportSheet,
+                "sheet/export/$slot",
+                EXPORT_STAGE,
+                PanelType.Sheet,
+                icon,
+                synonyms.toList(),
+                done = true, // Stage 12
+            )
     }
 
     @Suppress("LongParameterList")

@@ -28,6 +28,7 @@ internal object NativeExport {
 
     external fun nativeSize(job: Long): IntArray
 
+    @Suppress("LongParameterList")
     external fun nativePutTile(
         job: Long,
         x: Int,

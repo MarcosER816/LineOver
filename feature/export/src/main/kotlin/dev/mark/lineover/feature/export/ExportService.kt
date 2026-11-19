@@ -36,6 +36,8 @@ class ExportService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    // The export's boundary: whatever fails becomes the message the sheet and notification show.
+    @Suppress("TooGenericExceptionCaught", "SwallowedException")
     override fun onStartCommand(
         intent: Intent?,
         flags: Int,

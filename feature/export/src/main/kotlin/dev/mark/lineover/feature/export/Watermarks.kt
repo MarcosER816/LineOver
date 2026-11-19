@@ -96,7 +96,13 @@ object Watermarks {
         val h = max(1, (decoded.height.toFloat() * targetWidth / decoded.width).roundToInt())
         val scaled = Bitmap.createScaledBitmap(decoded, targetWidth, h, true)
         if (scaled !== decoded) decoded.recycle()
-        return if (scaled.config == Bitmap.Config.ARGB_8888) scaled else scaled.copy(Bitmap.Config.ARGB_8888, false).also { scaled.recycle() }
+        return if (scaled.config ==
+            Bitmap.Config.ARGB_8888
+        ) {
+            scaled
+        } else {
+            scaled.copy(Bitmap.Config.ARGB_8888, false).also { scaled.recycle() }
+        }
     }
 
     private fun tight(

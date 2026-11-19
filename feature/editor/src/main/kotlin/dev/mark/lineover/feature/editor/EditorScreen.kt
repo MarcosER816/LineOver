@@ -138,7 +138,11 @@ fun EditorRoute(
             state = state,
             onIntent = viewModel::onIntent,
             onBack = onBack,
-            onExport = onExport,
+            // The export reads the saved project: save the latest edit first.
+            onExport = {
+                viewModel.onIntent(EditorIntent.SaveNow)
+                onExport()
+            },
             toast = toast,
             canvas = { modifier -> PhotoCanvas(state, modifier, viewModel.gestures, viewModel.cropGestures) },
         )

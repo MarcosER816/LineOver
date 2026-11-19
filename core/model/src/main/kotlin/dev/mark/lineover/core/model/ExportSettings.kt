@@ -18,31 +18,32 @@ enum class ExportFormat(
     val bits: List<Int>,
     /** Colour spaces it can tag (HEIF / AVIF go through the platform encoder, which writes sRGB). */
     val spaces: List<ExportColorSpace>,
-    val lossy: Boolean,
 ) {
     @SerialName("jpeg")
-    Jpeg("export.jpeg", "JPEG", "jpg", "image/jpeg", listOf(8), ExportColorSpace.SDR, true),
+    Jpeg("export.jpeg", "JPEG", "jpg", "image/jpeg", listOf(8), ExportColorSpace.SDR),
 
     @SerialName("png")
-    Png("export.png", "PNG", "png", "image/png", listOf(8, 16), ExportColorSpace.entries, false),
+    Png("export.png", "PNG", "png", "image/png", listOf(8, 16), ExportColorSpace.entries),
 
     @SerialName("webp")
-    Webp("export.webp", "WebP", "webp", "image/webp", listOf(8), ExportColorSpace.SDR, true),
+    Webp("export.webp", "WebP", "webp", "image/webp", listOf(8), ExportColorSpace.SDR),
 
     @SerialName("heif")
-    Heif("export.heif", "HEIF", "heic", "image/heif", listOf(8), listOf(ExportColorSpace.Srgb), true),
+    Heif("export.heif", "HEIF", "heic", "image/heif", listOf(8), listOf(ExportColorSpace.Srgb)),
 
     @SerialName("avif")
-    Avif("export.avif", "AVIF", "avif", "image/avif", listOf(8), listOf(ExportColorSpace.Srgb), true),
+    Avif("export.avif", "AVIF", "avif", "image/avif", listOf(8), listOf(ExportColorSpace.Srgb)),
 
     @SerialName("tiff")
-    Tiff("export.tiff", "TIFF", "tif", "image/tiff", listOf(8, 16), ExportColorSpace.entries, false),
+    Tiff("export.tiff", "TIFF", "tif", "image/tiff", listOf(8, 16), ExportColorSpace.entries),
 
     @SerialName("ultra_hdr")
-    UltraHdr("export.ultra_hdr", "Ultra HDR", "jpg", "image/jpeg", listOf(8), ExportColorSpace.SDR, true),
+    UltraHdr("export.ultra_hdr", "Ultra HDR", "jpg", "image/jpeg", listOf(8), ExportColorSpace.SDR),
     ;
 
-    /** WebP has a lossless mode; the quality slider means nothing for lossless formats. */
+    /** Lossy encoders take a quality (WebP also has a lossless mode). */
+    val lossy: Boolean get() = this != Png && this != Tiff
+
     val hasQuality: Boolean get() = lossy
 }
 

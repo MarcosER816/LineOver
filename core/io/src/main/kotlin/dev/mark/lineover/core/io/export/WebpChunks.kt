@@ -1,3 +1,5 @@
+@file:Suppress("MagicNumber") // RIFF / WebP byte offsets, flags and shifts: named constants would not read better
+
 package dev.mark.lineover.core.io.export
 
 import java.io.ByteArrayOutputStream
@@ -50,7 +52,9 @@ object WebpChunks {
         if (chunks.any { it.fourcc == "ANIM" }) throw IOException("animated WebP is not supported")
         val image = chunks.filter { it.fourcc == "ALPH" || it.fourcc == "VP8 " || it.fourcc == "VP8L" }
         if (image.none { it.fourcc != "ALPH" }) throw IOException("WebP without image data")
-        val hadAlpha = chunks.any { it.fourcc == "ALPH" } || chunks.firstOrNull { it.fourcc == "VP8X" }?.let { (it.data[0].toInt() and FLAG_ALPHA) != 0 } == true
+        val hadAlpha =
+            chunks.any { it.fourcc == "ALPH" } ||
+                chunks.firstOrNull { it.fourcc == "VP8X" }?.let { (it.data[0].toInt() and FLAG_ALPHA) != 0 } == true
         var flags = 0
         if (icc != null) flags = flags or FLAG_ICC
         if (exif != null) flags = flags or FLAG_EXIF
@@ -59,10 +63,11 @@ object WebpChunks {
         vp8x[0] = flags.toByte()
         put24(vp8x, 4, width - 1)
         put24(vp8x, 7, height - 1)
-        val out = listOf(Chunk("VP8X", vp8x)) +
-            listOfNotNull(icc?.let { Chunk("ICCP", it) }) +
-            image +
-            listOfNotNull(exif?.let { Chunk("EXIF", it) })
+        val out =
+            listOf(Chunk("VP8X", vp8x)) +
+                listOfNotNull(icc?.let { Chunk("ICCP", it) }) +
+                image +
+                listOfNotNull(exif?.let { Chunk("EXIF", it) })
         val body = ByteArrayOutputStream()
         body.write("WEBP".toByteArray(Charsets.US_ASCII))
         for (c in out) {
@@ -75,7 +80,11 @@ object WebpChunks {
         return "RIFF".toByteArray(Charsets.US_ASCII) + le32Bytes(payload.size) + payload
     }
 
-    private fun put24(b: ByteArray, at: Int, v: Int) {
+    private fun put24(
+        b: ByteArray,
+        at: Int,
+        v: Int,
+    ) {
         b[at] = v.toByte()
         b[at + 1] = (v shr 8).toByte()
         b[at + 2] = (v shr 16).toByte()

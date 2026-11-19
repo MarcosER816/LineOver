@@ -30,7 +30,11 @@ data class ExportCapabilities(
                         .toSet()
                 }.getOrDefault(emptySet())
             val formats = ALWAYS.toMutableSet()
-            if (MediaFormat.MIMETYPE_IMAGE_ANDROID_HEIC in encoders || MediaFormat.MIMETYPE_VIDEO_HEVC in encoders) formats += ExportFormat.Heif
+            if (MediaFormat.MIMETYPE_IMAGE_ANDROID_HEIC in encoders ||
+                MediaFormat.MIMETYPE_VIDEO_HEVC in encoders
+            ) {
+                formats += ExportFormat.Heif
+            }
             if (MediaFormat.MIMETYPE_VIDEO_AV1 in encoders) formats += ExportFormat.Avif
             return ExportCapabilities(formats)
         }
