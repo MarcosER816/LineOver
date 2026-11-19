@@ -316,7 +316,8 @@ class ExportRoundTripTest {
 
     @Test
     fun heifAndAvifWorkWhereTheDeviceHasAnEncoder() {
-        val capabilities = ExportCapabilities.detect()
+        // What the sheet offers: encoders found AND a probe file decoded (cached per OS build).
+        val capabilities = ExportCapabilities.verify(context)
         for (format in listOf(ExportFormat.Heif, ExportFormat.Avif)) {
             if (!capabilities.supports(format)) {
                 // The sheet hides it (the brief's IF WRONG); nothing to export here.

@@ -28,6 +28,8 @@ class ExportViewModelTest {
     private class FakePlatform(
         override val capabilities: ExportCapabilities = ExportCapabilities.ALL,
     ) : ExportPlatform {
+        override suspend fun verifiedCapabilities() = capabilities
+
         val started = mutableListOf<ExportRequest>()
         var cancelled = 0
 
@@ -127,6 +129,7 @@ class ExportViewModelTest {
             val noAvif = ExportCapabilities(ExportFormat.entries.toSet() - ExportFormat.Avif - ExportFormat.Heif)
             val prefs = InMemoryAppPreferences(exportSettings = ExportSettings(format = ExportFormat.Avif))
             val vm = ExportViewModel(1, FakeExportLibrary(), prefs, FakePlatform(noAvif))
+            advanceUntilIdle() // the device's formats are verified in the background
             assertEquals(ExportFormat.Jpeg, vm.state.value.settings.format)
             assertNotNull(vm.state.value.capabilities)
             assertTrue(

@@ -25,7 +25,10 @@ class AndroidExportPlatform(
 ) : ExportPlatform {
     private val app = context.applicationContext
 
-    override val capabilities: ExportCapabilities by lazy { ExportCapabilities.detect() }
+    override val capabilities: ExportCapabilities
+        get() = ExportCapabilities.cached(app) ?: ExportCapabilities.UNVERIFIED
+
+    override suspend fun verifiedCapabilities(): ExportCapabilities = withContext(Dispatchers.Default) { ExportCapabilities.verify(app) }
 
     override fun start(request: ExportRequest) = ExportService.start(app, request)
 

@@ -89,7 +89,9 @@ Tests added:
      Android's JPEG encoder uses 4:2:0 chroma, as every phone JPEG does.
    - PNG uses libspng.
    - TIFF uses our own baseline writer (uncompressed RGB strips).
-   - HEIF and AVIF use androidx.heifwriter on the device's HEVC / AV1 encoders. They are
+   - HEIF and AVIF use androidx.heifwriter on the device's HEVC / AV1 encoders. A format is
+     offered only after a 64 px probe file is encoded and decoded on the device (cached per OS
+     build), because an encoder alone does not guarantee a readable file. They are
      8-bit sRGB because the platform encoder does not tag other spaces, so the sheet offers
      only sRGB for them.
 3. **ICC.**
@@ -160,6 +162,7 @@ Screenshots changed, and why:
 | "© Mark" came back as "? Mark" from EXIF | EXIF text tags are ASCII | Transliterate (`ExportMetadata.ascii`) |
 | Copyright-only export still showed LightSource = 0 | ExifInterface writes it as a compatibility default ("unknown") | Accepted (no information); the test names it |
 | Emulator: HEIF / AVIF exports had no readable EXIF | heifwriter passes the block to MediaMuxer, whose MPEG-4 writer recognises EXIF by a leading "Exif\0\0"; the 4-byte offset prefix hid it | Pass "Exif\0\0" + TIFF; the writer adds the offset |
+| Emulator: AVIF file "invalid input" for the decoder although an AV1 encoder exists | The platform MPEG-4 muxer wrote the AV1 stream with an HEVC config ("hvcC csd size is less than 23 bytes") | An encoder is not proof: `ExportCapabilities.verify` encodes and decodes a 64 px HEIF / AVIF once per OS build and the sheet offers only what round-trips (the brief's IF WRONG: hide at runtime) |
 | Emulator: decoded PNG differed from the render by 1 code | Android colour-manages the decode from LineOver's P3 profile to its built-in one (colorants differ by s15Fixed16 rounding); the file itself is exact (host tests) | The device test allows one code (mean ≤ 0.1/255); exactness stays checked on the host |
 | Size slider showed 3008 px for 3000 | 16 px steps counted from the 256 px minimum | 1 px steps |
 

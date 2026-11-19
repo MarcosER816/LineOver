@@ -64,7 +64,11 @@ sealed interface ExportIntent {
 
 /** What the sheet needs from Android (the route provides it; tests fake it). */
 interface ExportPlatform {
+    /** Known at once (cached, or the formats that need no device codec). */
     val capabilities: ExportCapabilities
+
+    /** Verified on this device (HEIF / AVIF encoded and decoded once); may take a moment the first time. */
+    suspend fun verifiedCapabilities(): ExportCapabilities
 
     fun start(request: ExportRequest)
 
@@ -110,12 +114,11 @@ class ExportViewModel(
             estimate()
         }
         viewModelScope.launch { ExportJobs.status.collect { setState { copy(status = it) } } }
-        // A format this device cannot write (HEIF / AVIF) falls back to JPEG.
-        if (!platform.capabilities.supports(
-                state.value.settings.format,
-            )
-        ) {
-            change(state.value.settings.copy(format = ExportSettings().format))
+        viewModelScope.launch {
+            val verified = platform.verifiedCapabilities()
+            setState { copy(capabilities = verified) }
+            // A format this device cannot write (HEIF / AVIF) falls back to JPEG.
+            if (!verified.supports(state.value.settings.format)) change(state.value.settings.copy(format = ExportSettings().format))
         }
     }
 

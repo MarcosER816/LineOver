@@ -78,6 +78,49 @@ object ExportEncoders {
         if (!file.isFile || file.length() == 0L) throw IOException("the encoder wrote nothing")
     }
 
+    /**
+     * True when this device writes [format] (HEIF / AVIF) as a file its own decoder reads: a
+     * 64 px image is encoded and decoded. An encoder alone is not enough (an emulator's AV1
+     * encoder output was muxed as HEVC and could not be decoded).
+     */
+    @Suppress("TooGenericExceptionCaught") // any failure means "not on this device"
+    fun probe(
+        format: ExportFormat,
+        dir: File,
+    ): Boolean {
+        dir.mkdirs()
+        val file = File(dir, "probe.${format.extension}")
+        val bitmap = Bitmap.createBitmap(PROBE_SIZE, PROBE_SIZE, Bitmap.Config.ARGB_8888)
+        return try {
+            // A gradient, so the encoder has something to code.
+            for (y in 0 until PROBE_SIZE) {
+                for (x in 0 until PROBE_SIZE) {
+                    bitmap.setPixel(
+                        x,
+                        y,
+                        android.graphics.Color.rgb(
+                            x * MAX_CODE / PROBE_SIZE,
+                            y * MAX_CODE / PROBE_SIZE,
+                            MAX_CODE / 2,
+                        ),
+                    )
+                }
+            }
+            writeHeif(ExportSettings(format = format), bitmap, file, null)
+            val decoded = android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(file))
+            decoded.width == PROBE_SIZE && decoded.height == PROBE_SIZE
+        } catch (e: Exception) {
+            android.util.Log.i("LineOverExport", "${format.label} is not usable here: $e")
+            false
+        } finally {
+            bitmap.recycle()
+            file.delete()
+        }
+    }
+
+    private const val PROBE_SIZE = 64
+    private const val MAX_CODE = 255
+
     private fun writeHeif(
         settings: ExportSettings,
         bitmap: Bitmap,
