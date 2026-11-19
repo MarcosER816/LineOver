@@ -328,6 +328,17 @@ bool GpuPipeline::init(std::string* error) {
     if (displayGeomProgram_ == 0) return false;
     warpProgram_ = linkProgram(kDisplayVertex, (head + kGeometrySource + kFinished + kWarpMain).c_str(), error);
     if (warpProgram_ == 0) return false;
+    {
+        std::vector<std::uint8_t> table;
+        grainGradientTable(&table);
+        glGenTextures(1, &grainTable_);
+        glBindTexture(GL_TEXTURE_2D, grainTable_);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RG8, kGrainTableSize, kGrainTableSize, 0, GL_RG, GL_UNSIGNED_BYTE, table.data());
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    }
     GLint major = 0, minor = 0;
     glGetIntegerv(GL_MAJOR_VERSION, &major);
     glGetIntegerv(GL_MINOR_VERSION, &minor);
@@ -356,6 +367,8 @@ void GpuPipeline::release() {
     if (displayProgram_ != 0) glDeleteProgram(displayProgram_);
     if (displayGeomProgram_ != 0) glDeleteProgram(displayGeomProgram_);
     if (warpProgram_ != 0) glDeleteProgram(warpProgram_);
+    if (grainTable_ != 0) glDeleteTextures(1, &grainTable_);
+    grainTable_ = 0;
     displayGeomProgram_ = warpProgram_ = 0;
     if (histogramProgram_ != 0) glDeleteProgram(histogramProgram_);
     if (histogramBuffer_ != 0) glDeleteBuffers(1, &histogramBuffer_);
@@ -526,7 +539,12 @@ void quadMatrix(const float rect[4], const float imageToNdc[9], float m[9]) {
         }
 }
 
-void setFinishingUniforms(GLuint program, const Finishing& f, const float outSize[2]) {
+// Unit 1 holds the grain table in the display and warp programs (unit 0 is the image).
+void setFinishingUniforms(GLuint program, const Finishing& f, const float outSize[2], GLuint grainTable) {
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, grainTable);
+    glActiveTexture(GL_TEXTURE0);
+    glUniform1i(glGetUniformLocation(program, "u_grainTable"), 1);
     const float vig[5] = {f.vignette, f.midpoint, f.roundness, f.feather, f.highlights};
     const float grain[3] = {f.grain, f.grainSize, f.roughness};
     glUniform1fv(glGetUniformLocation(program, "u_vig"), 5, vig);
@@ -578,7 +596,7 @@ void GpuPipeline::drawImage(GLuint texture, const float rect[4], const float ima
         glUniform4fv(glGetUniformLocation(program, "u_texRect"), 1, options.texRect);
         glUniform4fv(glGetUniformLocation(program, "u_quad"), 1, rect);
     }
-    setFinishingUniforms(program, options.finishing, geometry != nullptr ? geometry->outSize : options.outSize);
+    setFinishingUniforms(program, options.finishing, geometry != nullptr ? geometry->outSize : options.outSize, grainTable_);
     {
         // Output pixels per screen pixel: the quad's output extent over its extent on screen.
         GLint vp[4];
@@ -616,7 +634,7 @@ bool GpuPipeline::warp(GLuint texture, const GeometryDraw& geometry, GLuint targ
     glUniform1i(glGetUniformLocation(warpProgram_, "u_texture"), 0);
     glUniformMatrix3fv(glGetUniformLocation(warpProgram_, "u_matrix"), 1, GL_TRUE, toNdc);
     setGeometryUniforms(warpProgram_, geometry);
-    setFinishingUniforms(warpProgram_, finishing, geometry.outSize);
+    setFinishingUniforms(warpProgram_, finishing, geometry.outSize, grainTable_);
     glUniform1f(glGetUniformLocation(warpProgram_, "u_footprint"), geometry.drawRect[2] / static_cast<float>(width));
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);

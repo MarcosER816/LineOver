@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include "lineover/graph.h"
 #include "lineover/ops.h"
@@ -42,10 +43,16 @@ bool finishingOf(const Graph& graph, Finishing* out);
 void applyFinishing(const Finishing& f, float* rgba, int width, int height, double outWidth, double outHeight, double originX,
                     double originY, double scale);
 
+// Grain's lattice repeats every kGrainTableSize cells: the gradient index (0..7) of lattice
+// point (x, y) is the hash of (x mod size, y mod size). The GPU reads it from this table
+// (RG8, row-major, r = first octave, g = second), so shaders do no integer hashing.
+inline constexpr int kGrainTableSize = 1024;
+void grainGradientTable(std::vector<std::uint8_t>* rg);
+
 // GLSL of the finishing: `vec3 lo_finish(vec3 rgb, vec2 outPx, float footprint)` with
 // uniforms u_vig[5] (amount, midpoint, roundness, feather, highlights), u_grain[3]
-// (amount, size, roughness) and u_finOut (output size, full-resolution pixels). outPx is the
-// full-resolution output position, footprint the output pixels one fragment covers.
+// (amount, size, roughness), u_grainTable (grainGradientTable) and u_finOut (output size,
+// full-resolution pixels). outPx is the full-resolution output position, footprint the output pixels one fragment covers.
 extern const char* const kFinishingGlsl;
 
 }  // namespace lo

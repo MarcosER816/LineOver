@@ -399,6 +399,15 @@ GRADIENTS = np.array([[1, 0], [-1, 0], [0, 1], [0, -1], [0.7071067811865476, 0.7
                       [-0.7071067811865476, -0.7071067811865476]])
 
 
+GRAIN_TABLE = 1024  # the lattice repeats every 1024 cells (the GPU reads a 1024 x 1024 table)
+
+
+def grain_gradient(ix, iy, seed):
+    """Gradient index (0..7) of a lattice point: the hash of its position modulo the table."""
+    t = np.int64(GRAIN_TABLE - 1)
+    return (grain_hash(np.asarray(ix) & t, np.asarray(iy) & t, seed) & np.uint64(7)).astype(np.int64)
+
+
 def perlin(x, y, seed):
     """2D gradient noise (Perlin, quintic fade, 8 gradients by hash), about -0.7 .. 0.7."""
     x0 = np.floor(x)
@@ -409,7 +418,7 @@ def perlin(x, y, seed):
     iy = y0.astype(np.int64)
 
     def corner(dx, dy):
-        g = GRADIENTS[(grain_hash(ix + dx, iy + dy, seed) & np.uint64(7)).astype(np.int64)]
+        g = GRADIENTS[grain_gradient(ix + dx, iy + dy, seed)]
         return g[..., 0] * (fx - dx) + g[..., 1] * (fy - dy)
 
     def fade(t):

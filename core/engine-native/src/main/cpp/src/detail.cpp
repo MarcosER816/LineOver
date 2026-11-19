@@ -347,7 +347,7 @@ public:
         static const char* kDecl = LO_GLSL_DETAIL
             "uniform float u_lum;\nuniform float u_keep;\nuniform float u_contrast;\nuniform float u_color;\n"
             "uniform float u_bRadius;\nuniform float u_sigmaC;\n"
-            "const float LO_B3[5] = float[5](0.0625, 0.25, 0.375, 0.25, 0.0625);\n"
+            "float lo_b3(int i) { return i == 2 ? 0.375 : (i == 1 || i == 3) ? 0.25 : 0.0625; }\n"
             "vec4 lo_level(float level, float base, bool first) {\n"
             "    ivec2 p = lo_px();\n"
             "    vec4 prev = lo_at(u_prev, p);\n"
@@ -356,7 +356,7 @@ public:
             "    float nxt = 0.0;\n"
             "    for (int j = 0; j < 5; ++j)\n"
             "        for (int i = 0; i < 5; ++i)\n"
-            "            nxt += LO_B3[i] * LO_B3[j] * lo_bilinear(u_prev, x + vec2(float(i - 2), float(j - 2)) * sp).r;\n"
+            "            nxt += lo_b3(i) * lo_b3(j) * lo_bilinear(u_prev, x + vec2(float(i - 2), float(j - 2)) * sp).r;\n"
             "    float acc = first ? 0.0 : prev.g, removed = first ? 0.0 : prev.b;\n"
             "    float w = prev.r - nxt;\n"
             "    float t = u_lum * base * (level < 2.0 ? u_keep : 1.0);\n"
@@ -728,7 +728,8 @@ double perlin(double x, double y, std::uint32_t seed) {
     const double fx = x - x0, fy = y - y0;
     const auto ix = static_cast<std::int64_t>(x0), iy = static_cast<std::int64_t>(y0);
     auto corner = [&](int dx, int dy) {
-        const double* g = kGradients[grainHash(ix + dx, iy + dy, seed) & 7u];
+        constexpr std::int64_t kMask = kGrainTableSize - 1;
+        const double* g = kGradients[grainHash((ix + dx) & kMask, (iy + dy) & kMask, seed) & 7u];
         return g[0] * (fx - dx) + g[1] * (fy - dy);
     };
     auto fade = [](double t) { return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); };
@@ -740,6 +741,16 @@ double perlin(double x, double y, std::uint32_t seed) {
 }
 
 }  // namespace
+
+void grainGradientTable(std::vector<std::uint8_t>* rg) {
+    rg->resize(static_cast<std::size_t>(kGrainTableSize) * kGrainTableSize * 2);
+    for (int y = 0; y < kGrainTableSize; ++y)
+        for (int x = 0; x < kGrainTableSize; ++x) {
+            const std::size_t i = 2 * (static_cast<std::size_t>(y) * kGrainTableSize + x);
+            (*rg)[i] = static_cast<std::uint8_t>(grainHash(x, y, kGrainSeed) & 7u);
+            (*rg)[i + 1] = static_cast<std::uint8_t>(grainHash(x, y, kGrainSeed + 1) & 7u);
+        }
+}
 
 void applyFinishing(const Finishing& f, float* rgba, int width, int height, double outWidth, double outHeight, double originX,
                     double originY, double scale) {
@@ -794,27 +805,24 @@ const char* const kFinishingGlsl =
     "    return sign(x) * (a <= 0.0031308 ? a * 12.92 : 1.055 * pow(a, 1.0 / 2.4) - 0.055); }\n"
     "float lo_fDec(float e) { float a = abs(e);\n"
     "    return sign(e) * (a <= 0.04045 ? a / 12.92 : pow((a + 0.055) / 1.055, 2.4)); }\n"
-    "uint lo_grainHash(int ix, int iy, uint seed) {\n"
-    "    uint h = uint(ix) * 0x8DA6B343u;\n"
-    "    h ^= uint(iy) * 0xD8163841u;\n"
-    "    h ^= seed * 0xCB1AB31Fu;\n"
-    "    h ^= h >> 16; h *= 0x7FEB352Du; h ^= h >> 15; h *= 0x846CA68Bu; h ^= h >> 16;\n"
-    "    return h;\n"
-    "}\n"
-    "float lo_corner(int ix, int iy, vec2 f, int dx, int dy, uint seed) {\n"
-    "    uint k = lo_grainHash(ix + dx, iy + dy, seed) & 7u;\n"
+    // The gradient index of each lattice point comes from a table (grainGradientTable, RG8:
+    // r = the first octave's seed, g = the second's): no integer hashing in the shader.
+    "uniform highp sampler2D u_grainTable;\n"
+    "float lo_corner(vec2 lattice, vec2 f, vec2 d, int octave) {\n"
+    "    vec2 q = mod(lattice + d, 1024.0);\n"
+    "    vec2 t = texelFetch(u_grainTable, ivec2(q), 0).rg * 255.0;\n"
+    "    float k = floor((octave == 0 ? t.x : t.y) + 0.5);\n"
     "    const float D = 0.7071067811865476;\n"
-    "    vec2 g = k == 0u ? vec2(1.0, 0.0) : k == 1u ? vec2(-1.0, 0.0) : k == 2u ? vec2(0.0, 1.0) : k == 3u ? vec2(0.0, -1.0)\n"
-    "        : k == 4u ? vec2(D, D) : k == 5u ? vec2(-D, D) : k == 6u ? vec2(D, -D) : vec2(-D, -D);\n"
-    "    return dot(g, f - vec2(float(dx), float(dy)));\n"
+    "    vec2 g = k < 0.5 ? vec2(1.0, 0.0) : k < 1.5 ? vec2(-1.0, 0.0) : k < 2.5 ? vec2(0.0, 1.0) : k < 3.5 ? vec2(0.0, -1.0)\n"
+    "        : k < 4.5 ? vec2(D, D) : k < 5.5 ? vec2(-D, D) : k < 6.5 ? vec2(D, -D) : vec2(-D, -D);\n"
+    "    return dot(g, f - d);\n"
     "}\n"
-    "float lo_perlin(vec2 x, uint seed) {\n"
+    "float lo_perlin(vec2 x, int octave) {\n"
     "    vec2 x0 = floor(x);\n"
     "    vec2 f = x - x0;\n"
-    "    int ix = int(x0.x), iy = int(x0.y);\n"
     "    vec2 u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);\n"
-    "    float c00 = lo_corner(ix, iy, f, 0, 0, seed), c10 = lo_corner(ix, iy, f, 1, 0, seed);\n"
-    "    float c01 = lo_corner(ix, iy, f, 0, 1, seed), c11 = lo_corner(ix, iy, f, 1, 1, seed);\n"
+    "    float c00 = lo_corner(x0, f, vec2(0.0, 0.0), octave), c10 = lo_corner(x0, f, vec2(1.0, 0.0), octave);\n"
+    "    float c01 = lo_corner(x0, f, vec2(0.0, 1.0), octave), c11 = lo_corner(x0, f, vec2(1.0, 1.0), octave);\n"
     "    float top = c00 + (c10 - c00) * u.x;\n"
     "    float bottom = c01 + (c11 - c01) * u.x;\n"
     "    return top + (bottom - top) * u.y;\n"
@@ -845,8 +853,8 @@ const char* const kFinishingGlsl =
     "    if (u_grain[0] != 0.0) {\n"
     "        float cell = 1.0 + 3.0 * u_grain[1] / 100.0;\n"
     "        float rough = u_grain[2] / 100.0;\n"
-    "        float n1 = lo_perlin(outPx / cell, 0x2545F491u) * min(1.0, cell / footprint);\n"
-    "        float n2 = lo_perlin(2.0 * outPx / cell, 0x2545F492u) * min(1.0, 0.5 * cell / footprint);\n"
+    "        float n1 = lo_perlin(outPx / cell, 0) * min(1.0, cell / footprint);\n"
+    "        float n2 = lo_perlin(2.0 * outPx / cell, 1) * min(1.0, 0.5 * cell / footprint);\n"
     "        float n = (n1 + rough * n2) / (1.0 + 0.5 * rough);\n"
     "        float ey = clamp(dot(e, L), 0.0, 1.0);\n"
     "        e += u_grain[0] / 100.0 * 0.12 * n * (0.25 + 3.0 * ey * (1.0 - ey));\n"

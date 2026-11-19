@@ -127,6 +127,7 @@ private:
     GLuint displayProgram_ = 0;
     GLuint displayGeomProgram_ = 0;
     GLuint warpProgram_ = 0;
+    GLuint grainTable_ = 0;  // RG8 grainGradientTable, read by the finishing
     std::string histogramError_;
     GLuint histogramProgram_ = 0;
     GLuint histogramBuffer_ = 0;

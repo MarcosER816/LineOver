@@ -79,7 +79,10 @@ fixture, preview vs export); `testdata/graph/detail_v1.json` shared with
    (Roughness), weighted 0.25 + 3·Y'(1 − Y'). Where one pixel covers more than a cell (the
    zoomed-out canvas) each octave is attenuated by cell / footprint, so the preview matches the
    downsampled export instead of aliasing. The brief allowed blue-noise or Perlin; Perlin
-   needs no texture asset and is exact on every path.
+   needs no texture asset and is exact on every path. The lattice repeats every 1024 cells
+   (2–4 k output pixels): the gradient index is the hash of the position modulo 1024, and the
+   GPU reads it from a 1024 × 1024 RG8 table made by the engine (`grainGradientTable`), so
+   shaders do no 32-bit integer hashing (plan B, see the troubleshooting log).
 8. **Mask preview**: the second finger on Masking sets `showMask = 1` in the canvas graph
    only; the saved edit and History never carry it.
 9. **1:1 toggle**: a chip in the Sharpen, Noise reduction and Texture headers; 100 % at the
@@ -115,7 +118,10 @@ Screenshots changed, and why:
 | `DetailAdjustments` read back ≠ written | Values at their default stored explicitly vs absent | Defaults are never stored |
 | Mask preview did not reach the canvas | `setState` does not sync the canvas | `reduce` (the graph is unchanged, so no History step) |
 
-Plan B used: no.
+| CI emulator: GPU Sharpen and Noise reduction wrong everywhere (mean 0.29), Grain off at some pixels; llvmpipe (Mesa, run locally) matched | The emulator's GLES translator: `textureSize()` of a sampler passed as a function argument (every clamped read went wrong), and Grain's 32-bit hash | Attempt 1 (`highp int`, a framebuffer rebind per pass, a new op-chain test that passed): no change. Attempt 2: sizes as the `u_size` uniform (Sharpen fixed, Noise reduction down to max 0.055) and the footprint as a uniform. Attempt 3: Noise reduction's constant weight array replaced by a function; Grain unchanged after three attempts, so plan B: the gradient table texture |
+
+Plan B used: yes, for Grain (a gradient table instead of hashing in the shader); no golden
+file changed, as the test images are smaller than the 1024-cell period.
 
 ## Proof
 
