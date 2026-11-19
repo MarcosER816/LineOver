@@ -115,6 +115,7 @@ object EditorTags {
     const val AUTO_STRAIGHTEN = "auto-straighten"
     const val AUTO_CHROMATIC = "auto-chromatic"
     const val CONSTRAIN = "constrain-crop"
+    const val LENS_PROFILE = "lens-profile"
 
     fun aspect(name: String) = "aspect:$name"
 

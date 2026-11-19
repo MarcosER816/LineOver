@@ -98,6 +98,25 @@ class EngineGpuTest {
     @Test
     fun gpuChromaticAberrationMatchesOpenCvRemap() = checkGeometry("chromatic", CHART)
 
+    /** A lens profile: odd distortion terms and polynomial TCA on the distorted radius (Lensfun's forms). */
+    @Test
+    fun gpuLensProfileMatchesOpenCvRemap() = checkGeometry("lens_profile", CHART)
+
+    /** A lens profile's vignetting ("pa" k1..k3, lensfun) on top of +20 manual, in source space. */
+    @Test
+    fun gpuProfileVignettingMatchesTheReference() {
+        val input = npy(SCENE)
+        val w = input.width.toDouble()
+        val h = input.height.toDouble()
+        val op =
+            """{"op":"geometry","sourceWidth":${input.width},"sourceHeight":${input.height},"outputWidth":${input.width},""" +
+                """"outputHeight":${input.height},"vignette":20.0,"vignetteMid":50.0,"vignetteProfile":[-0.42,0.11,-0.04],""" +
+                """"matrix":[$w,0.0,0.0,0.0,$h,0.0,0.0,0.0,1.0]}"""
+        val graph = """{"schemaVersion":1,"layers":[{"id":"background","ops":[$op]}]}"""
+        val expected = premultiplied8(npy("geometry/vignetting_profile_gpu_srgb_display_f32.npy"))
+        GoldenAssert.assertMatches(gpu(graph, SCENE), expected, "gpu_geometry_vignetting_profile_srgb8", Tolerance.GPU_VS_CPU, diffDir)
+    }
+
     /** Lens vignetting correction (first setting: +50, midpoint 50) in source space. */
     @Test
     fun gpuVignettingMatchesTheReference() {

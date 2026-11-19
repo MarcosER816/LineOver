@@ -2,6 +2,16 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 9 follow-up — Lens profiles (0.9.1)
+
+### Added
+
+- Lens profiles: Settings → AI models → Lens profiles (Lensfun, 5.0 MB, CC BY-SA 3.0)
+  downloads the Lensfun database on request (checked file by file; Delete removes it).
+  Optics → Lens distortion → Use lens profile corrects distortion, chromatic aberration and
+  vignetting for thousands of camera lenses, matched from the photo's EXIF or picked from a
+  list, with amounts for distortion and vignetting. Phone cameras are not in the database.
+
 ## Stage 9 — Crop and optics (0.9.0)
 
 ### Added

@@ -26,9 +26,22 @@ struct Geometry {
     int sourceHeight = 0;
     double k1 = 0.0, k2 = 0.0;           // radial distortion, r normalised by the half diagonal
     double caRed = 0.0, caBlue = 0.0;    // per-channel radial scale - 1 (green is the reference)
+    // A lens profile (Lensfun, converted exactly): distortion s += p1 r + p2 r^2 + p3 r^3 + p4 r^4,
+    // and per channel scale += tv + tc rd + tb rd^2 on the distorted radius rd = r s.
+    double dist[4] = {0, 0, 0, 0};
+    double tcaRed[3] = {0, 0, 0}, tcaBlue[3] = {0, 0, 0};
     float vignette = 0.f, vignetteMid = 50.f;  // lens vignetting correction (a source-space op)
 
-    bool hasLens() const { return k1 != 0.0 || k2 != 0.0 || caRed != 0.0 || caBlue != 0.0; }
+    bool hasProfile() const {
+        for (double d : dist)
+            if (d != 0.0) return true;
+        for (int i = 0; i < 3; ++i)
+            if (tcaRed[i] != 0.0 || tcaBlue[i] != 0.0) return true;
+        return false;
+    }
+    bool hasLens() const { return k1 != 0.0 || k2 != 0.0 || caRed != 0.0 || caBlue != 0.0 || hasProfile(); }
+    // The green (reference) channel's radial scale s(r) at r^2 = r2 (r = 1 at the corner).
+    double radialScale(double r2) const;
 };
 
 // The geometry op of the bottom layer, if any (with a usable output size).
@@ -72,9 +85,11 @@ void warp(const Geometry& g, int sourceWidth, int sourceHeight, const WarpSource
 // [x0, x0 + w) x [y0, y0 + h) read, cubic taps included: x, y, width, height.
 void footprint(const Geometry& g, int sourceWidth, int sourceHeight, int x0, int y0, int w, int h, int out[4]);
 
-// Lens vignetting correction (reference.vignetting): RGB x 2^(amount/100 * f^2) in source
+// Lens vignetting correction (reference.vignetting): RGB x 2^(amount/100 * f^2) / (1 + k1 r^2
+// + k2 r^4 + k3 r^6) in source space (the second factor: a lens profile's "pa" model, r = 1 at
+// the corner; `profile` may be null),
 // space, applied before every other op.
-std::unique_ptr<Op> makeVignetting(float amount, float midpoint, float aspect);
+std::unique_ptr<Op> makeVignetting(float amount, float midpoint, float aspect, const float profile[3] = nullptr);
 
 // An RGBA8 image (the Ultra HDR gain map) warped with the same geometry: `sourceWidth` x
 // `sourceHeight` is the photo's size, the gain map may be smaller; the result has the

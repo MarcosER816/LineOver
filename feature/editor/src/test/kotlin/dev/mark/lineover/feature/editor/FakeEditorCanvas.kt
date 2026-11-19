@@ -14,8 +14,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 class FakeEditorCanvas(
     override val imageWidth: Int = 8160,
     override val imageHeight: Int = 6120,
+    exif: dev.mark.lineover.core.model.PhotoExif =
+        dev.mark.lineover.core.model
+            .PhotoExif(),
 ) : EditorCanvas {
-    override val summary = ImageSummary(imageWidth, imageHeight, 2048, 1536, "sRGB IEC61966-2.1", "8-bit sRGB", ultraHdr = false)
+    override val summary =
+        ImageSummary(imageWidth, imageHeight, 2048, 1536, "sRGB IEC61966-2.1", "8-bit sRGB", ultraHdr = false, exif = exif)
     override val loading = MutableStateFlow(false)
     val graphs = mutableListOf<EditGraph>()
     var transforms = 0

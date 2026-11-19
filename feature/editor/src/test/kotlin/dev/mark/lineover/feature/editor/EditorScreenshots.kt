@@ -174,6 +174,24 @@ abstract class EditorScreenshots(
             ),
         )
         shot("optics_distortion", geometryState(DISTORTION_TOOL, GeometryAdjustments(distortion = 25f)))
+        val profile =
+            dev.mark.lineover.core.model.LensProfile(
+                lens = "Sony FE 24-70mm f/2.8 GM",
+                camera = "ILCE-7M3",
+                distortion = listOf(0.01, -0.12, 0.03, 0.0),
+                tcaRed = listOf(0.0002, 0.0, 0.0),
+                tcaBlue = listOf(0.0001, 0.0, 0.0),
+                vignette = listOf(-0.5, -0.36, 0.14),
+            )
+        shot(
+            "optics_distortion_profile",
+            geometryState(DISTORTION_TOOL, GeometryAdjustments(profile = profile, profileVignetting = 80f)).copy(
+                lensProfiles =
+                    dev.mark.lineover.core.io.lens.LensProfileState
+                        .Installed(5_215_981),
+                lensCandidates = listOf("Sony FE 24-70mm f/2.8 GM", "Sony FE 24-105mm f/4 G OSS", "Sony FE 28-70mm f/3.5-5.6 OSS"),
+            ),
+        )
         shot("optics_chromatic", geometryState(CHROMATIC_TOOL, GeometryAdjustments(chromaticRed = 30f, chromaticBlue = -15f)))
         shot("optics_vignetting", geometryState(LENS_VIGNETTING_TOOL, GeometryAdjustments(vignetting = 40f)))
     }

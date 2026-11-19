@@ -509,8 +509,16 @@ std::unique_ptr<OpList> buildOps(const Graph& graph, std::string* skipped) {
                 // its lens vignetting correction is a source-space op, first of all.
                 const float amount = static_cast<float>(param("vignette", 0.0));
                 const double w = param("sourceWidth", 1.0), h = param("sourceHeight", 1.0);
-                if (amount != 0.f && h > 0.0) {
-                    list->add(makeVignetting(amount, static_cast<float>(param("vignetteMid", 50.0)), static_cast<float>(w / h)));
+                // A lens profile's vignetting (k1, k2, k3 of the "pa" model, r = 1 at the corner).
+                float profile[3] = {0.f, 0.f, 0.f};
+                for (const auto& a : params.arrays) {
+                    if (a.first != "vignetteProfile") continue;
+                    for (std::size_t i = 0; i < 3 && i < a.second.size(); ++i) profile[i] = static_cast<float>(a.second[i]);
+                }
+                const bool hasProfile = profile[0] != 0.f || profile[1] != 0.f || profile[2] != 0.f;
+                if ((amount != 0.f || hasProfile) && h > 0.0) {
+                    list->add(makeVignetting(amount, static_cast<float>(param("vignetteMid", 50.0)), static_cast<float>(w / h),
+                                             profile));
                 }
             } else if (skipped != nullptr) {
                 if (!skipped->empty()) skipped->push_back(',');

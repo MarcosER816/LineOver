@@ -29,7 +29,7 @@ struct Case {
     const char* name;
     const char* input;
 };
-constexpr Case kCases[] = {{"rotate", "pattern"}, {"perspective", "scene"}, {"flip_rotate_crop", "scene"}, {"lens", "scene"},
+constexpr Case kCases[] = {{"rotate", "pattern"}, {"perspective", "scene"}, {"flip_rotate_crop", "scene"}, {"lens", "scene"}, {"lens_profile", "colors"},
                            {"chromatic", "colors"}};
 
 lo::Graph graphOf(const char* name) {
@@ -112,6 +112,32 @@ LO_TEST(vignetting_matches_python_at_three_settings) {
         LO_CHECK_GOLDEN(compareGolden(actual, readNpyF32(goldenPath("geometry/vignetting_" + std::to_string(i + 1) + "_f32.npy")),
                                       "vignetting_" + std::to_string(i + 1), kToleranceFloat));
     }
+}
+
+// A lens profile's "pa" vignetting on top of a manual amount (reference.VIGNETTING_PROFILE).
+LO_TEST(profile_vignetting_matches_python) {
+    const ImageF32 input = readNpyF32(goldenPath("input/scene_rec2020_f32.npy"));
+    const float profile[3] = {-0.42f, 0.11f, -0.04f};
+    auto op = lo::makeVignetting(20.f, 50.f, static_cast<float>(input.width) / input.height, profile);
+    LO_CHECK(!op->isIdentity());
+    ImageF32 actual = input;
+    lo::OpRegion r;
+    r.width = input.width;
+    r.height = input.height;
+    op->cpuRefRegion(input.data.data(), actual.data.data(), r);
+    LO_CHECK_GOLDEN(compareGolden(actual, readNpyF32(goldenPath("geometry/vignetting_profile_f32.npy")), "vignetting_profile",
+                                  kToleranceFloat));
+    // Through the graph: the geometry op's vignetteProfile array alone adds the op.
+    lo::Graph graph;
+    std::string error;
+    LO_CHECK(lo::parseGraph(R"({"schemaVersion":1,"layers":[{"id":"background","ops":[{"op":"geometry","sourceWidth":4.0,)"
+                            R"("sourceHeight":3.0,"outputWidth":4.0,"outputHeight":3.0,"vignetteProfile":[-0.42,0.11,-0.04],)"
+                            R"("matrix":[4.0,0.0,0.0,0.0,3.0,0.0,0.0,0.0,1.0]}]}]})",
+                            &graph, &error));
+    std::string skipped;
+    auto ops = lo::buildOps(graph, &skipped);
+    LO_CHECK(skipped.empty());
+    LO_CHECK(!ops->isIdentity());
 }
 
 LO_TEST(the_geometry_op_puts_vignetting_first_and_is_not_an_unknown_op) {

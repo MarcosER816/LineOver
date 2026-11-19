@@ -96,6 +96,7 @@ fun LineOverNavigation(
                         onBack = back,
                         onExport = { backStack.add(ExportRoute(key.projectId)) },
                         saveScope = container.appScope,
+                        lensProfiles = container.lensProfiles,
                     )
                 }
                 entry<ExportRoute>(
@@ -126,6 +127,7 @@ fun LineOverNavigation(
                             }
                         },
                         onOpenGallery = openGallery,
+                        lensProfiles = container.lensProfiles,
                     )
                 }
                 entry<SettingsSectionRoute> { key ->
@@ -135,6 +137,7 @@ fun LineOverNavigation(
                         preferences = container.preferences,
                         onBack = back,
                         onOpenGallery = openGallery,
+                        lensProfiles = container.lensProfiles,
                     )
                 }
                 entry<GalleryRoute> {

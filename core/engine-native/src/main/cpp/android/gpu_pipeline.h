@@ -29,6 +29,9 @@ struct GeometryDraw {
     float outSize[2] = {1, 1};                        // output pixels
     float srcSize[2] = {1, 1};                        // source pixels
     float lens[4] = {0, 0, 0, 0};                     // k1, k2, caRed, caBlue
+    float dist[4] = {0, 0, 0, 0};                     // lens profile distortion p1..p4
+    float tcaRed[3] = {0, 0, 0};                      // lens profile TCA (tv, tc, tb)
+    float tcaBlue[3] = {0, 0, 0};
     float srcRect[4] = {0, 0, 1, 1};                  // the texture's rect, normalised source coordinates
     float drawRect[4] = {0, 0, 1, 1};                 // the drawn quad, output pixels
     bool clampTile = false;                           // a tile: clamp taps, discard outside its rect

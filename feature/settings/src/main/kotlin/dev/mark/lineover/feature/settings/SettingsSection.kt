@@ -18,7 +18,7 @@ enum class SettingsSection(
     PreviewQuality("preview", "Preview quality", "Resolution of the live preview", LoIcons.HighQuality, 4),
     ExportDefaults("export", "Export defaults", "Format, quality, size and metadata", LoIcons.IosShare, 12),
     ColorManagement("color", "Colour management", "Working space and display profile", LoIcons.Lens, 4),
-    AiModels("ai_models", "AI models", "Downloaded models: size, licence, delete", LoIcons.AutoFixHigh, null),
+    AiModels("ai_models", "AI models", "Downloads: models and lens profiles; size, licence, delete", LoIcons.AutoFixHigh, null),
     GesturesHelp("gestures", "Gestures", "Undo / redo taps, pan, zoom and the sliders", LoIcons.TouchApp, null),
     Haptics("haptics", "Haptics", "Follows the system touch-feedback setting", LoIcons.Vibration, 30),
     ReducedMotion("reduced_motion", "Reduced motion", "Follows the system animation setting", LoIcons.Animation, 30),

@@ -12,6 +12,7 @@ import dev.mark.lineover.core.engine.Histogram
 import dev.mark.lineover.core.engine.NativeOp
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.LineSegment
+import dev.mark.lineover.core.model.PhotoExif
 import dev.mark.lineover.core.model.Project
 import kotlinx.coroutines.flow.StateFlow
 
@@ -26,6 +27,8 @@ data class ImageSummary(
     val encoding: String,
     /** The original carries an Ultra HDR gain map (kept for HDR display and export). */
     val ultraHdr: Boolean,
+    /** Camera and lens from the EXIF (lens profiles, Stage 9). */
+    val exif: PhotoExif = PhotoExif(),
 )
 
 /** The image engine as the editor sees it: draws the canvas, takes edits, reports loading. */
@@ -137,6 +140,7 @@ private class EngineCanvas(
                     else -> "16-bit float, linear"
                 },
             ultraHdr = session.preview.gainmap != null,
+            exif = session.info.exif,
         )
 
     override fun attach(surface: Surface) {

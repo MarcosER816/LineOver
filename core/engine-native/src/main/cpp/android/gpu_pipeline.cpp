@@ -83,17 +83,28 @@ uniform mat3 u_geom;      // output normalised -> source pixels (before lens)
 uniform vec2 u_outSize;   // output pixels
 uniform vec2 u_srcSize;   // source pixels
 uniform vec4 u_lens;      // k1, k2, caRed, caBlue
+uniform vec4 u_dist;      // a lens profile's distortion p1..p4 (s += p1 r + p2 r^2 + p3 r^3 + p4 r^4)
+uniform vec3 u_tcaR;      // its red / blue scale terms on the distorted radius: tv, tc, tb
+uniform vec3 u_tcaB;
 uniform vec4 u_srcRect;   // the texture's rect in normalised source coordinates
 uniform vec4 u_drawRect;  // the drawn quad in output pixels
 uniform int u_clampTile;
-vec2 lo_map(vec2 uvOut, float channelScale) {
+// ch: 0 red, 1 green, 2 blue (geometry.cpp mapToSource).
+vec2 lo_map(vec2 uvOut, int ch) {
     vec3 p = u_geom * vec3(uvOut, 1.0);
     vec2 px = p.xy / p.z;
     vec2 c = 0.5 * u_srcSize;
     float radius = 0.5 * length(u_srcSize);
     vec2 q = px - c;
     float r2 = dot(q, q) / (radius * radius);
-    return c + q * ((1.0 + u_lens.x * r2 + u_lens.y * r2 * r2) * channelScale);
+    float r = sqrt(r2);
+    float s = 1.0 + u_lens.x * r2 + u_lens.y * r2 * r2 + r * (u_dist.x + r * (u_dist.y + r * (u_dist.z + r * u_dist.w)));
+    if (ch != 1) {
+        vec3 t = ch == 0 ? u_tcaR : u_tcaB;
+        float rd = r * s;
+        s *= 1.0 + (ch == 0 ? u_lens.z : u_lens.w) + t.x + rd * (t.y + rd * t.z);
+    }
+    return c + q * s;
 }
 vec4 lo_cubic(float t) {
     const float A = -0.75;
@@ -126,16 +137,16 @@ float lo_channel(vec2 px, int ch) {
 }
 vec4 lo_source() {
     vec2 uvOut = (u_drawRect.xy + v_uv * u_drawRect.zw) / u_outSize;
-    vec2 g = lo_map(uvOut, 1.0);
+    vec2 g = lo_map(uvOut, 1);
     vec2 s = g / u_srcSize;
     // The whole image: taps outside it read 0 (OpenCV's BORDER_CONSTANT), so the edge
     // fades exactly like the reference and wedges stay transparent. A tile draws only its
     // own rect (its neighbours are other draws).
     if (u_clampTile == 1 && (s.x < u_srcRect.x || s.y < u_srcRect.y || s.x >= u_srcRect.x + u_srcRect.z || s.y >= u_srcRect.y + u_srcRect.w)) discard;
     vec4 c = vec4(0.0, lo_channel(g, 1), 0.0, lo_channel(g, 3));
-    bool ca = u_lens.z != 0.0 || u_lens.w != 0.0;
-    c.r = lo_channel(ca ? lo_map(uvOut, 1.0 + u_lens.z) : g, 0);
-    c.b = lo_channel(ca ? lo_map(uvOut, 1.0 + u_lens.w) : g, 2);
+    bool ca = u_lens.z != 0.0 || u_lens.w != 0.0 || any(notEqual(u_tcaR, vec3(0.0))) || any(notEqual(u_tcaB, vec3(0.0)));
+    c.r = lo_channel(ca ? lo_map(uvOut, 0) : g, 0);
+    c.b = lo_channel(ca ? lo_map(uvOut, 2) : g, 2);
     return c;
 }
 )";
@@ -422,6 +433,9 @@ void setGeometryUniforms(GLuint program, const GeometryDraw& g) {
     glUniform2fv(glGetUniformLocation(program, "u_outSize"), 1, g.outSize);
     glUniform2fv(glGetUniformLocation(program, "u_srcSize"), 1, g.srcSize);
     glUniform4fv(glGetUniformLocation(program, "u_lens"), 1, g.lens);
+    glUniform4fv(glGetUniformLocation(program, "u_dist"), 1, g.dist);
+    glUniform3fv(glGetUniformLocation(program, "u_tcaR"), 1, g.tcaRed);
+    glUniform3fv(glGetUniformLocation(program, "u_tcaB"), 1, g.tcaBlue);
     glUniform4fv(glGetUniformLocation(program, "u_srcRect"), 1, g.srcRect);
     glUniform4fv(glGetUniformLocation(program, "u_drawRect"), 1, g.drawRect);
     glUniform1i(glGetUniformLocation(program, "u_clampTile"), g.clampTile ? 1 : 0);

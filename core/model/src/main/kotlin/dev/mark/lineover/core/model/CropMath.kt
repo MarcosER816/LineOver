@@ -25,11 +25,11 @@ object CropMath {
     ): Double {
         val planar =
             listOf(g.straighten + g.rotate, g.uprightPitch, g.uprightYaw, g.uprightRoll, g.vertical, g.horizontal, g.aspectAmount)
-        val lens = listOf(g.k1, g.k2, g.caRed, g.caBlue)
+        val lens = listOf(g.k1, g.k2, g.caRed, g.caBlue) + g.lensDistortion + g.lensTcaRed + g.lensTcaBlue
         val exact = planar.all { it == 0f } && lens.all { it == 0.0 } && g.scale == 100f && g.offsetX == 0f && g.offsetY == 0f
         if (exact) return 0.0
         val halfDiagonal = 0.5 * hypot(sourceWidth.toDouble(), sourceHeight.toDouble())
-        return BICUBIC_REACH + max(kotlin.math.abs(g.caRed), kotlin.math.abs(g.caBlue)) * halfDiagonal
+        return BICUBIC_REACH + max(channelShift(g.caRed, g.lensTcaRed), channelShift(g.caBlue, g.lensTcaBlue)) * halfDiagonal
     }
 
     /**
@@ -66,27 +66,26 @@ object CropMath {
         x: Double,
         y: Double,
     ): Pair<Double, Double> {
-        if (g.k1 == 0.0 && g.k2 == 0.0) return x to y
+        if (g.k1 == 0.0 && g.k2 == 0.0 && g.lensDistortion.all { it == 0.0 }) return x to y
         val cx = sourceWidth / 2.0
         val cy = sourceHeight / 2.0
         val radius = 0.5 * hypot(sourceWidth.toDouble(), sourceHeight.toDouble())
         val rd = hypot(x - cx, y - cy) / radius
         if (rd == 0.0) return x to y
-        // Distorted radius rd = r (1 + k1 r^2 + k2 r^4): solve for r on the monotone part
-        // (up to the fold, where the model turns back). A radius past the fold has no
-        // undistorted position: the valid image ends at the fold.
-        val fold = foldRadius(g.k1, g.k2)
-        val reach = fold * (1 + g.k1 * fold * fold + g.k2 * fold * fold * fold * fold)
+        // Distorted radius rd = r s(r): solve for r on the monotone part (up to the fold,
+        // where the model turns back). A radius past the fold has no undistorted position:
+        // the valid image ends at the fold.
+        val fold = foldRadius(g)
+        val reach = fold * g.radialScale(fold * fold)
         val r =
             if (rd >= reach) {
                 fold
             } else {
                 var lo = 0.0
-                var hi = fold.coerceAtMost(MAX_RADIUS)
+                var hi = fold
                 repeat(BISECTION_STEPS) {
                     val mid = (lo + hi) / 2
-                    val m2 = mid * mid
-                    if (mid * (1 + g.k1 * m2 + g.k2 * m2 * m2) < rd) lo = mid else hi = mid
+                    if (mid * g.radialScale(mid * mid) < rd) lo = mid else hi = mid
                 }
                 (lo + hi) / 2
             }
@@ -94,21 +93,16 @@ object CropMath {
         return cx + (x - cx) * s to cy + (y - cy) * s
     }
 
-    /** The smallest radius where d/dr [r (1 + k1 r² + k2 r⁴)] = 0 (MAX_RADIUS when it never turns back). */
-    private fun foldRadius(
-        k1: Double,
-        k2: Double,
-    ): Double {
-        // 5 k2 x² + 3 k1 x + 1 = 0 with x = r².
-        val roots =
-            if (k2 == 0.0) {
-                listOf(-1.0 / (3 * k1))
-            } else {
-                val d = 9 * k1 * k1 - 20 * k2
-                if (d < 0) emptyList() else listOf((-3 * k1 - kotlin.math.sqrt(d)) / (10 * k2), (-3 * k1 + kotlin.math.sqrt(d)) / (10 * k2))
-            }
-        val x = roots.filter { it > 0 && it.isFinite() }.minOrNull() ?: return MAX_RADIUS
-        return min(kotlin.math.sqrt(x), MAX_RADIUS)
+    /** The first radius where r s(r) stops growing (MAX_RADIUS when it never turns back). */
+    private fun foldRadius(g: GeometryAdjustments): Double {
+        var previous = 0.0
+        for (i in 1..FOLD_STEPS) {
+            val r = MAX_RADIUS * i / FOLD_STEPS
+            val value = r * g.radialScale(r * r)
+            if (value <= previous) return MAX_RADIUS * (i - 1) / FOLD_STEPS
+            previous = value
+        }
+        return MAX_RADIUS
     }
 
     /**
@@ -214,6 +208,7 @@ object CropMath {
     private const val SEARCH_STEPS = 30
     private const val BISECTION_STEPS = 60
     private const val MAX_RADIUS = 4.0
+    private const val FOLD_STEPS = 4000
     private const val MIN_RATIO = 0.01f
 
     /**
@@ -249,3 +244,15 @@ object CropMath {
             else -> g.aspect.ratio?.let { max(it, 1f / it) }
         }
 }
+
+/** A bound on |scale - 1| of a channel over the image (distorted radius up to [RD_BOUND]). */
+@Suppress("MagicNumber") // tv, tc, tb
+private fun channelShift(
+    ca: Double,
+    tca: List<Double>,
+): Double {
+    val t = tca + List(3 - tca.size.coerceAtMost(3)) { 0.0 }
+    return kotlin.math.abs(ca + t[0]) + kotlin.math.abs(t[1]) * RD_BOUND + kotlin.math.abs(t[2]) * RD_BOUND * RD_BOUND
+}
+
+private const val RD_BOUND = 1.5

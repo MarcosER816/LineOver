@@ -1303,8 +1303,14 @@ def op_matrix_from_cv(m_cv: np.ndarray, out_w: int, out_h: int) -> np.ndarray:
     return to_edges @ m_cv @ to_centres
 
 
-def geometry_maps(src_w, src_h, matrix, out_w, out_h, k1=0.0, k2=0.0, channel_scale=1.0):
-    """Source sampling positions (OpenCV pixel-centre convention) of every output pixel."""
+def geometry_maps(src_w, src_h, matrix, out_w, out_h, k1=0.0, k2=0.0, channel_scale=1.0,
+                  dist=(0.0, 0.0, 0.0, 0.0), tca=(0.0, 0.0, 0.0)):
+    """Source sampling positions (OpenCV pixel-centre convention) of every output pixel.
+
+    Lens model (r = distance from the centre / half diagonal): s = 1 + k1 r^2 + k2 r^4
+    + p1 r + p2 r^2 + p3 r^3 + p4 r^4 (dist: a lens profile's terms, Lensfun ptlens / poly3 /
+    poly5 converted exactly); a channel's scale is channel_scale + tv + tc rd + tb rd^2 on
+    the distorted radius rd = r s (tca: a profile's poly3 / linear TCA, Lensfun's order)."""
     i, j = np.meshgrid(np.arange(out_w, dtype=np.float64), np.arange(out_h, dtype=np.float64))
     u = (i + 0.5) / out_w
     v = (j + 0.5) / out_h
@@ -1317,16 +1323,27 @@ def geometry_maps(src_w, src_h, matrix, out_w, out_h, k1=0.0, k2=0.0, channel_sc
     radius = 0.5 * np.hypot(src_w, src_h)
     qx, qy = x - cx, y - cy
     r2 = (qx * qx + qy * qy) / (radius * radius)
-    s = (1.0 + k1 * r2 + k2 * r2 * r2) * channel_scale
+    s = 1.0 + k1 * r2 + k2 * r2 * r2
+    if any(dist):
+        r = np.sqrt(r2)
+        p1, p2, p3, p4 = dist
+        s = s + r * (p1 + r * (p2 + r * (p3 + r * p4)))
+    scale = channel_scale
+    if any(tca):
+        rd = np.sqrt(r2) * s
+        scale = scale + tca[0] + rd * (tca[1] + rd * tca[2])
+    s = s * scale
     return (cx + qx * s - 0.5).astype(np.float32), (cy + qy * s - 0.5).astype(np.float32)
 
 
-def geometry_warp(image, matrix, out_w, out_h, k1=0.0, k2=0.0, ca_red=0.0, ca_blue=0.0):
+def geometry_warp(image, matrix, out_w, out_h, k1=0.0, k2=0.0, ca_red=0.0, ca_blue=0.0,
+                  dist=(0.0, 0.0, 0.0, 0.0), tca_red=(0.0, 0.0, 0.0), tca_blue=(0.0, 0.0, 0.0)):
     """Reference of the geometry warp: one bicubic resample (cv2.remap), border 0."""
     h, w = image.shape[:2]
     out = np.zeros((out_h, out_w, 4), dtype=np.float32)
-    for c, scale in enumerate((1.0 + ca_red, 1.0, 1.0 + ca_blue, 1.0)):
-        mx, my = geometry_maps(w, h, matrix, out_w, out_h, k1, k2, scale)
+    none = (0.0, 0.0, 0.0)
+    for c, (scale, tca) in enumerate(((1.0 + ca_red, tca_red), (1.0, none), (1.0 + ca_blue, tca_blue), (1.0, none))):
+        mx, my = geometry_maps(w, h, matrix, out_w, out_h, k1, k2, scale, dist, tca)
         out[..., c] = cv2.remap(
             np.ascontiguousarray(image[..., c].astype(np.float32)),
             mx,
@@ -1338,7 +1355,7 @@ def geometry_warp(image, matrix, out_w, out_h, k1=0.0, k2=0.0, ca_red=0.0, ca_bl
     return out
 
 
-def vignetting(image, amount, midpoint=50.0):
+def vignetting(image, amount, midpoint=50.0, profile=(0.0, 0.0, 0.0)):
     """Lens vignetting correction (source space, before every other op): the corners are
     brightened (amount > 0) or darkened by up to one stop: gain = 2^(amount/100 * f^2),
     f = clamp((r - m) / (1 - m), 0, 1), r = distance from the centre / half diagonal,
@@ -1351,7 +1368,11 @@ def vignetting(image, amount, midpoint=50.0):
     r = np.hypot(qx, qy) / (0.5 * np.hypot(w, h))
     m = midpoint / 100.0 * 0.8
     f = np.clip((r - m) / (1.0 - m), 0.0, 1.0)
-    out[..., :3] *= (2.0 ** (amount / 100.0 * f * f))[..., None]
+    # A lens profile's "pa" model (lensfun devignetting: divide by 1 + k1 r^2 + k2 r^4 + k3 r^6).
+    k1, k2, k3 = profile
+    r2 = r * r
+    lens = 1.0 + r2 * (k1 + r2 * (k2 + r2 * k3))
+    out[..., :3] *= (2.0 ** (amount / 100.0 * f * f) / lens)[..., None]
     return out.astype(np.float32)
 
 
@@ -1383,6 +1404,14 @@ def geometry_cases(pattern, scene, chart):
     # 5. Chromatic aberration: red scaled out, blue scaled in, on the colour chart.
     ch, cw = chart.shape[:2]
     cases.append(("chromatic", "chart", chart, cw, ch, op_matrix_from_cv(np.eye(3), cw, ch), {"caRed": 0.012, "caBlue": -0.009}))
+    # 6. A lens profile (odd distortion terms, as a ptlens profile converts) with polynomial
+    #    TCA on the distorted radius, plus a manual k1 and red shift, on the colour chart.
+    cases.append(("lens_profile", "chart", chart, cw, ch, op_matrix_from_cv(np.eye(3), cw, ch), {
+        "k1": 0.02, "caRed": 0.002,
+        "lensDistortion": [0.012, -0.21, 0.05, 0.03],
+        "lensTcaRed": [0.0004, 0.0015, -0.002],
+        "lensTcaBlue": [-0.0003, -0.001, 0.0012],
+    }))
     return cases
 
 
@@ -1398,6 +1427,7 @@ def geometry_op(matrix, out_w, out_h, extra):
         "k2": float(extra.get("k2", 0.0)),
         "caRed": float(extra.get("caRed", 0.0)),
         "caBlue": float(extra.get("caBlue", 0.0)),
+        **{k: [float(x) for x in extra[k]] for k in ("lensDistortion", "lensTcaRed", "lensTcaBlue") if k in extra},
         "matrix": [float(x) for x in np.asarray(matrix).reshape(9)],
     }
 
@@ -1416,6 +1446,8 @@ def homography_fixtures(count: int = 24) -> list:
 
 
 VIGNETTING_SETTINGS = [(50.0, 50.0), (-40.0, 20.0), (100.0, 80.0)]
+# A lens profile's vignetting ("pa": k1, k2, k3; typical of a wide-open lens) on top of a manual amount.
+VIGNETTING_PROFILE = (20.0, 50.0, (-0.42, 0.11, -0.04))
 
 
 def geometry_self_check(pattern, scene, chart):

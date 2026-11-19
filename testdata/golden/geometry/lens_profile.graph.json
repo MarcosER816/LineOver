@@ -1,0 +1,1 @@
+{"schemaVersion":1,"layers":[{"id":"background","ops":[{"op":"geometry","sourceWidth":120.0,"sourceHeight":48.0,"outputWidth":120.0,"outputHeight":48.0,"k1":0.02,"k2":0.0,"caRed":0.002,"caBlue":0.0,"lensDistortion":[0.012,-0.21,0.05,0.03],"lensTcaRed":[0.0004,0.0015,-0.002],"lensTcaBlue":[-0.0003,-0.001,0.0012],"matrix":[120.0,0.0,0.0,0.0,48.0,0.0,0.0,0.0,1.0]}]}]}

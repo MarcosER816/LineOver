@@ -116,6 +116,22 @@ sealed interface GeometryAction {
     data object AutoChromatic : GeometryAction
 
     data object Reset : GeometryAction
+
+    /** Lens profile on (matched from the EXIF, or [lens] by name) or off. */
+    data class UseProfile(
+        val on: Boolean,
+        val lens: String? = null,
+    ) : GeometryAction
+
+    data class ProfileChromatic(
+        val on: Boolean,
+    ) : GeometryAction
+
+    /** Downloads the lens profile database (the user tapped Download). */
+    data object DownloadProfiles : GeometryAction
+
+    /** Finds the lenses the database has for this photo (the Lens profile section opened). */
+    data object LoadLensCandidates : GeometryAction
 }
 
 /** The photo's size the geometry is composed for (oriented original pixels). */
@@ -284,7 +300,8 @@ internal fun EditorState.reduceGeometry(action: GeometryAction): EditorState {
             withGeometry(GeometryAdjustments(constrain = g.constrain))
         }
 
-        is GeometryAction.Upright, is GeometryAction.AutoStraighten, is GeometryAction.AutoChromatic -> {
+        // Asynchronous (EditorGeometryActions): Upright, Auto, lens profiles.
+        else -> {
             this
         }
     }

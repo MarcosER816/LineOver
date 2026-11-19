@@ -156,6 +156,14 @@ python3 tools/golden/generate.py --check
   image size is the output size (`EditorState.canvasSize`); while a crop tool is open the
   canvas shows the uncropped frame (`canvasGraph`).
 - Upright angles are limited to ±25° and fall back to Level (`Upright.LIMIT`).
+- Lens model (shared with Lensfun, so profiles convert exactly): `s(r) = 1 + k1 r² + k2 r⁴ +
+  p1 r + p2 r² + p3 r³ + p4 r⁴`, channel scale `1 + ca + tv + tc rd + tb rd²` on the distorted
+  radius, vignetting `/ (1 + k1 r² + k2 r⁴ + k3 r⁶)`. `geometry.cpp`, the shader,
+  `reference.py`, `GeometryAdjustments.radialScale` and `CropMath.undistort` change together;
+  `LensProfilesTest` checks the conversion against `tools/golden/lensfun_reference.py`.
+- The Lensfun database (CC BY-SA 3.0) is never bundled: `LensProfileStore` downloads the
+  files pinned in `LensfunManifest` (SHA-256) on request. Change the commit and the hashes
+  together.
 
 ## History and projects (Stage 8)
 
