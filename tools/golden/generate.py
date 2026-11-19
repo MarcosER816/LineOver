@@ -314,7 +314,9 @@ def lut_outputs() -> dict:
     out["luts/teal_amber_33_gpu_srgb_display_f32.npy"] = reference.gpu_display(
         lambda im: f32(lut.apply_lut(im, teal, 0.6)), scene)
     vivid = lut.Cube(lut.profile_table("vivid"))
-    out["profiles/vivid_gpu_srgb_display_f32.npy"] = reference.gpu_display(lambda im: f32(lut.apply_lut(im, vivid, 1.0)), chart)
+    # The scene, not the chart: the chart's light yellow-greens on the sRGB gamut face make the
+    # display gamut mapping steep enough to turn one float16 step into more than 3/255.
+    out["profiles/vivid_gpu_srgb_display_f32.npy"] = reference.gpu_display(lambda im: f32(lut.apply_lut(im, vivid, 1.0)), scene)
     return out
 
 

@@ -8,6 +8,7 @@
 
 #include "engine.h"
 #include "lineover/color_ops.h"
+#include "lineover/lut.h"
 #include "lineover/tiling.h"
 
 struct lo_engine {
@@ -203,9 +204,40 @@ int lo_engine_auto_light(lo_engine* engine, float* exposure, float* blacks) {
 int lo_engine_auto_levels(lo_engine* engine, float* out6) { return engine->engine->autoLevels(out6) ? 1 : 0; }
 
 int lo_engine_render_thumbnail(lo_engine* engine, const char* graph_json, uint8_t* out, int capacity, int* width, int* height) {
+    return lo_engine_render_thumbnail_sized(engine, graph_json, 512, out, capacity, width, height);
+}
+
+int lo_engine_auto_settings(lo_engine* engine, float* out7) {
+    lo::AutoSettings s;
+    if (!engine->engine->autoSettings(&s)) return 0;
+    const float v[7] = {s.temperature, s.tint, s.exposure, s.contrast, s.whites, s.blacks, s.vibrance};
+    std::copy(v, v + 7, out7);
+    return 1;
+}
+
+int lo_register_lut(const char* id, int size, const float* domain_min3, const float* domain_max3, const float* rgb) {
+    if (id == nullptr || rgb == nullptr || size < lo::kLutMinSize || size > lo::kLutMaxSize) return 0;
+    auto lut = std::make_shared<lo::Lut3D>();
+    lut->size = size;
+    for (int k = 0; k < 3; ++k) {
+        lut->domainMin[k] = domain_min3[k];
+        lut->domainMax[k] = domain_max3[k];
+    }
+    lut->rgb.assign(rgb, rgb + static_cast<std::size_t>(size) * size * size * 3);
+    if (!lut->finish()) return 0;
+    lo::registerLut(id, std::move(lut));
+    return 1;
+}
+
+void lo_unregister_lut(const char* id) {
+    if (id != nullptr) lo::unregisterLut(id);
+}
+
+int lo_engine_render_thumbnail_sized(lo_engine* engine, const char* graph_json, int max_edge, uint8_t* out, int capacity,
+                                     int* width, int* height) {
     std::vector<std::uint8_t> rgba;
     int w = 0, h = 0;
-    if (!engine->engine->renderThumbnail(graph_json, &rgba, &w, &h)) return 0;
+    if (!engine->engine->renderThumbnail(graph_json, &rgba, &w, &h, max_edge)) return 0;
     if (static_cast<std::size_t>(capacity) < rgba.size()) return 0;
     std::copy(rgba.begin(), rgba.end(), out);
     *width = w;

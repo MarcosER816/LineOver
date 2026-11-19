@@ -172,9 +172,9 @@ data class ColorAdjustments(
  * The whole background edit, in the engine's fixed order: Geometry (Stage 9: one
  * resample, its vignetting correction first in source space) → Noise reduction → Clarity →
  * Texture → Dehaze (Stage 10: on the image as decoded) → Calibration → White balance →
- * Light → Levels → Curves → Parametric curve → Vibrance → Saturation → HSL → Color
+ * Profile (Stage 11) → Light → Levels → Curves → Parametric curve → Vibrance → Saturation → HSL → Color
  * Balance → Selective Color → Channel Mixer → Color Grading → Photo Filter → Black &
- * White → Gradient Map → Invert → Posterize → Threshold → Sharpen, then the output-space
+ * White → Gradient Map → 3D LUT (Stage 11) → Invert → Posterize → Threshold → Sharpen, then the output-space
  * finishing (post-crop Vignette, Grain). [sharpenMask] shows Sharpen's mask (canvas only).
  */
 fun editOps(
@@ -184,10 +184,13 @@ fun editOps(
     geometry: OpParams.Geometry? = null,
     detail: DetailAdjustments = DetailAdjustments(),
     sharpenMask: Boolean = false,
+    looks: LookAdjustments = LookAdjustments(),
 ): List<OpParams> =
-    listOfNotNull(geometry) + detail.sourceOps() + grade.calibrationOps() + color.beforeLight() + light.toOps() + grade.toneOps() +
+    listOfNotNull(geometry) + detail.sourceOps() + grade.calibrationOps() + color.beforeLight() + looks.profileOps() + light.toOps() +
+        grade.toneOps() +
         color.basics() +
         grade.gradingOps() +
+        looks.lutOps() +
         color.finishing() +
         detail.sharpenOps(sharpenMask) +
         detail.finishingOps()

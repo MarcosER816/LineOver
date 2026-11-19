@@ -83,6 +83,16 @@ int lo_engine_auto_levels(lo_engine* engine, float* out6);
 // `graph_json` rendered on a <= 512 px copy of the preview as sRGB RGBA8 into `out`
 // (`capacity` bytes); sets the size. 0 before a preview, on a bad graph or a short buffer.
 int lo_engine_render_thumbnail(lo_engine* engine, const char* graph_json, uint8_t* out, int capacity, int* width, int* height);
+/* The same from the <= 256 px proxy when max_edge <= 256 (preset thumbnails). */
+int lo_engine_render_thumbnail_sized(lo_engine* engine, const char* graph_json, int max_edge, uint8_t* out, int capacity,
+                                     int* width, int* height);
+/* Auto (Stage 11): temperature, tint, exposure, contrast, whites, blacks, vibrance into out7;
+ * 0 before a preview or on an image with nothing usable. */
+int lo_engine_auto_settings(lo_engine* engine, float* out7);
+/* 3D LUTs (process-wide, lut.h): `rgb` holds size^3 RGB triples, red fastest. 0 when the
+ * size (2..65), domain or table is invalid. */
+int lo_register_lut(const char* id, int size, const float* domain_min3, const float* domain_max3, const float* rgb);
+void lo_unregister_lut(const char* id);
 void lo_engine_set_show_original(lo_engine* engine, int original);
 void lo_engine_set_compare(lo_engine* engine, int mode, float split);
 void lo_engine_set_clipping(lo_engine* engine, int clipping);

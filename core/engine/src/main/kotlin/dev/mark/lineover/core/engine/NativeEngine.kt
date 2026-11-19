@@ -145,8 +145,30 @@ internal class NativeEngine(
     /** Levels Auto: per-channel encoded 0.1 / 99.9 % percentiles (low R, high R, …) or null. */
     fun autoLevels(): FloatArray? = nativeAutoLevels(h())
 
-    /** [graph] on a <= 512 px copy of the preview: [width, height] (8 bytes) then sRGB RGBA8. */
-    fun renderThumbnail(graph: String): ByteArray? = nativeRenderThumbnail(h(), graph)
+    /**
+     * [graph] on a small copy of the preview (<= 256 px when [maxEdge] <= 256, else <= 512 px):
+     * [width, height] (8 bytes) then sRGB RGBA8.
+     */
+    fun renderThumbnail(
+        graph: String,
+        maxEdge: Int = 512,
+    ): ByteArray? = nativeRenderThumbnail(h(), graph, maxEdge)
+
+    /** Auto (Stage 11): temperature, tint, exposure, contrast, whites, blacks, vibrance; null before a preview. */
+    fun autoSettings(): FloatArray? = nativeAutoSettings(h())
+
+    /**
+     * Registers a 3D LUT for every engine of the process (lut.h): [rgb] holds [size]^3 RGB
+     * triples, red fastest; [domain] min r, g, b then max r, g, b. False when refused.
+     */
+    fun registerLut(
+        id: String,
+        size: Int,
+        domain: FloatArray,
+        rgb: FloatArray,
+    ): Boolean = nativeRegisterLut(id, size, domain, rgb)
+
+    fun unregisterLut(id: String) = nativeUnregisterLut(id)
 
     /** Auto (percentile stretch): (exposure EV, blacks) or null before a preview. */
     fun autoLight(): FloatArray? = nativeAutoLight(h())
@@ -238,7 +260,19 @@ internal class NativeEngine(
     private external fun nativeRenderThumbnail(
         engine: Long,
         graph: String,
+        maxEdge: Int,
     ): ByteArray?
+
+    private external fun nativeAutoSettings(engine: Long): FloatArray?
+
+    private external fun nativeRegisterLut(
+        id: String,
+        size: Int,
+        domain: FloatArray,
+        rgb: FloatArray,
+    ): Boolean
+
+    private external fun nativeUnregisterLut(id: String)
 
     private external fun nativeSample(
         engine: Long,
