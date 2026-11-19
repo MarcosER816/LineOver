@@ -122,8 +122,19 @@ Screenshots changed, and why:
 | Holding a thumbnail did not change the canvas | `setState` does not sync the canvas | `reduce` (graph unchanged, no History step) |
 | An imported LUT's op had no name | The library's flow had not reached the state yet | The import passes the name it has |
 | (0.11.1, after merge) The signed release closed when a photo was opened; the debug build and CI were fine | R8 removed `NativeEngine.onLoadingChanged` / `onHistogram`: only native code calls them (`GetMethodID` in `nativeCreate`), and the keep rule covered `native` methods only. Present since Stage 4; CI's instrumented tests run the unminified debug build | Keep rule in `core/engine/consumer-rules.pro`; `nativeCreate` checks the method ids and fails cleanly; the editor catches an engine that cannot start (`CanvasOpenException`) and shows the reason; CI runs `tools/ci/check_jni_keep.py` on the release build's R8 seeds |
+| (0.11.2) Lens profiles could not be downloaded on the phone | Not reproducible here: the 56 pinned files download and match their SHA-256 from CI's network. Mark asked to include them if the download does not work | The database ships in the app (below) |
 
 Plan B used: no.
+
+### 0.11.2: Lens profiles bundled (R10)
+
+The Lensfun database (`data/db` at commit `37238fc`, 56 XML files, 5.2 MB) is now an asset of
+`:core:io`, unmodified, with `NOTICE.txt`. Licence: **CC BY-SA 3.0** (the Lensfun
+contributors). It is a data licence (attribution, share-alike for the database itself), not a
+software licence: LineOver's code stays its own and the LGPL Lensfun library is not used.
+Attribution is shown in Settings → Lens profiles. Each file is checked against its pinned
+SHA-256 when first read; `LensProfileStoreTest` checks the assets equal the manifest. This
+replaces the Stage 9 "download on request" decision, at Mark's request.
 
 ## Proof
 

@@ -165,9 +165,11 @@ python3 tools/golden/generate.py --check
   radius, vignetting `/ (1 + k1 r² + k2 r⁴ + k3 r⁶)`. `geometry.cpp`, the shader,
   `reference.py`, `GeometryAdjustments.radialScale` and `CropMath.undistort` change together;
   `LensProfilesTest` checks the conversion against `tools/golden/lensfun_reference.py`.
-- The Lensfun database (CC BY-SA 3.0) is never bundled: `LensProfileStore` downloads the
-  files pinned in `LensfunManifest` (SHA-256) on request. Change the commit and the hashes
-  together.
+- The Lensfun database (CC BY-SA 3.0) ships unmodified in `core/io/src/main/assets/lensfun`
+  (Mark's decision, 0.11.2: the on-device download failed), with `NOTICE.txt` and the
+  attribution in Settings. `LensProfileStore` checks each file against `LensfunManifest`
+  (SHA-256) when it first reads them; `LensProfileStoreTest` checks the assets match the
+  manifest. Change the commit, the hashes and the asset files together.
 
 ## Detail and effects (Stage 10)
 

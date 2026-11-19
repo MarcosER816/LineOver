@@ -106,4 +106,61 @@ class LensProfileStoreTest {
         assertNotNull(value)
         return value!!
     }
+
+    // 0.11.2: the database ships in the app's assets.
+
+    @Test
+    fun theBundledFilesAreExactlyThePinnedOnes() {
+        val assets = File(root, "core/io/src/main/assets/lensfun")
+        val shipped =
+            assets
+                .listFiles { f -> f.name.endsWith(".xml") }
+                .orEmpty()
+                .map { it.name }
+                .sorted()
+        assertEquals(LensfunManifest.FILES.map { it.name }.sorted(), shipped)
+        for (file in LensfunManifest.FILES) {
+            val bytes = File(assets, file.name).readBytes()
+            assertEquals(file.name, file.size, bytes.size.toLong())
+            assertEquals(file.name, file.sha256, sha(bytes))
+        }
+        assertEquals(LensfunManifest.TOTAL_BYTES, LensfunManifest.FILES.sumOf { it.size })
+        assertTrue(File(assets, "NOTICE.txt").readText().contains(LensfunManifest.LICENCE))
+    }
+
+    @Test
+    fun theBundledDatabaseIsIncludedAndParses() =
+        runTest {
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            val assets = File(root, "core/io/src/main/assets/lensfun")
+            val store =
+                LensProfileStore(
+                    dir = File(temp.root, "lensfun"),
+                    fetch = { url -> throw IOException("no network in this test: $url") },
+                    io = dispatcher,
+                    bundled = { name -> File(assets, name).inputStream() },
+                )
+            assertEquals(LensProfileState.Included(LensfunManifest.TOTAL_BYTES), store.state.value)
+            assertTrue(store.download())
+            store.delete()
+            assertEquals(LensProfileState.Included(LensfunManifest.TOTAL_BYTES), store.state.value)
+            val database = store.database()
+            assertNotNull(database)
+            assertTrue(requireNotNull(database).lenses.size > 1000)
+        }
+
+    @Test
+    fun aDamagedBundledFileIsReportedNotUsed() =
+        runTest {
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            val store =
+                LensProfileStore(
+                    dir = File(temp.root, "lensfun"),
+                    files = manifest(),
+                    io = dispatcher,
+                    bundled = { name -> ByteArrayInputStream(if (name == "empty.xml") "<broken/>".toByteArray() else fixture) },
+                )
+            assertNull(store.database())
+            assertTrue(store.state.value is LensProfileState.Failed)
+        }
 }
