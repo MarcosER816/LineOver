@@ -180,6 +180,8 @@ internal class NativeEngine(
 
     fun unregisterLayerImage(id: String) = nativeUnregisterLayerImage(id)
 
+    fun releaseFullLayerImages() = nativeReleaseFullLayerImages()
+
     /** Renders a layered graph's composite for the canvas, or clears it (CPU, the calling thread). */
     fun renderComposite() = nativeRenderComposite(h())
 
@@ -295,6 +297,8 @@ internal class NativeEngine(
     ): Boolean
 
     private external fun nativeUnregisterLayerImage(id: String)
+
+    private external fun nativeReleaseFullLayerImages()
 
     private external fun nativeRenderComposite(engine: Long)
 

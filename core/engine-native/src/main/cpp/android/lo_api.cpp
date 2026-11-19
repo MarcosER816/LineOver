@@ -256,6 +256,8 @@ void lo_unregister_layer_image(const char* id) {
     if (id != nullptr) lo::layers::unregisterLayerImage(id);
 }
 
+void lo_release_full_layer_images(void) { lo::layers::releaseFullLayerImages(); }
+
 void lo_engine_render_composite(lo_engine* engine) { engine->engine->renderComposite(); }
 
 void lo_unregister_lut(const char* id) {

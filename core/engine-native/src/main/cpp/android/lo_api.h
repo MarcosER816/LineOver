@@ -97,6 +97,8 @@ int lo_register_lut(const char* id, int size, const float* domain_min3, const fl
 int lo_register_layer_image(const char* id, const void* pixels, size_t stride, int width, int height, int format,
                             int premultiplied, int full);
 void lo_unregister_layer_image(const char* id);
+/* Drops the export (full) layer images; the canvas keeps its preview ones. */
+void lo_release_full_layer_images(void);
 /* Renders a layered graph's composite for the canvas (or clears it); CPU, any thread. */
 void lo_engine_render_composite(lo_engine* engine);
 void lo_unregister_lut(const char* id);

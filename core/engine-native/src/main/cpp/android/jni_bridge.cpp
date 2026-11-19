@@ -325,6 +325,8 @@ JNIEXPORT void LO_NATIVE(nativeUnregisterLayerImage)(JNIEnv* env, jobject, jstri
     env->ReleaseStringUTFChars(id, text);
 }
 
+JNIEXPORT void LO_NATIVE(nativeReleaseFullLayerImages)(JNIEnv*, jobject) { lo_release_full_layer_images(); }
+
 JNIEXPORT void LO_NATIVE(nativeRenderComposite)(JNIEnv*, jobject, jlong engine) { lo_engine_render_composite(handle(engine)); }
 
 JNIEXPORT void LO_NATIVE(nativeUnregisterLut)(JNIEnv* env, jobject, jstring id) {

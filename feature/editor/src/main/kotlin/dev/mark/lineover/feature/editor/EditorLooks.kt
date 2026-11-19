@@ -8,6 +8,7 @@ import dev.mark.lineover.core.model.DetailAdjustments
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.GeometryAdjustments
 import dev.mark.lineover.core.model.GradeAdjustments
+import dev.mark.lineover.core.model.LayerMath
 import dev.mark.lineover.core.model.LightAdjustments
 import dev.mark.lineover.core.model.LookAdjustments
 import dev.mark.lineover.core.model.OpParams
@@ -428,8 +429,8 @@ internal class EditorLooksActions(
     /** A graph is about to reach the engine: register the LUTs it names that are new. */
     fun onCanvasGraph(graph: EditGraph) {
         val missing =
-            graph.layers
-                .flatMap { it.ops }
+            LayerMath
+                .allOps(graph)
                 .filterIsInstance<OpParams.Lut>()
                 .map { it.id }
                 .filter { synchronized(registered) { it !in registered } }

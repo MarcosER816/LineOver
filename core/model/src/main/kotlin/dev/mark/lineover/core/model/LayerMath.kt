@@ -109,6 +109,39 @@ object LayerMath {
             .filterNot { it.id == id && !it.isBackground }
             .map { if (it.type == LayerType.Group) it.copy(children = removeFrom(it.children, id)) else it }
 
+    /** Where [id] sits: its parent group's id (null at the top level) and its index there. */
+    fun parentOf(
+        graph: EditGraph,
+        id: String,
+    ): Pair<String?, Int>? {
+        fun search(
+            parent: String?,
+            layers: List<Layer>,
+        ): Pair<String?, Int>? {
+            val i = layers.indexOfFirst { it.id == id }
+            if (i >= 0) return parent to i
+            return layers.filter { it.type == LayerType.Group }.firstNotNullOfOrNull { search(it.id, it.children) }
+        }
+        return search(null, graph.layers)
+    }
+
+    /** [layer] put back at [index] of [parentId]'s children (null = the top level, above the photo). */
+    fun insertAt(
+        graph: EditGraph,
+        layer: Layer,
+        parentId: String?,
+        index: Int,
+    ): EditGraph {
+        fun into(list: List<Layer>): List<Layer> {
+            val floor = if (list.firstOrNull()?.isBackground == true) 1 else 0
+            val at = index.coerceIn(floor, list.size)
+            return list.subList(0, at) + layer + list.subList(at, list.size)
+        }
+        if (parentId == null) return graph.copy(layers = into(graph.layers))
+        if (find(graph, parentId)?.type != LayerType.Group) return add(graph, layer)
+        return graph.copy(layers = mapTree(graph.layers) { if (it.id == parentId) it.copy(children = into(it.children)) else it })
+    }
+
     /** The siblings of [id] (bottom to top) and its index among them, or null. */
     fun siblings(
         graph: EditGraph,
@@ -217,6 +250,13 @@ object LayerMath {
             }
         return graph.copy(layers = open(graph.layers))
     }
+
+    /** The ops of every layer, the background's first (LUTs they name are registered with the engine). */
+    fun allOps(graph: EditGraph): List<OpParams> =
+        graph.layers
+            .firstOrNull()
+            ?.ops
+            .orEmpty() + flatten(graph).flatMap { it.first.ops }
 
     /** Layer images the graph names (to register them with the engine). */
     fun sources(graph: EditGraph): Set<String> =

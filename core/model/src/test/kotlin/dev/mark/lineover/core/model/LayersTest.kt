@@ -169,4 +169,50 @@ class LayersTest {
         assertEquals(0.5f, fit.scale)
         assertEquals(1000f, fit.centerX)
     }
+
+    @Test
+    fun deletedLayersGoBackWhereTheyWere() {
+        val g = LayerMath.group(three, "b")
+        val groupId = g.layers[2].id
+        val (parent, index) = LayerMath.parentOf(g, "b")!!
+        assertEquals(groupId, parent)
+        assertEquals(0, index)
+        val removed = LayerMath.remove(g, "b")
+        assertEquals(g, LayerMath.insertAt(removed, LayerMath.find(g, "b")!!, parent, index))
+        val (top, at) = LayerMath.parentOf(three, "a")!!
+        assertNull(top)
+        assertEquals(three, LayerMath.insertAt(LayerMath.remove(three, "a"), LayerMath.find(three, "a")!!, top, at))
+    }
+
+    @Test
+    fun historyNamesLayerChanges() {
+        val faded = LayerMath.update(three, "b") { it.copy(opacity = 50f) }
+        val change = HistoryLabels.describe(three, faded)
+        assertEquals("b: Opacity 50 %", change.label)
+        assertEquals("layer.b.opacity", change.key)
+        assertEquals(
+            "b: Multiply",
+            HistoryLabels.describe(three, LayerMath.update(three, "b") { it.copy(blend = BlendMode.Multiply) }).label,
+        )
+        assertEquals("Hide c", HistoryLabels.describe(three, LayerMath.update(three, "c") { it.copy(visible = false) }).label)
+        assertEquals("Layers", HistoryLabels.describe(three, LayerMath.remove(three, "c")).label)
+        val adjusted = LayerMath.update(three, "a") { it.copy(ops = listOf(OpParams.Exposure(1f))) }
+        assertEquals("a: Exposure +1", HistoryLabels.describe(three, adjusted).label)
+        // The photo's own edits keep their plain labels.
+        assertEquals("Exposure +1", HistoryLabels.describe(three, three.withBackgroundOps(listOf(OpParams.Exposure(1f)))).label)
+    }
+
+    @Test
+    fun adjustmentKindsReadBackTheirValue() {
+        for (kind in AdjustmentKind.entries) {
+            val ops = kind.withValue(emptyList(), kind.default)
+            assertEquals(kind, AdjustmentKind.of(ops))
+            assertEquals(if (kind.hasValue) kind.default else 0f, kind.valueIn(ops)!!, 1e-6f)
+        }
+        val ops = AdjustmentKind.Exposure.withValue(listOf(OpParams.Exposure(1f), OpParams.Saturation(10f)), 9f)
+        assertEquals(listOf(OpParams.Exposure(5f), OpParams.Saturation(10f)), ops)
+        assertNull(AdjustmentKind.of(ops))
+        assertFalse(AdjustmentKind.isPointOp(OpParams.Clarity(10f)))
+        assertTrue(AdjustmentKind.isPointOp(OpParams.Invert))
+    }
 }

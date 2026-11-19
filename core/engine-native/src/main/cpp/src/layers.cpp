@@ -360,6 +360,11 @@ void unregisterLayerImage(const std::string& id) {
     gFullImages.erase(id);
 }
 
+void releaseFullLayerImages() {
+    std::lock_guard<std::mutex> lock(gImagesMutex);
+    gFullImages.clear();
+}
+
 std::shared_ptr<const ImageF32> findLayerImage(const std::string& id, bool full) {
     std::lock_guard<std::mutex> lock(gImagesMutex);
     // Export prefers the full image and falls back to the preview one (and the other way round).

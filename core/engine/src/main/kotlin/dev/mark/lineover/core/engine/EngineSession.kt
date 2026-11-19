@@ -135,8 +135,10 @@ class EngineSession private constructor(
 
     /**
      * Stage 13: decodes the layer image [file] and registers it as [id] for every engine of the
-     * process: preview size (long edge <= 2048) for the canvas, or its full size ([full]) for
-     * exports. False when it cannot be read. Blocking; not on the main thread.
+     * process: preview size (long edge <= 2048) for the canvas, or export size ([full], long
+     * edge <= 4096: a float layer image of a 50 MP photo would need 800 MB) for exports. The
+     * graph maps any size through the layer's `sourceSize`. False when it cannot be read.
+     * Blocking; not on the main thread.
      */
     fun registerLayerImage(
         id: String,
@@ -144,7 +146,7 @@ class EngineSession private constructor(
         full: Boolean,
     ): Boolean {
         val info = reader.info(Uri.fromFile(file)) ?: return false
-        val edge = if (full) maxOf(info.width, info.height) else LAYER_PREVIEW_EDGE
+        val edge = if (full) LAYER_EXPORT_EDGE else LAYER_PREVIEW_EDGE
         val image = reader.decodePreview(info, edge) ?: return false
         return try {
             native.registerLayerImage(id, image.bitmap, info.format.id, full)
@@ -152,6 +154,9 @@ class EngineSession private constructor(
             image.bitmap.recycle()
         }
     }
+
+    /** Drops the export layer images once an export is done (the canvas keeps its own). */
+    fun releaseFullLayerImages() = native.releaseFullLayerImages()
 
     fun stats(): EngineStats = native.stats()
 
@@ -437,6 +442,7 @@ class EngineSession private constructor(
 
         private const val MB_SHIFT = 20
         private const val LAYER_PREVIEW_EDGE = 2048
+        private const val LAYER_EXPORT_EDGE = 4096
         private const val REQUEST_SIZE = 3
         private const val THUMB_HEADER = 8
 

@@ -42,6 +42,8 @@ void compositePixel(BlendMode mode, float amount, bool gamma, const float backdr
 // preview set feeds the canvas and thumbnails, the full set exports.
 void registerLayerImage(const std::string& id, std::shared_ptr<const ImageF32> image, bool full);
 void unregisterLayerImage(const std::string& id);
+// Drops every export image (after an export; the preview set stays for the canvas).
+void releaseFullLayerImages();
 std::shared_ptr<const ImageF32> findLayerImage(const std::string& id, bool full);
 
 // True when the graph has a visible layer above the background that draws something.

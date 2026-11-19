@@ -17,6 +17,7 @@ import dev.mark.lineover.core.model.LineSegment
 import dev.mark.lineover.core.model.PhotoExif
 import dev.mark.lineover.core.model.Project
 import kotlinx.coroutines.flow.StateFlow
+import java.io.File
 
 /** What the Info panel shows about the open original. */
 data class ImageSummary(
@@ -75,6 +76,12 @@ interface EditorCanvas :
 
     /** Auto (Stage 11): the engine's proposal from the preview, null before it. Off the main thread. */
     fun autoSettings(): AutoResult? = null
+
+    /** Registers a layer image (Stage 13) so graphs can name [id]; false when it cannot be read. Off the main thread. */
+    fun registerLayerImage(
+        id: String,
+        file: File,
+    ): Boolean = false
 
     /** Registers a 3D LUT so graphs can name [id]; false when refused. */
     fun registerLut(
@@ -232,6 +239,11 @@ private class EngineCanvas(
         id: String,
         lut: CubeLut,
     ): Boolean = session.registerLut(id, lut)
+
+    override fun registerLayerImage(
+        id: String,
+        file: File,
+    ): Boolean = session.registerLayerImage(id, file, full = false)
 
     override fun whiteBalanceAt(
         u: Float,

@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import androidx.lifecycle.viewModelScope
 import dev.mark.lineover.core.engine.CompareMode
 import dev.mark.lineover.core.engine.RenderScheduler
+import dev.mark.lineover.core.io.layers.LayerSources
 import dev.mark.lineover.core.io.lens.LensProfileState
 import dev.mark.lineover.core.io.lens.LensProfileStore
 import dev.mark.lineover.core.io.looks.LooksStore
@@ -226,6 +227,8 @@ data class EditorState(
     /** Step of the first-open coach marks, or null when they are not shown. */
     val coachStep: Int? = null,
     val surround: CanvasSurround = CanvasSurround.Dark,
+    /** The layer the Layers panel edits (Stage 13); null = the photo. */
+    val selectedLayerId: String? = null,
 ) {
     val selectedToolId: String? get() = (panel as? EditorPanel.Tool)?.id
 
@@ -463,6 +466,11 @@ sealed interface EditorIntent {
         val action: LooksAction,
     ) : EditorIntent
 
+    /** The Layers panel (Stage 13). */
+    data class Layers(
+        val action: LayerAction,
+    ) : EditorIntent
+
     /** Two- or three-finger tap on the canvas (Settings → Gestures maps it to undo / redo). */
     data class MultiFingerTap(
         val fingers: Int,
@@ -542,6 +550,7 @@ class EditorViewModel(
     private val autosaveMillis: Long = AUTOSAVE_MILLIS,
     lensProfiles: LensProfileStore? = null,
     looks: LooksStore? = null,
+    layers: LayerSources? = null,
 ) : MviViewModel<EditorState, EditorIntent, EditorEffect>(
         EditorState(
             debuggable = debuggable,
@@ -591,6 +600,32 @@ class EditorViewModel(
                 }
             },
             looks,
+        )
+
+    private val layersActions =
+        EditorLayersActions(
+            viewModelScope,
+            renderDispatcher,
+            object : EditorLayersActions.Host {
+                override val state get() = this@EditorViewModel.state.value
+
+                override fun reduce(
+                    label: String?,
+                    block: EditorState.() -> EditorState,
+                ) = this@EditorViewModel.reduce(label, block)
+
+                override fun message(text: String) = sendEffect(EditorEffect.Message(text))
+
+                override fun undoable(
+                    text: String,
+                    undo: EditorIntent,
+                ) = sendEffect(EditorEffect.Undoable(text, undo))
+
+                override fun resubmit() {
+                    scheduler?.submit(this@EditorViewModel.state.value.canvasGraph)
+                }
+            },
+            layers,
         )
 
     /** Crop handles, perspective corners and guide lines from CanvasView. */
@@ -660,6 +695,7 @@ class EditorViewModel(
         val renderScheduler = RenderScheduler({ graph -> canvas.setGraph(graph) }, viewModelScope, renderDispatcher)
         scheduler = renderScheduler
         looksActions.onCanvasGraph(state.value.canvasGraph)
+        layersActions.onCanvasGraph(state.value.canvasGraph)
         renderScheduler.submit(state.value.shownGraph)
         syncCanvas(null, state.value)
         canvas.loading.collectLatest { loading ->
@@ -747,6 +783,7 @@ class EditorViewModel(
         when {
             intent is EditorIntent.Geometry -> geometryActions.onAction(intent.action)
             intent is EditorIntent.Looks -> looksActions.onAction(intent.action)
+            intent is EditorIntent.Layers -> layersActions.onAction(intent.action)
             !onHistoryIntent(intent) -> onEditIntent(intent)
         }
     }
@@ -1209,6 +1246,7 @@ class EditorViewModel(
         // While cropping the canvas shows the whole frame (canvasGraph), else the shown edit.
         if (before == null || before.canvasGraph != after.canvasGraph) {
             looksActions.onCanvasGraph(after.canvasGraph)
+            layersActions.onCanvasGraph(after.canvasGraph)
             scheduler?.submit(after.canvasGraph)
         }
         looksActions.afterSync(before, after)
