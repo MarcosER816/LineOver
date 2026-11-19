@@ -39,8 +39,11 @@ class AppContainer(
     /** Editor and canvas preferences (last category, favourites, coach marks, surround). */
     val preferences: AppPreferences by lazy { SharedAppPreferences(app) }
 
-    /** The Lensfun lens profile database: downloaded only on request (Settings → AI models). */
-    val lensProfiles: LensProfileStore by lazy { LensProfileStore(File(app.filesDir, "lensfun")) }
+    /** The Lensfun lens profile database, included in the app. */
+    val lensProfiles: LensProfileStore by lazy {
+        // Shipped in the app (core/io assets, CC BY-SA 3.0) since 0.11.2: no download needed.
+        LensProfileStore(File(app.filesDir, "lensfun"), bundled = { name -> app.assets.open("lensfun/$name") })
+    }
 
     /** Presets, imported 3D LUTs and copied settings (Stage 11). */
     val looks: LooksLibrary by lazy { LooksLibrary(File(app.filesDir, "looks")) }

@@ -31,16 +31,26 @@ sealed interface LensProfileState {
         val bytes: Long,
     ) : LensProfileState
 
+    /** Shipped inside the app (nothing to download or delete). */
+    data class Included(
+        val bytes: Long,
+    ) : LensProfileState
+
+    /** The database can be used ([Installed] or [Included]). */
+    val ready: Boolean get() = this is Installed || this is Included
+
     data class Failed(
         val message: String,
     ) : LensProfileState
 }
 
 /**
- * The Lensfun lens database on the device (Stage 9). Never bundled: it downloads only when
- * the user asks (Settings → Lens profiles), every file is checked against the pinned
- * SHA-256 of [LensfunManifest] before anything is installed, the install is atomic (a
- * temporary folder renamed into place) and Delete removes it. Blocking work runs on [io].
+ * The Lensfun lens database on the device (Stage 9). With [bundled] (the app's assets, since
+ * 0.11.2) the pinned files ship inside the app: the state is [LensProfileState.Included] and
+ * each file is checked against its SHA-256 of [LensfunManifest] when the database is first
+ * read. Without it the files download on request (Settings → Lens profiles), are checked
+ * before anything is installed, install atomically (a temporary folder renamed into place)
+ * and Delete removes them. Blocking work runs on [io].
  */
 class LensProfileStore(
     private val dir: File,
@@ -48,6 +58,8 @@ class LensProfileStore(
     private val baseUrl: String = LensfunManifest.BASE_URL,
     private val fetch: (String) -> InputStream = ::httpGet,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /** Opens a bundled database file by name, or null when the app ships none. */
+    private val bundled: ((String) -> InputStream)? = null,
 ) {
     private val total = files.sumOf { it.size }
     private val stateFlow = MutableStateFlow(initialState())
@@ -58,12 +70,24 @@ class LensProfileStore(
 
     val sizeBytes: Long get() = total
 
-    private fun initialState(): LensProfileState = if (isInstalled()) LensProfileState.Installed(total) else LensProfileState.Missing
+    private fun initialState(): LensProfileState =
+        when {
+            bundled != null -> LensProfileState.Included(total)
+            isInstalled() -> LensProfileState.Installed(total)
+            else -> LensProfileState.Missing
+        }
 
     private fun isInstalled(): Boolean = File(dir, MARKER).isFile && files.all { File(dir, it.name).length() == it.size }
 
     /** Downloads and verifies every file, then installs them at once. False on any failure (nothing changes). */
     suspend fun download(): Boolean =
+        if (bundled != null) {
+            true
+        } else {
+            downloadFiles()
+        }
+
+    private suspend fun downloadFiles(): Boolean =
         mutex.withLock {
             withContext(io) {
                 val temp = File(dir.parentFile, "${dir.name}.download")
@@ -130,7 +154,8 @@ class LensProfileStore(
     }
 
     /** Deletes the database. */
-    suspend fun delete() =
+    suspend fun delete() {
+        if (bundled != null) return // part of the app
         mutex.withLock {
             withContext(io) {
                 dir.deleteRecursively()
@@ -138,15 +163,36 @@ class LensProfileStore(
                 stateFlow.value = LensProfileState.Missing
             }
         }
+    }
 
     /** The installed database (parsed once), or null when it is not installed. */
     suspend fun database(): LensDatabase? =
         mutex.withLock {
             cached ?: withContext(io) {
-                if (!isInstalled()) return@withContext null
-                LensDatabase.parse(files.map { File(dir, it.name).readText() }).also { cached = it }
+                val open = bundled
+                val texts =
+                    when {
+                        open != null -> files.map { readVerified(it, open) ?: return@withContext null }
+                        isInstalled() -> files.map { File(dir, it.name).readText() }
+                        else -> return@withContext null
+                    }
+                LensDatabase.parse(texts).also { cached = it }
             }
         }
+
+    /** A bundled file's text when its size and SHA-256 match the manifest, else null (reported as Failed). */
+    private fun readVerified(
+        file: LensfunFile,
+        open: (String) -> InputStream,
+    ): String? {
+        val bytes = runCatching { open(file.name).use { it.readBytes() } }.getOrNull()
+        val hex = bytes?.let { b -> MessageDigest.getInstance("SHA-256").digest(b).joinToString("") { "%02x".format(it) } }
+        if (bytes == null || bytes.size.toLong() != file.size || hex != file.sha256) {
+            stateFlow.value = LensProfileState.Failed("the bundled ${file.name} is damaged")
+            return null
+        }
+        return bytes.toString(Charsets.UTF_8)
+    }
 
     companion object {
         private const val MARKER = "installed"

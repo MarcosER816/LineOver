@@ -2,6 +2,14 @@
 
 All notable changes, newest first. One section per stage.
 
+## Lens profiles included (0.11.2)
+
+### Changed
+
+- The Lensfun lens profiles now come with the app (5.2 MB, CC BY-SA 3.0, compressed in the
+  APK): Optics → Lens distortion → Lens profile works without downloading anything. Settings
+  shows them as "Included in the app".
+
 ## Stage 11 fix (0.11.1)
 
 ### Fixed

@@ -235,7 +235,7 @@ private fun LensProfileSection(
                 Hint("Downloading lens profiles… ${lens.bytes * PERCENT / lens.total.coerceAtLeast(1)} %")
             }
 
-            is LensProfileState.Installed -> {
+            is LensProfileState.Installed, is LensProfileState.Included -> {
                 LaunchedEffect(state.image) { act(GeometryAction.LoadLensCandidates) }
                 LoSwitchRow(
                     "Use lens profile",

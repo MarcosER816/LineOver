@@ -346,6 +346,7 @@ internal fun LensProfilesRow(
             is LensProfileState.Missing -> "Not downloaded"
             is LensProfileState.Downloading -> "Downloading ${lens.bytes * PERCENT / lens.total.coerceAtLeast(1)} %"
             is LensProfileState.Installed -> "Downloaded"
+            is LensProfileState.Included -> "Included in the app"
             is LensProfileState.Failed -> "Download failed: ${lens.message}"
         }
     Column(Modifier.fillMaxWidth().testTag("lens-profiles")) {
@@ -361,7 +362,9 @@ internal fun LensProfilesRow(
                 Text("Lens profiles (Lensfun)", style = LoType.Body, color = LoColors.TextPrimary)
                 Text("${formatSize(bytes)} · ${LensfunManifest.LICENCE} · $status", style = LoType.Caption, color = LoColors.TextSecondary)
             }
-            if (lens is LensProfileState.Installed) {
+            if (lens is LensProfileState.Included) {
+                // Part of the app: nothing to download or delete.
+            } else if (lens is LensProfileState.Installed) {
                 LoIconButton(LoIcons.Delete, "Delete lens profiles", onClick = { onIntent(SettingsIntent.DeleteLensProfiles) })
             } else {
                 LoIconButton(

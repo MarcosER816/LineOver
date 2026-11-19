@@ -1,0 +1,7 @@
+Lens profiles: the Lensfun database (data/db), (c) the Lensfun contributors.
+Licensed under Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0):
+https://creativecommons.org/licenses/by-sa/3.0/
+
+Source: https://github.com/lensfun/lensfun at commit 37238fcef563196fb798f6151cb9023968b26c40.
+The files are unmodified; LineOver checks each one against its SHA-256 (LensfunManifest)
+before use. LineOver reads them with its own code and does not use the LGPL Lensfun library.
