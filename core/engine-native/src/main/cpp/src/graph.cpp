@@ -279,6 +279,78 @@ std::string formatKotlinFloat(float value) {
     return negative ? "-" + result : result;
 }
 
+namespace {
+
+bool parseLayer(const Value& layerValue, Layer* out, std::string* error) {
+    if (layerValue.kind != Value::Kind::Object) {
+        *error = "layer is not an object";
+        return false;
+    }
+    Layer layer;
+    auto text = [&](const char* key, std::string* into) {
+        if (const Value* v = layerValue.find(key); v != nullptr && v->kind == Value::Kind::String) *into = v->text;
+    };
+    auto number = [&](const char* key, double* into) {
+        if (const Value* v = layerValue.find(key); v != nullptr && v->kind == Value::Kind::Number) *into = v->number;
+    };
+    auto flag = [&](const char* key, bool* into) {
+        if (const Value* v = layerValue.find(key); v != nullptr && v->kind == Value::Kind::Bool) *into = v->boolean;
+    };
+    auto numbers = [&](const char* key, std::vector<double>* into) {
+        if (const Value* v = layerValue.find(key); v != nullptr && v->kind == Value::Kind::Array)
+            for (const Value& item : v->items)
+                if (item.kind == Value::Kind::Number) into->push_back(item.number);
+    };
+    text("id", &layer.id);
+    if (const Value* ops = layerValue.find("ops"); ops != nullptr && ops->kind == Value::Kind::Array) {
+        for (const Value& opValue : ops->items) {
+            const Value* name = opValue.find("op");
+            if (opValue.kind != Value::Kind::Object || name == nullptr || name->kind != Value::Kind::String) {
+                *error = "op without a name";
+                return false;
+            }
+            OpParams params;
+            params.op = name->text;
+            for (const auto& member : opValue.members) {
+                if (member.first != "op" && member.second.kind == Value::Kind::String) {
+                    params.strings.emplace_back(member.first, member.second.text);
+                } else if (member.first != "op" && member.second.kind == Value::Kind::Number) {
+                    params.params.emplace_back(member.first, member.second.number);
+                } else if (member.second.kind == Value::Kind::Array) {
+                    std::vector<double> values;
+                    for (const Value& item : member.second.items) {
+                        if (item.kind == Value::Kind::Number) values.push_back(item.number);
+                    }
+                    params.arrays.emplace_back(member.first, std::move(values));
+                }
+            }
+            layer.ops.push_back(std::move(params));
+        }
+    }
+    text("type", &layer.type);
+    text("name", &layer.name);
+    flag("visible", &layer.visible);
+    flag("locked", &layer.locked);
+    number("opacity", &layer.opacity);
+    number("fill", &layer.fill);
+    text("blend", &layer.blend);
+    flag("isolated", &layer.isolated);
+    text("source", &layer.source);
+    numbers("sourceSize", &layer.sourceSize);
+    numbers("transform", &layer.transform);
+    if (const Value* children = layerValue.find("children"); children != nullptr && children->kind == Value::Kind::Array) {
+        for (const Value& child : children->items) {
+            Layer c;
+            if (!parseLayer(child, &c, error)) return false;
+            layer.children.push_back(std::move(c));
+        }
+    }
+    *out = std::move(layer);
+    return true;
+}
+
+}  // namespace
+
 bool parseGraph(const std::string& json, Graph* out, std::string* error) {
     Value root;
     Reader reader(json);
@@ -297,83 +369,136 @@ bool parseGraph(const std::string& json, Graph* out, std::string* error) {
             return false;
         }
         for (const Value& layerValue : layers->items) {
-            if (layerValue.kind != Value::Kind::Object) {
-                *error = "layer is not an object";
-                return false;
-            }
             Layer layer;
-            if (const Value* id = layerValue.find("id"); id != nullptr && id->kind == Value::Kind::String) layer.id = id->text;
-            if (const Value* ops = layerValue.find("ops"); ops != nullptr && ops->kind == Value::Kind::Array) {
-                for (const Value& opValue : ops->items) {
-                    const Value* name = opValue.find("op");
-                    if (opValue.kind != Value::Kind::Object || name == nullptr || name->kind != Value::Kind::String) {
-                        *error = "op without a name";
-                        return false;
-                    }
-                    OpParams params;
-                    params.op = name->text;
-                    for (const auto& member : opValue.members) {
-                        if (member.first != "op" && member.second.kind == Value::Kind::String) {
-                            params.strings.emplace_back(member.first, member.second.text);
-                        } else if (member.first != "op" && member.second.kind == Value::Kind::Number) {
-                            params.params.emplace_back(member.first, member.second.number);
-                        } else if (member.second.kind == Value::Kind::Array) {
-                            std::vector<double> numbers;
-                            for (const Value& item : member.second.items) {
-                                if (item.kind == Value::Kind::Number) numbers.push_back(item.number);
-                            }
-                            params.arrays.emplace_back(member.first, std::move(numbers));
-                        }
-                    }
-                    layer.ops.push_back(std::move(params));
-                }
-            }
+            if (!parseLayer(layerValue, &layer, error)) return false;
             graph.layers.push_back(std::move(layer));
         }
     }
+    if (const Value* space = root.find("blendSpace"); space != nullptr && space->kind == Value::Kind::String) graph.blendSpace = space->text;
     *out = std::move(graph);
     return true;
 }
+
+namespace {
+
+void serializeOps(const std::vector<OpParams>& ops, std::string* out) {
+    out->append("[");
+    for (std::size_t o = 0; o < ops.size(); ++o) {
+        if (o > 0) out->push_back(',');
+        out->append("{\"op\":");
+        writeString(ops[o].op, out);
+        for (const auto& text : ops[o].strings) {
+            out->push_back(',');
+            writeString(text.first, out);
+            out->push_back(':');
+            writeString(text.second, out);
+        }
+        for (const auto& param : ops[o].params) {
+            out->push_back(',');
+            writeString(param.first, out);
+            out->push_back(':');
+            out->append(formatKotlinFloat(static_cast<float>(param.second)));
+        }
+        for (const auto& array : ops[o].arrays) {
+            out->push_back(',');
+            writeString(array.first, out);
+            out->append(":[");
+            for (std::size_t i = 0; i < array.second.size(); ++i) {
+                if (i > 0) out->push_back(',');
+                out->append(formatKotlinFloat(static_cast<float>(array.second[i])));
+            }
+            out->push_back(']');
+        }
+        out->push_back('}');
+    }
+    out->append("]");
+}
+
+void serializeLayer(const Layer& layer, std::string* out) {
+    out->append("{\"id\":");
+    writeString(layer.id, out);
+    out->append(",\"ops\":");
+    serializeOps(layer.ops, out);
+    // Kotlin's Layer fields after id and ops, written only when not the default.
+    auto key = [&](const char* name) {
+        out->append(",\"");
+        out->append(name);
+        out->append("\":");
+    };
+    auto floats = [&](const char* name, const std::vector<double>& values) {
+        if (values.empty()) return;
+        key(name);
+        out->push_back('[');
+        for (std::size_t i = 0; i < values.size(); ++i) {
+            if (i > 0) out->push_back(',');
+            out->append(formatKotlinFloat(static_cast<float>(values[i])));
+        }
+        out->push_back(']');
+    };
+    if (!layer.type.empty() && layer.type != "background") {
+        key("type");
+        writeString(layer.type, out);
+    }
+    if (!layer.name.empty()) {
+        key("name");
+        writeString(layer.name, out);
+    }
+    if (!layer.visible) {
+        key("visible");
+        out->append("false");
+    }
+    if (layer.locked) {
+        key("locked");
+        out->append("true");
+    }
+    if (layer.opacity != 100.0) {
+        key("opacity");
+        out->append(formatKotlinFloat(static_cast<float>(layer.opacity)));
+    }
+    if (layer.fill != 100.0) {
+        key("fill");
+        out->append(formatKotlinFloat(static_cast<float>(layer.fill)));
+    }
+    if (layer.blend != "normal") {
+        key("blend");
+        writeString(layer.blend, out);
+    }
+    if (layer.isolated) {
+        key("isolated");
+        out->append("true");
+    }
+    if (!layer.source.empty()) {
+        key("source");
+        writeString(layer.source, out);
+    }
+    floats("sourceSize", layer.sourceSize);
+    floats("transform", layer.transform);
+    if (!layer.children.empty()) {
+        key("children");
+        out->push_back('[');
+        for (std::size_t i = 0; i < layer.children.size(); ++i) {
+            if (i > 0) out->push_back(',');
+            serializeLayer(layer.children[i], out);
+        }
+        out->push_back(']');
+    }
+    out->push_back('}');
+}
+
+}  // namespace
 
 std::string serializeGraph(const Graph& graph) {
     std::string out = "{\"schemaVersion\":" + std::to_string(graph.schemaVersion) + ",\"layers\":[";
     for (std::size_t l = 0; l < graph.layers.size(); ++l) {
         if (l > 0) out.push_back(',');
-        out.append("{\"id\":");
-        writeString(graph.layers[l].id, &out);
-        out.append(",\"ops\":[");
-        const auto& ops = graph.layers[l].ops;
-        for (std::size_t o = 0; o < ops.size(); ++o) {
-            if (o > 0) out.push_back(',');
-            out.append("{\"op\":");
-            writeString(ops[o].op, &out);
-            for (const auto& text : ops[o].strings) {
-                out.push_back(',');
-                writeString(text.first, &out);
-                out.push_back(':');
-                writeString(text.second, &out);
-            }
-            for (const auto& param : ops[o].params) {
-                out.push_back(',');
-                writeString(param.first, &out);
-                out.push_back(':');
-                out.append(formatKotlinFloat(static_cast<float>(param.second)));
-            }
-            for (const auto& array : ops[o].arrays) {
-                out.push_back(',');
-                writeString(array.first, &out);
-                out.append(":[");
-                for (std::size_t i = 0; i < array.second.size(); ++i) {
-                    if (i > 0) out.push_back(',');
-                    out.append(formatKotlinFloat(static_cast<float>(array.second[i])));
-                }
-                out.push_back(']');
-            }
-            out.push_back('}');
-        }
-        out.append("]}");
+        serializeLayer(graph.layers[l], &out);
     }
-    out.append("]}");
+    out.append("]");
+    if (graph.blendSpace != "gamma") {
+        out.append(",\"blendSpace\":");
+        writeString(graph.blendSpace, &out);
+    }
+    out.append("}");
     return out;
 }
 
@@ -460,10 +585,10 @@ bool addGradeOp(const OpParams& params, OpList* list) {
 
 }  // namespace
 
-std::unique_ptr<OpList> buildOps(const Graph& graph, std::string* skipped) {
-    auto list = std::make_unique<OpList>();
-    for (const Layer& layer : graph.layers) {
-        for (const OpParams& params : layer.ops) {
+// One op of a graph into [list] (unknown ops are reported in [skipped]).
+static void addOp(const OpParams& params, OpList* list, std::string* skipped) {
+    {
+        {
             auto param = [&](const char* key, double fallback) {
                 for (const auto& p : params.params) {
                     if (p.first == key) return p.second;
@@ -509,7 +634,7 @@ std::unique_ptr<OpList> buildOps(const Graph& graph, std::string* skipped) {
                 list->add(makePosterize(static_cast<float>(param("levels", 0.0))));
             } else if (params.op == "threshold") {
                 list->add(makeThreshold(static_cast<float>(param("level", 0.5))));
-            } else if (addGradeOp(params, list.get())) {
+            } else if (addGradeOp(params, list)) {
                 // Stage 7 op (curves and grading)
             } else if (params.op == "highlights_shadows") {
                 list->add(makeHighlightsShadows(static_cast<float>(param("highlights", 0.0)),
@@ -564,6 +689,42 @@ std::unique_ptr<OpList> buildOps(const Graph& graph, std::string* skipped) {
                 if (!skipped->empty()) skipped->push_back(',');
                 skipped->append(params.op);
             }
+        }
+    }
+}
+
+const Layer* backgroundLayer(const Graph& graph) {
+    for (const Layer& layer : graph.layers)
+        if (layer.type.empty() || layer.type == "background") return &layer;
+    return nullptr;
+}
+
+std::unique_ptr<OpList> buildOps(const Graph& graph, std::string* skipped) {
+    auto list = std::make_unique<OpList>();
+    // The background (the photo) only: other layers are composited (compositor.h).
+    if (const Layer* background = backgroundLayer(graph)) {
+        for (const OpParams& params : background->ops) addOp(params, list.get(), skipped);
+    }
+    return list;
+}
+
+bool isPointOp(const std::string& op) {
+    // Ops that read only their own pixel (no guided coefficients, fields, neighbours, geometry).
+    static const char* const kRegional[] = {"highlights_shadows", "geometry", "sharpen", "noise_reduction", "clarity",
+                                            "texture", "dehaze", "post_crop_vignette", "grain"};
+    for (const char* name : kRegional)
+        if (op == name) return false;
+    return true;
+}
+
+std::unique_ptr<OpList> buildPointOps(const std::vector<OpParams>& ops, std::string* skipped) {
+    auto list = std::make_unique<OpList>();
+    for (const OpParams& params : ops) {
+        if (isPointOp(params.op)) {
+            addOp(params, list.get(), skipped);
+        } else if (skipped != nullptr) {
+            if (!skipped->empty()) skipped->push_back(',');
+            skipped->append(params.op);
         }
     }
     return list;
