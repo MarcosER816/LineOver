@@ -3,6 +3,7 @@
 #include "lineover/geometry.h"
 #include "lineover/color_ops.h"
 #include "lineover/detail.h"
+#include "lineover/lut.h"
 #include "lineover/grade_ops.h"
 #include "lineover/light.h"
 
@@ -312,7 +313,9 @@ bool parseGraph(const std::string& json, Graph* out, std::string* error) {
                     OpParams params;
                     params.op = name->text;
                     for (const auto& member : opValue.members) {
-                        if (member.first != "op" && member.second.kind == Value::Kind::Number) {
+                        if (member.first != "op" && member.second.kind == Value::Kind::String) {
+                            params.strings.emplace_back(member.first, member.second.text);
+                        } else if (member.first != "op" && member.second.kind == Value::Kind::Number) {
                             params.params.emplace_back(member.first, member.second.number);
                         } else if (member.second.kind == Value::Kind::Array) {
                             std::vector<double> numbers;
@@ -344,6 +347,12 @@ std::string serializeGraph(const Graph& graph) {
             if (o > 0) out.push_back(',');
             out.append("{\"op\":");
             writeString(ops[o].op, &out);
+            for (const auto& text : ops[o].strings) {
+                out.push_back(',');
+                writeString(text.first, &out);
+                out.push_back(':');
+                writeString(text.second, &out);
+            }
             for (const auto& param : ops[o].params) {
                 out.push_back(',');
                 writeString(param.first, &out);
@@ -534,6 +543,21 @@ std::unique_ptr<OpList> buildOps(const Graph& graph, std::string* skipped) {
                 list->add(makeTexture(static_cast<float>(param("amount", 0.0))));
             } else if (params.op == "dehaze") {
                 list->add(makeDehaze(static_cast<float>(param("amount", 0.0))));
+            } else if (params.op == "lut" || params.op == "profile") {
+                // Stage 11: an imported LUT by id (registerLut) or a built-in profile by name;
+                // amount is a percentage. A LUT that is not registered is reported as skipped.
+                const bool profile = params.op == "profile";
+                std::string key;
+                for (const auto& t : params.strings)
+                    if (t.first == (profile ? "name" : "id")) key = t.second;
+                const float amount = static_cast<float>(param("amount", 100.0)) / 100.f;
+                auto lut = profile ? profileLut(key) : findLut(key);
+                if (lut) {
+                    list->add(makeLut(std::move(lut), amount, profile ? OpType::Profile : OpType::Lut));
+                } else if (!profile && skipped != nullptr) {
+                    if (!skipped->empty()) skipped->push_back(',');
+                    skipped->append("lut:" + key);
+                }
             } else if (params.op == "post_crop_vignette" || params.op == "grain") {
                 // Stage 10: output-space finishing, applied where pixels are sampled (detail.h).
             } else if (skipped != nullptr) {

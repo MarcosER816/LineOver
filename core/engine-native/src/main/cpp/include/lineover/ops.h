@@ -51,6 +51,9 @@ enum class OpType : int {
     Texture = 29,
     Dehaze = 30,
     Sharpen = 31,
+    // Stage 11
+    Lut = 32,
+    Profile = 33,
 };
 
 // Guided-filter coefficients of an image's log2 luminance, at preview resolution:
@@ -89,6 +92,8 @@ struct OpRegion {
     std::size_t pixels() const { return static_cast<std::size_t>(width) * static_cast<std::size_t>(height); }
 };
 
+struct Lut3D;  // lut.h
+
 // What gpu() talks to: implemented by the GL backend, and by a recorder in host tests.
 class GpuOpContext {
 public:
@@ -103,6 +108,11 @@ public:
     virtual void setUniformMat3(const char* name, const float* rowMajor9) {
         (void)name;
         (void)rowMajor9;
+    }
+    // A vec3 uniform.
+    virtual void setUniform3f(const char* name, const float* xyz) {
+        (void)name;
+        (void)xyz;
     }
     // A float[count] uniform.
     virtual void setUniform1fv(const char* name, const float* values, int count) {
@@ -119,6 +129,9 @@ public:
         (void)declarations;
         (void)body;
     }
+    // A 3D LUT (lut.h) the shader reads with texelFetch(u_lut3d, ivec3(r, g, b), 0): an RGBA32F
+    // 3D texture of lut->size^3 texels, cached by lut->hash. The op's lifetime covers the call.
+    virtual void setLut3d(const Lut3D* lut) { (void)lut; }
     // A lookup table the shader reads with lo_lut1(row, e) / lo_lut3(row, t): `width` x
     // `height` RGBA float texels, row-major (the backend caches it by content).
     virtual void setLut(const float* rgba, int width, int height) {

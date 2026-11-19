@@ -114,13 +114,13 @@ LO_TEST(vignette_and_grain_match_python) {
 LO_TEST(graph_maps_the_stage_10_ops) {
     lo::Graph g;
     lo::Layer layer;
-    layer.ops.push_back({"sharpen", {{"amount", 50}, {"radius", 1}}, {}});
-    layer.ops.push_back({"noise_reduction", {{"luminance", 40}}, {}});
-    layer.ops.push_back({"clarity", {{"amount", 20}}, {}});
-    layer.ops.push_back({"texture", {{"amount", 20}}, {}});
-    layer.ops.push_back({"dehaze", {{"amount", 20}}, {}});
-    layer.ops.push_back({"post_crop_vignette", {{"amount", -30}}, {}});
-    layer.ops.push_back({"grain", {{"amount", 30}}, {}});
+    layer.ops.push_back({"sharpen", {{"amount", 50}, {"radius", 1}}, {}, {}});
+    layer.ops.push_back({"noise_reduction", {{"luminance", 40}}, {}, {}});
+    layer.ops.push_back({"clarity", {{"amount", 20}}, {}, {}});
+    layer.ops.push_back({"texture", {{"amount", 20}}, {}, {}});
+    layer.ops.push_back({"dehaze", {{"amount", 20}}, {}, {}});
+    layer.ops.push_back({"post_crop_vignette", {{"amount", -30}}, {}, {}});
+    layer.ops.push_back({"grain", {{"amount", 30}}, {}, {}});
     g.layers.push_back(layer);
     std::string skipped;
     const auto ops = lo::buildOps(g, &skipped);
@@ -219,13 +219,13 @@ double psnr(const std::vector<float>& a, const std::vector<float>& b) {
 lo::Graph allOps() {
     lo::Graph g;
     lo::Layer layer;
-    layer.ops.push_back({"noise_reduction", {{"luminance", 50}, {"detail", 50}, {"contrast", 30}, {"color", 50}}, {}});
-    layer.ops.push_back({"clarity", {{"amount", 50}}, {}});
-    layer.ops.push_back({"texture", {{"amount", 40}}, {}});
-    layer.ops.push_back({"dehaze", {{"amount", 30}}, {}});
-    layer.ops.push_back({"sharpen", {{"amount", 60}, {"radius", 1.0}, {"detail", 25}, {"masking", 20}}, {}});
-    layer.ops.push_back({"post_crop_vignette", {{"amount", -40}, {"midpoint", 50}, {"feather", 50}}, {}});
-    layer.ops.push_back({"grain", {{"amount", 30}, {"size", 25}, {"roughness", 50}}, {}});
+    layer.ops.push_back({"noise_reduction", {{"luminance", 50}, {"detail", 50}, {"contrast", 30}, {"color", 50}}, {}, {}});
+    layer.ops.push_back({"clarity", {{"amount", 50}}, {}, {}});
+    layer.ops.push_back({"texture", {{"amount", 40}}, {}, {}});
+    layer.ops.push_back({"dehaze", {{"amount", 30}}, {}, {}});
+    layer.ops.push_back({"sharpen", {{"amount", 60}, {"radius", 1.0}, {"detail", 25}, {"masking", 20}}, {}, {}});
+    layer.ops.push_back({"post_crop_vignette", {{"amount", -40}, {"midpoint", 50}, {"feather", 50}}, {}, {}});
+    layer.ops.push_back({"grain", {{"amount", 30}, {"size", 25}, {"roughness", 50}}, {}, {}});
     g.layers.push_back(layer);
     return g;
 }

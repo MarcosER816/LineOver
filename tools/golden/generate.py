@@ -23,6 +23,7 @@ import numpy as np
 
 import detail_reference as detail
 import lensfun_reference
+import lut_reference as lut
 import reference
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -74,6 +75,7 @@ def build_outputs() -> dict[str, np.ndarray]:
     outputs.update(geometry_outputs())
     outputs.update(lensfun_outputs())
     outputs.update(detail_outputs())
+    outputs.update(lut_outputs())
     return outputs
 
 
@@ -276,6 +278,46 @@ def detail_outputs() -> dict:
 COLOR_GPU_DISCONTINUOUS = {"posterize": ("chart", (12.0,)), "threshold": ("scene", (0.5,))}
 
 
+def table_image(table: np.ndarray) -> np.ndarray:
+    """A LUT table[b, g, r] as an RGBA float image: row b * N + g, column r, alpha 1."""
+    n = table.shape[0]
+    out = np.ones((n * n, n, 4), dtype=np.float32)
+    out[..., :3] = table.reshape(n * n, n, 3)
+    return out
+
+
+def lut_outputs() -> dict:
+    """Stage 11: the original test LUTs (.cube text and tables), the LUT op at two amounts,
+    the profiles' tables and the profiles on the chart; GPU display references."""
+    chart = reference.colors_rec2020()
+    scene = reference.scene_rec2020()
+    out = {}
+    cubes = lut.fixture_cubes()
+    for name, cube in cubes.items():
+        text = lut.write_cube(cube)
+        parsed = lut.parse_cube(text)
+        assert np.max(np.abs(parsed.table - cube.table)) < 1e-6, name
+        out[f"luts/{name}.cube"] = text
+        out[f"luts/{name}_table_f32.npy"] = table_image(parsed.table)
+    warm = lut.parse_cube(out["luts/warm_fade_17.cube"])
+    teal = lut.parse_cube(out["luts/teal_amber_33.cube"])
+    f32 = lambda a: a.astype(np.float32)  # noqa: E731
+    out["luts/warm_fade_17_100_f32.npy"] = f32(lut.apply_lut(chart, warm, 1.0))
+    out["luts/teal_amber_33_60_f32.npy"] = f32(lut.apply_lut(scene, teal, 0.6))
+    for name in lut.PROFILES:
+        table = lut.profile_table(name)
+        out[f"profiles/{name}_table_f32.npy"] = table_image(table)
+        cube = lut.Cube(table)
+        out[f"profiles/{name}_100_f32.npy"] = f32(lut.apply_lut(chart, cube, 1.0))
+    out["profiles/flat_50_f32.npy"] = f32(lut.apply_lut(chart, lut.Cube(lut.profile_table("flat")), 0.5))
+    # GPU: the tables are RGBA32F 3D textures; the image passes through RGBA16F.
+    out["luts/teal_amber_33_gpu_srgb_display_f32.npy"] = reference.gpu_display(
+        lambda im: f32(lut.apply_lut(im, teal, 0.6)), scene)
+    vivid = lut.Cube(lut.profile_table("vivid"))
+    out["profiles/vivid_gpu_srgb_display_f32.npy"] = reference.gpu_display(lambda im: f32(lut.apply_lut(im, vivid, 1.0)), chart)
+    return out
+
+
 def write_file(path: Path, array: np.ndarray) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.suffix == ".png":
@@ -286,14 +328,14 @@ def write_file(path: Path, array: np.ndarray) -> None:
     elif path.suffix == ".npy":
         assert array.dtype == np.float32 and array.ndim == 3
         np.save(path, np.ascontiguousarray(array.astype("<f4")))
-    elif path.suffix == ".json":
+    elif path.suffix in (".json", ".cube"):
         path.write_text(array)
     else:
         raise ValueError(f"unsupported golden file type: {path}")
 
 
 def read_file(path: Path) -> np.ndarray:
-    if path.suffix == ".json":
+    if path.suffix in (".json", ".cube"):
         return path.read_text()
     if path.suffix == ".png":
         bgra = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
@@ -338,7 +380,7 @@ def main() -> int:
         for name, why in stale.items():
             print(f"STALE  {name}: {why}", file=sys.stderr)
         expected_files = set(outputs)
-        on_disk = {p.relative_to(GOLDEN_DIR).as_posix() for p in GOLDEN_DIR.rglob("*") if p.suffix in (".png", ".npy", ".json")}
+        on_disk = {p.relative_to(GOLDEN_DIR).as_posix() for p in GOLDEN_DIR.rglob("*") if p.suffix in (".png", ".npy", ".json", ".cube")}
         orphans = sorted(on_disk - expected_files)
         for name in orphans:
             print(f"ORPHAN {name}: not produced by generate.py", file=sys.stderr)
