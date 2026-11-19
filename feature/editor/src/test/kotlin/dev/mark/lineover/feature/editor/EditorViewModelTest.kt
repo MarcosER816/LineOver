@@ -3,6 +3,8 @@ package dev.mark.lineover.feature.editor
 import dev.mark.lineover.core.io.prefs.InMemoryAppPreferences
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.ToolCategory
+import dev.mark.lineover.feature.editor.canvas.CanvasOpenException
+import dev.mark.lineover.feature.editor.canvas.EditorCanvasFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.first
@@ -29,7 +31,7 @@ class EditorViewModelTest {
 
     private fun viewModel(
         prefs: InMemoryAppPreferences = InMemoryAppPreferences(),
-        canvases: FakeCanvasFactory = FakeCanvasFactory(),
+        canvases: EditorCanvasFactory = FakeCanvasFactory(),
     ) = EditorViewModel(1, FakeEditorLibrary(), prefs, canvases, renderDispatcher = Dispatchers.Main)
 
     @Test
@@ -58,6 +60,17 @@ class EditorViewModelTest {
     fun aMissingPreviewIsReportedNotHidden() {
         val vm = viewModel(canvases = FakeCanvasFactory(canvas = null))
         assertTrue(vm.state.value.previewUnavailable)
+        assertNull(vm.state.value.canvas)
+    }
+
+    @Test
+    fun anEngineThatCannotStartIsReportedNotACrash() {
+        val vm =
+            viewModel(
+                canvases = EditorCanvasFactory { throw CanvasOpenException("shader compile failed: x") },
+            )
+        assertTrue(vm.state.value.previewUnavailable)
+        assertEquals("shader compile failed: x", vm.state.value.engineError)
         assertNull(vm.state.value.canvas)
     }
 

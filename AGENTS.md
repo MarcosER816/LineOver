@@ -111,6 +111,10 @@ python3 tools/golden/generate.py --check
 - **ABIs:** release is `arm64-v8a` only; debug also carries `x86_64` for the CI emulator.
 - **Module plugins:** a module applies only `lineover.*` plugins. Third-party Gradle
   plugins are added to `build-logic` and wrapped in a convention plugin.
+- **JNI callbacks and R8:** a Kotlin method that native code finds by name (`GetMethodID`)
+  needs a keep rule in that module's `consumer-rules.pro`; `tools/ci/check_jni_keep.py`
+  checks the release build's R8 seeds in CI. The emulator runs the unminified debug build and
+  cannot catch this.
 - **Signing:** release is signed from the `KEYSTORE_B64` / `KEYSTORE_PASS` / `KEY_ALIAS` /
   `KEY_PASS` secrets and falls back to the debug key when they are absent or invalid (CI
   then shows a warning naming the bad secret; `release.yml` fails instead). The debug build

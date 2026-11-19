@@ -115,9 +115,18 @@ interface EditorCanvas :
 
 /** Opens the engine for a project (a fake in JVM tests, where there is no native engine). */
 fun interface EditorCanvasFactory {
-    /** Null when the original cannot be shown yet (TIFF before Stage 12, RAW before Stage 25). */
+    /**
+     * Null when the original cannot be shown yet (TIFF before Stage 12, RAW before Stage 25).
+     * Throws [CanvasOpenException] when the image engine itself cannot start.
+     */
     suspend fun open(project: Project): EditorCanvas?
 }
+
+/** The image engine could not start on this device; [message] says why (shown to the person). */
+class CanvasOpenException(
+    message: String,
+    cause: Throwable? = null,
+) : Exception(message, cause)
 
 /** The real engine: native render thread, tiles, GPU ops. */
 class EngineCanvasFactory(
@@ -130,6 +139,14 @@ class EngineCanvasFactory(
             // No native engine for this ABI (e.g. the JVM test environment): no canvas.
             Log.e("LineOverEngine", "native engine unavailable", e)
             null
+        } catch (e: IllegalStateException) {
+            // The engine did not start (no GLES 3 context, a shader the driver refused, a
+            // broken build): the editor says why instead of the app closing.
+            Log.e("LineOverEngine", "engine start failed", e)
+            throw CanvasOpenException(e.message ?: e.javaClass.simpleName, e)
+        } catch (e: LinkageError) {
+            Log.e("LineOverEngine", "engine start failed", e)
+            throw CanvasOpenException("${e.javaClass.simpleName}: ${e.message}", e)
         }
 }
 

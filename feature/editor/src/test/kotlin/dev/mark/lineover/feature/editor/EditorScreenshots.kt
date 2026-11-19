@@ -397,6 +397,13 @@ abstract class EditorScreenshots(
     fun unsupportedFormat() = shot("preview_unavailable", base().copy(previewUnavailable = true))
 
     @Test
+    fun engineError() =
+        shot(
+            "engine_error",
+            base().copy(previewUnavailable = true, engineError = "cannot create the GLES 3 context"),
+        )
+
+    @Test
     fun everyStripToolHasALabelThatFits() {
         // Not a picture: guards the strip data the screenshots above rely on.
         ToolCategory.entries.filter { it != ToolCategory.Favorites }.forEach { category ->

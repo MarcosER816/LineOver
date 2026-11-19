@@ -39,6 +39,7 @@ import dev.mark.lineover.core.ui.tools.ToolSearch
 import dev.mark.lineover.core.ui.tools.ToolSpec
 import dev.mark.lineover.core.ui.tools.toolCategoryOf
 import dev.mark.lineover.feature.editor.canvas.CanvasGestureListener
+import dev.mark.lineover.feature.editor.canvas.CanvasOpenException
 import dev.mark.lineover.feature.editor.canvas.EditorCanvas
 import dev.mark.lineover.feature.editor.canvas.EditorCanvasFactory
 import dev.mark.lineover.feature.editor.canvas.ImageSummary
@@ -138,6 +139,8 @@ data class EditorState(
     val image: ImageSummary? = null,
     /** True when the original could not be decoded for the canvas (e.g. RAW before Stage 25). */
     val previewUnavailable: Boolean = false,
+    /** Why the image engine could not start (shown instead of the photo), or null. */
+    val engineError: String? = null,
     /** Sharp tiles have been loading for more than 300 ms: show the subtle spinner. */
     val showSpinner: Boolean = false,
     /** The edit: the active version's current graph (saved to the project's .loproj, Stage 8). */
@@ -641,7 +644,13 @@ class EditorViewModel(
     private var scheduler: RenderScheduler? = null
 
     private suspend fun openCanvas(project: dev.mark.lineover.core.model.Project) {
-        val canvas = canvases.open(project)
+        val canvas =
+            try {
+                canvases.open(project)
+            } catch (e: CanvasOpenException) {
+                setState { copy(previewUnavailable = true, engineError = e.message) }
+                return
+            }
         if (canvas == null) {
             setState { copy(previewUnavailable = true) }
             return

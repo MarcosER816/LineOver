@@ -391,6 +391,8 @@ private fun InfoPanel(
             InfoLine("Colour", listOfNotNull(image.colorSpace, image.encoding).joinToString(" · "))
             if (image.ultraHdr) InfoLine("HDR", "Ultra HDR gain map kept")
             InfoLine("Preview", "${image.previewWidth} × ${image.previewHeight} px, sharp tiles when zoomed in")
+        } else if (state.engineError != null) {
+            InfoLine("Engine", state.engineError)
         } else if (state.previewUnavailable) {
             InfoLine("Original", "This format is shown once its decoder arrives (TIFF: Stage 12, RAW: Stage 25)")
         }
