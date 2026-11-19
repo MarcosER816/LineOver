@@ -377,7 +377,9 @@ def place(scale: float, degrees: float, tx: float, ty: float) -> list:
 
 
 def scene_layers(isolated: bool = True) -> list:
-    """The compositor scene (ctest blend_test reads the same layer tree from scene.json)."""
+    """The compositor scene (ctest blend_test reads the same layer tree from scene.json).
+    Placements keep every pixel centre (full and half scale) clear of a layer's edge: a centre
+    exactly on the edge is a tie that floating-point rounding decides differently per compiler."""
     return [
         {"type": "raster", "source": "s1", "sourceSize": [80, 60], "transform": place(1.2, 10.0, 20.0, 12.0),
          "blend": "multiply", "opacity": 80.0, "fill": 90.0},
@@ -392,8 +394,8 @@ def scene_layers(isolated: bool = True) -> list:
             {"type": "adjustment", "ops": [{"op": "invert"}], "opacity": 50.0},
         ]},
         {"type": "text"},
-        {"type": "raster", "source": "s1", "sourceSize": [80, 60], "transform": place(0.5, 45.0, 100.0, 50.0), "blend": "color"},
-        {"type": "raster", "source": "s1", "sourceSize": [80, 60], "transform": place(0.7, 0.0, 5.0, 60.0), "blend": "soft_light"},
+        {"type": "raster", "source": "s1", "sourceSize": [80, 60], "transform": place(0.5, 45.0, 100.37, 50.21), "blend": "color"},
+        {"type": "raster", "source": "s1", "sourceSize": [80, 60], "transform": place(0.7, 0.0, 5.13, 60.29), "blend": "soft_light"},
     ]
 
 

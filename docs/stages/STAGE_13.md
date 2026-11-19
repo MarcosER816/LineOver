@@ -175,6 +175,7 @@ Screenshots changed, and why:
 | Symptom | Root cause | Fix |
 | --- | --- | --- |
 | Hue / Color modes off against the reference in saturated colours | `ClipColor` recomputed the max after clipping the min; the spec uses the original `l`, `n`, `x` for both steps | Follow the spec pseudocode (the brief's IF WRONG step) |
+| CI only: `blend_test` scene off by up to 0.12 on single pixels (mean 2e-6); passed locally | Two scene layers were placed so that pixel centres fell exactly on a layer edge (u = 0 or 1). Inside / outside was a tie that each compiler's rounding decided differently | Scene placements moved off exact pixel positions (tie-free, like the blend grid). The golden scene graphs and renders were regenerated; these are the new Stage 13 files, not existing goldens |
 | JVM stack overflow in `LayerMath.group` | `mapTree` applied the wrapper and then descended into the new group, wrapping the layer again | Map the children first, then the layer |
 
 Plan B used: no.
