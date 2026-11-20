@@ -5,6 +5,8 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <mutex>
+#include <unordered_map>
 
 namespace lo::masks {
 
@@ -180,6 +182,42 @@ void paintStroke(const MaskPaint& p, int x0, int y0, int width, int height, doub
     }
 }
 
+struct Raster {
+    std::shared_ptr<const std::vector<float>> values;
+    int width = 0, height = 0;
+};
+std::mutex gRasterMutex;
+std::unordered_map<std::string, Raster> gRasters;
+
+// Replaces the mask with a saved raster covering the document, bilinear between its pixel
+// centres (clamped at its edges).
+void paintRaster(const MaskPaint& p, int x0, int y0, int width, int height, double scale, float* out) {
+    Raster r;
+    {
+        std::lock_guard<std::mutex> lock(gRasterMutex);
+        auto it = gRasters.find(p.source);
+        if (it == gRasters.end()) return;  // not registered: the mask keeps what it had
+        r = it->second;
+    }
+    if (r.width <= 0 || r.height <= 0 || p.docWidth <= 0.0 || p.docHeight <= 0.0) return;
+    const std::vector<float>& v = *r.values;
+    const double sx = r.width / p.docWidth, sy = r.height / p.docHeight;
+    for (int j = 0; j < height; ++j) {
+        const double fy = std::clamp((y0 + j + 0.5) / scale * sy - 0.5, 0.0, r.height - 1.0);
+        const int ya = static_cast<int>(fy), yb = std::min(ya + 1, r.height - 1);
+        const double ty = fy - ya;
+        for (int i = 0; i < width; ++i) {
+            const double fx = std::clamp((x0 + i + 0.5) / scale * sx - 0.5, 0.0, r.width - 1.0);
+            const int xa = static_cast<int>(fx), xb = std::min(xa + 1, r.width - 1);
+            const double tx = fx - xa;
+            auto at = [&](int x, int y) { return static_cast<double>(v[static_cast<std::size_t>(y) * r.width + x]); };
+            const double top = at(xa, ya) + (at(xb, ya) - at(xa, ya)) * tx;
+            const double bottom = at(xa, yb) + (at(xb, yb) - at(xa, yb)) * tx;
+            out[static_cast<std::size_t>(j) * width + i] = static_cast<float>(top + (bottom - top) * ty);
+        }
+    }
+}
+
 void paintGradient(const MaskPaint& p, int x0, int y0, int width, int height, double scale, float* out) {
     const double dx = p.x1 - p.x0, dy = p.y1 - p.y0, ll = dx * dx + dy * dy;
     for (int j = 0; j < height; ++j) {
@@ -193,6 +231,21 @@ void paintGradient(const MaskPaint& p, int x0, int y0, int width, int height, do
 }
 
 }  // namespace
+
+void registerRaster(const std::string& name, std::shared_ptr<const std::vector<float>> values, int width, int height) {
+    std::lock_guard<std::mutex> lock(gRasterMutex);
+    gRasters[name] = {std::move(values), width, height};
+}
+
+void unregisterRaster(const std::string& name) {
+    std::lock_guard<std::mutex> lock(gRasterMutex);
+    gRasters.erase(name);
+}
+
+bool hasRaster(const std::string& name) {
+    std::lock_guard<std::mutex> lock(gRasterMutex);
+    return gRasters.count(name) != 0;
+}
 
 void gaussianBlur(const float* in, int width, int height, double sigma, float* out) {
     const std::vector<double> k = gaussianKernel(sigma);
@@ -215,6 +268,8 @@ void rasterize(const LayerMask& mask, int x0, int y0, int width, int height, dou
     for (const MaskPaint& p : mask.paint) {
         if (p.kind == "gradient") {
             paintGradient(p, x0, y0, width, height, scale, out);
+        } else if (p.kind == "raster") {
+            paintRaster(p, x0, y0, width, height, scale, out);
         } else if (p.kind == "stroke") {
             paintStroke(p, x0, y0, width, height, scale, out);
         }

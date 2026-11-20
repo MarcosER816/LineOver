@@ -1,0 +1,33 @@
+[
+ {
+  "kind": "ellipse",
+  "mode": "new",
+  "x0": 20.3,
+  "y0": 15.6,
+  "x1": 100.8,
+  "y1": 80.2
+ },
+ {
+  "kind": "wand",
+  "mode": "intersect",
+  "x": 64.4,
+  "y": 48.3,
+  "tolerance": 25.0,
+  "contiguous": false
+ },
+ {
+  "kind": "invert"
+ },
+ {
+  "kind": "grow",
+  "px": -2.0
+ },
+ {
+  "kind": "border",
+  "px": 4.0
+ },
+ {
+  "kind": "smooth",
+  "px": 3.0
+ }
+]

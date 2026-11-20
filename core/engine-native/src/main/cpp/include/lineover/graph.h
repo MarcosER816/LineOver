@@ -39,7 +39,29 @@ struct MaskPaint {
     // gradient: replaces the mask with a linear ramp from (x0, y0) to (x1, y1)
     double x0 = 0.0, y0 = 0.0, x1 = 0.0, y1 = 0.0;
     double from = 1.0, to = 0.0;
+    // raster (Stage 15, a saved selection): replaces the mask with a registered R16F raster of
+    // width x height pixels covering the docWidth x docHeight document, sampled bilinearly
+    std::string source;
+    double width = 0.0, height = 0.0, docWidth = 0.0, docHeight = 0.0;
 };
+
+// A selection operation (Stage 15; selection.h evaluates them). Coordinates in document px.
+struct SelectionOp {
+    std::string kind;          // rect, ellipse, lasso, polygon, wand, color_range, all, invert, grow, feather, smooth, border
+    std::string mode = "new";  // new, add, subtract, intersect
+    bool antiAlias = true;
+    double x0 = 0.0, y0 = 0.0, x1 = 0.0, y1 = 0.0;  // rect / ellipse box
+    std::vector<double> points;                    // lasso / polygon: x0, y0, x1, y1, ...
+    double x = 0.0, y = 0.0, tolerance = 0.0;      // wand: seed, delta E
+    bool contiguous = true;
+    bool allLayers = true;
+    double fuzziness = 0.0;                        // color range: delta E
+    std::vector<double> add, subtract;             // color range samples: x, y, ...
+    double px = 0.0;                               // grow (< 0 shrinks), feather, smooth, border
+};
+
+// {"ops":[...]} (Kotlin's Selection) into [out].
+bool parseSelection(const std::string& json, std::vector<SelectionOp>* out, std::string* error);
 
 struct LayerMask {
     double base = 1.0;  // 1 = white (reveal all), 0 = black (hide all)

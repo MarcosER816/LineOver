@@ -7,6 +7,8 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
+#include <string>
 #include <vector>
 
 #include "lineover/graph.h"
@@ -30,6 +32,11 @@ private:
     int width_ = 0, height_ = 0, columns_ = 0;
     std::vector<std::vector<std::uint16_t>> tiles_;
 };
+
+// Saved selections (Stage 15; MaskPaint "raster"): R16F-rounded rasters by name, process-wide.
+void registerRaster(const std::string& name, std::shared_ptr<const std::vector<float>> values, int width, int height);
+void unregisterRaster(const std::string& name);
+bool hasRaster(const std::string& name);
 
 // OpenCV's Gaussian kernel for [sigma] (pixels); empty when sigma <= 0.
 std::vector<double> gaussianKernel(double sigma);
