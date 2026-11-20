@@ -205,4 +205,4 @@ POCO F7 Ultra, `lineover-<sha>.apk`:
 
 1. **Do you want linear-light blending as the default instead of gamma?** Now gamma-encoded,
    which matches Photoshop; each project can switch with Layers → Blending → Linear light.
-   Default if unanswered: keep gamma.
+   **Answered (Mark): keep gamma as the default.**
