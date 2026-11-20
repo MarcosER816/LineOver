@@ -172,7 +172,7 @@ class EngineSession private constructor(
     fun selectionRaster(): SelectionRaster? {
         if (closed) return null
         val a = native.selectionRaster() ?: return null
-        return SelectionRaster(a[0].toInt(), a[1].toInt(), a[2].toInt(), a[3].toInt(), a.copyOfRange(HEADER, a.size))
+        return SelectionRaster(a[0].toInt(), a[1].toInt(), a[DOC_W].toInt(), a[DOC_H].toInt(), a.copyOfRange(HEADER, a.size))
     }
 
     /** A saved selection a mask can name (MaskPaint.Raster), for every engine of the process. */
@@ -479,6 +479,8 @@ class EngineSession private constructor(
         private const val MB_SHIFT = 20
         private const val LAYER_PREVIEW_EDGE = 2048
         private const val HEADER = 4
+        private const val DOC_W = 2
+        private const val DOC_H = 3
         private const val LAYER_EXPORT_EDGE = 4096
         private const val REQUEST_SIZE = 3
         private const val THUMB_HEADER = 8

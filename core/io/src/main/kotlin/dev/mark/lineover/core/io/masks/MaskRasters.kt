@@ -1,5 +1,6 @@
 package dev.mark.lineover.core.io.masks
 
+import android.util.Log
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -53,6 +54,7 @@ class FileMaskRasters(
             }
             name
         } catch (e: IOException) {
+            Log.w(TAG, "saving the selection $name failed", e)
             null
         }
     }
@@ -63,11 +65,13 @@ class FileMaskRasters(
         return try {
             decode(file.readBytes())
         } catch (e: IOException) {
+            Log.w(TAG, "reading the selection $name failed", e)
             null
         }
     }
 
     companion object {
+        private const val TAG = "LineOverMasks"
         private const val HASH_CHARS = 32
         private const val SUFFIX = ".lomask"
         private const val MAGIC = 0x4C4F4D53 // "LOMS"

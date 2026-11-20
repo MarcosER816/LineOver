@@ -38,6 +38,9 @@ import dev.mark.lineover.core.model.LightParam
 import dev.mark.lineover.core.model.MaskPaint
 import dev.mark.lineover.core.model.OpParams
 import dev.mark.lineover.core.model.ProjectDocument
+import dev.mark.lineover.core.model.Selection
+import dev.mark.lineover.core.model.SelectionMode
+import dev.mark.lineover.core.model.SelectionOp
 import dev.mark.lineover.core.model.Snapshot
 import dev.mark.lineover.core.model.ToolCategory
 import dev.mark.lineover.core.model.UprightMode
@@ -375,6 +378,22 @@ abstract class EditorScreenshots(
             ),
         )
     }
+
+    /** Stage 15: the magic wand panel with a selection (mode Add in the options bar). */
+    @Test
+    fun selectWand() =
+        shot(
+            "select_wand",
+            base(ToolCategory.Select).copy(
+                panel = EditorPanel.Tool("select.magic_wand"),
+                graph =
+                    EditGraph(
+                        selection =
+                            Selection(listOf(SelectionOp.Wand(SelectionMode.New, 4000f, 1000f, 15f, true, true), SelectionOp.Feather(10f))),
+                    ),
+                selectionSettings = SelectionSettings(mode = SelectionMode.Add, tolerance = 24f),
+            ),
+        )
 
     @Test
     fun addLayerMenu() = screenShot("menu_add_layer", base().copy(panel = EditorPanel.Layers, menu = EditorMenu.AddLayer))

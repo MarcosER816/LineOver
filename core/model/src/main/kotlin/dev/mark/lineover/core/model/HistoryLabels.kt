@@ -23,15 +23,7 @@ object HistoryLabels {
         after: EditGraph,
     ): GraphChange {
         if (before == after) return GraphChange("No change", "")
-        // Stage 15: a selection change alone; the selection's ops coalesce while one is dragged.
-        if (before.copy(selection = null) == after.copy(selection = null)) {
-            val ops = after.selection?.ops.orEmpty()
-            return if (after.selection == null) {
-                GraphChange("Deselect", "selection.none")
-            } else {
-                GraphChange(SelectionOp.label(ops.lastOrNull()), "selection.${ops.size}")
-            }
-        }
+        selectionChange(before, after)?.let { return it }
         // Layers above the photo (Stage 13): added, removed or moved ones are named by the
         // action that did it; changes of one layer are named after it.
         val layersMoved = LayerMath.flatten(before).map { it.first.id } != LayerMath.flatten(after).map { it.first.id }
@@ -267,6 +259,16 @@ object HistoryLabels {
 }
 
 private const val HALF = 0.5f
+
+/** Stage 15: a selection change alone (its ops coalesce while one is dragged), or null. */
+private fun selectionChange(
+    before: EditGraph,
+    after: EditGraph,
+): GraphChange? {
+    if (before.copy(selection = null) != after.copy(selection = null)) return null
+    val ops = after.selection?.ops ?: return GraphChange("Deselect", "selection.none")
+    return GraphChange(SelectionOp.label(ops.lastOrNull()), "selection.${ops.size}")
+}
 
 /** [value] when true, else null (a list of optional changes). */
 private inline fun <T> Boolean.then(value: () -> T): T? = if (this) value() else null

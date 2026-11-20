@@ -443,11 +443,31 @@ private fun buildTools(): List<ToolSpec> =
             strip(Masks, "masks.background_mask", "Background mask", 17, PanelType.Mask, LoIcons.BackgroundReplace, "select background")
             strip(Masks, "masks.people_mask", "People mask", 17, PanelType.Mask, LoIcons.Face, "faces", "skin", "portrait")
 
-            strip(Select, "select.marquee", "Marquee", 15, PanelType.Selection, LoIcons.SelectAll, "rectangle select", "ellipse select")
-            strip(Select, "select.lasso", "Lasso", 15, PanelType.Selection, LoIcons.LassoSelect, "freehand select")
-            strip(Select, "select.polygonal_lasso", "Polygonal lasso", 15, PanelType.Selection, LoIcons.Polyline)
-            strip(Select, "select.magic_wand", "Magic wand", 15, PanelType.Selection, LoIcons.AutoFixHigh, "wand", "similar colour")
-            strip(Select, "select.color_range", "Color range", 15, PanelType.Selection, LoIcons.Colorize)
+            strip(
+                Select,
+                "select.marquee",
+                "Marquee",
+                15,
+                PanelType.Selection,
+                LoIcons.SelectAll,
+                "rectangle select",
+                "ellipse select",
+                done = true,
+            )
+            strip(Select, "select.lasso", "Lasso", 15, PanelType.Selection, LoIcons.LassoSelect, "freehand select", done = true)
+            strip(Select, "select.polygonal_lasso", "Polygonal lasso", 15, PanelType.Selection, LoIcons.Polyline, done = true)
+            strip(
+                Select,
+                "select.magic_wand",
+                "Magic wand",
+                15,
+                PanelType.Selection,
+                LoIcons.AutoFixHigh,
+                "wand",
+                "similar colour",
+                done = true,
+            )
+            strip(Select, "select.color_range", "Color range", 15, PanelType.Selection, LoIcons.Colorize, done = true)
             strip(Select, "select.magnetic_lasso", "Magnetic lasso", 16, PanelType.Selection, LoIcons.Gesture, "edge snapping")
             strip(Select, "select.quick_selection", "Quick selection", 16, PanelType.Selection, LoIcons.AdsClick, "smart brush select")
             strip(Select, "select.object_select", "Object select", 16, PanelType.Selection, LoIcons.ArrowSelectorTool, "select object")

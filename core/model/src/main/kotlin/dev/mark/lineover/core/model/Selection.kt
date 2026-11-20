@@ -62,6 +62,8 @@ sealed interface SelectionOp {
         val y1: Float,
     ) : Shape {
         override fun withMode(mode: SelectionMode) = copy(mode = mode)
+
+        override val label: String get() = "Rectangle selection"
     }
 
     @Serializable
@@ -75,6 +77,8 @@ sealed interface SelectionOp {
         val y1: Float,
     ) : Shape {
         override fun withMode(mode: SelectionMode) = copy(mode = mode)
+
+        override val label: String get() = "Ellipse selection"
     }
 
     /** Freehand: the finger's path, closed. */
@@ -86,6 +90,8 @@ sealed interface SelectionOp {
         val points: List<Float>,
     ) : Shape {
         override fun withMode(mode: SelectionMode) = copy(mode = mode)
+
+        override val label: String get() = "Lasso"
     }
 
     /** Straight sides between tapped points, closed. */
@@ -97,6 +103,8 @@ sealed interface SelectionOp {
         val points: List<Float>,
     ) : Shape {
         override fun withMode(mode: SelectionMode) = copy(mode = mode)
+
+        override val label: String get() = "Polygonal lasso"
     }
 
     /** Pixels within [tolerance] (OKLab delta E) of the one at (x, y); [contiguous]: connected to it. */
@@ -111,6 +119,8 @@ sealed interface SelectionOp {
         val allLayers: Boolean,
     ) : Shape {
         override fun withMode(mode: SelectionMode) = copy(mode = mode)
+
+        override val label: String get() = "Magic wand"
     }
 
     /** Colours near the [add] samples (x, y, ...) and away from the [subtract] ones, softly within [fuzziness]. */
@@ -123,58 +133,60 @@ sealed interface SelectionOp {
         val subtract: List<Float>,
     ) : Shape {
         override fun withMode(mode: SelectionMode) = copy(mode = mode)
+
+        override val label: String get() = "Color range"
     }
 
     @Serializable
     @SerialName("all")
-    data object All : SelectionOp
+    data object All : SelectionOp {
+        override val label: String get() = "Select all"
+    }
 
     @Serializable
     @SerialName("invert")
-    data object Invert : SelectionOp
+    data object Invert : SelectionOp {
+        override val label: String get() = "Invert selection"
+    }
 
     /** [px] > 0 grows, < 0 shrinks (an exact distance transform). */
     @Serializable
     @SerialName("grow")
     data class Grow(
         val px: Float,
-    ) : SelectionOp
+    ) : SelectionOp {
+        override val label: String get() = if (px >= 0f) "Grow selection ${px.toInt()} px" else "Shrink selection ${(-px).toInt()} px"
+    }
 
     @Serializable
     @SerialName("feather")
     data class Feather(
         val px: Float,
-    ) : SelectionOp
+    ) : SelectionOp {
+        override val label: String get() = "Feather ${px.toInt()} px"
+    }
 
     @Serializable
     @SerialName("smooth")
     data class Smooth(
         val px: Float,
-    ) : SelectionOp
+    ) : SelectionOp {
+        override val label: String get() = "Smooth selection ${px.toInt()} px"
+    }
 
     @Serializable
     @SerialName("border")
     data class Border(
         val px: Float,
-    ) : SelectionOp
+    ) : SelectionOp {
+        override val label: String get() = "Border ${px.toInt()} px"
+    }
+
+    /** The History name of the operation. */
+    val label: String
 
     companion object {
         /** The History name of [op]. */
-        fun label(op: SelectionOp?): String =
-            when (op) {
-                is Rect -> "Rectangle selection"
-                is Ellipse -> "Ellipse selection"
-                is Lasso -> "Lasso"
-                is Polygon -> "Polygonal lasso"
-                is Wand -> "Magic wand"
-                is ColorRange -> "Color range"
-                All -> "Select all"
-                Invert -> "Invert selection"
-                is Grow -> if (op.px >= 0f) "Grow selection ${op.px.toInt()} px" else "Shrink selection ${(-op.px).toInt()} px"
-                is Feather -> "Feather ${op.px.toInt()} px"
-                is Smooth -> "Smooth selection ${op.px.toInt()} px"
-                is Border -> "Border ${op.px.toInt()} px"
-                null -> "Selection"
-            }
+        fun label(op: SelectionOp?): String = op?.label ?: "Selection"
     }
 }

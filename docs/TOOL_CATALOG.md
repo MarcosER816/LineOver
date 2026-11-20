@@ -1,6 +1,6 @@
 # Tool catalog
 
-Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 77 done.**
+Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 82 done.**
 
 - **id**: stable identifier (`<group>.<tool>`), used in code, favourites and project files. Never renamed.
 - **UI slot**: where the tool lives. Slots are reserved now and are never moved (rule R9); a stage only *fills* slots.
@@ -171,11 +171,11 @@ The Favorites strip shows the tools the user pinned; it has no tools of its own.
 
 | id | Name | Category | UI slot | Stage | Status |
 | --- | --- | --- | --- | --- | --- |
-| `select.marquee` | Marquee | Select | `cat/Select/01` | 15 | reserved |
-| `select.lasso` | Lasso | Select | `cat/Select/02` | 15 | reserved |
-| `select.polygonal_lasso` | Polygonal lasso | Select | `cat/Select/03` | 15 | reserved |
-| `select.magic_wand` | Magic wand | Select | `cat/Select/04` | 15 | reserved |
-| `select.color_range` | Color range | Select | `cat/Select/05` | 15 | reserved |
+| `select.marquee` | Marquee | Select | `cat/Select/01` | 15 | done |
+| `select.lasso` | Lasso | Select | `cat/Select/02` | 15 | done |
+| `select.polygonal_lasso` | Polygonal lasso | Select | `cat/Select/03` | 15 | done |
+| `select.magic_wand` | Magic wand | Select | `cat/Select/04` | 15 | done |
+| `select.color_range` | Color range | Select | `cat/Select/05` | 15 | done |
 | `select.magnetic_lasso` | Magnetic lasso | Select | `cat/Select/06` | 16 | reserved |
 | `select.quick_selection` | Quick selection | Select | `cat/Select/07` | 16 | reserved |
 | `select.object_select` | Object select | Select | `cat/Select/08` | 16 | reserved |

@@ -282,24 +282,32 @@ internal class EditorSelectionActions(
         u: Float,
         v: Float,
     ) {
-        val tool = state().selectTool ?: return
-        val (x, y) = doc(u, v) ?: return
+        val tool = state().selectTool
+        val point = doc(u, v)
+        if (tool == null || point == null) return
         lastU = u
         lastV = v
         if (!moved) {
             moved = true
             beginDrag(tool)
         }
-        val selection = state().graph.selection ?: return
-        val next =
-            when (val last = selection.ops.lastOrNull()) {
-                is SelectionOp.Rect -> last.copy(x1 = constrainX(last.x0, last.y0, x, y), y1 = constrainY(last.x0, last.y0, x, y))
-                is SelectionOp.Ellipse -> last.copy(x1 = constrainX(last.x0, last.y0, x, y), y1 = constrainY(last.x0, last.y0, x, y))
-                is SelectionOp.Lasso -> lassoPoint(last, x, y)
-                else -> null
-            } ?: return
+        val selection = state().graph.selection
+        val next = selection?.ops?.lastOrNull()?.let { grown(it, point.first, point.second) } ?: return
         reduce(null) { copy(graph = graph.copy(selection = selection.withLast(next))) }
     }
+
+    /** The shape being dragged, reaching (x, y); null when nothing changes. */
+    private fun grown(
+        last: SelectionOp,
+        x: Float,
+        y: Float,
+    ): SelectionOp? =
+        when (last) {
+            is SelectionOp.Rect -> last.copy(x1 = constrainX(last.x0, last.y0, x, y), y1 = constrainY(last.x0, last.y0, x, y))
+            is SelectionOp.Ellipse -> last.copy(x1 = constrainX(last.x0, last.y0, x, y), y1 = constrainY(last.x0, last.y0, x, y))
+            is SelectionOp.Lasso -> lassoPoint(last, x, y)
+            else -> null
+        }
 
     /** A drag with the marquee or the lasso starts a shape at the finger's first point. */
     private fun beginDrag(tool: String) {
@@ -494,7 +502,7 @@ internal class EditorSelectionActions(
             val name = store.save(pixels) ?: return@withContext null
             canvas.registerMaskRaster(name, pixels)
             synchronized(registered) { registered += name }
-            synchronized(thumbnails) { thumbnails[name] = thumbnail(pixels) }
+            synchronized(thumbnails) { thumbnails[name] = maskThumbnail(pixels) }
             MaskPaint.Raster(name, raster.width.toFloat(), raster.height.toFloat(), raster.docWidth.toFloat(), raster.docHeight.toFloat())
         }
     }
@@ -550,25 +558,40 @@ internal class EditorSelectionActions(
     /** The photo as a smart object with its own colour edit, placed 1:1 (an uncropped photo only). */
     private suspend fun photoCopy(): Layer? {
         val s = state()
+        val store = sources
+        val uri = s.project?.sourceUri
+        val size = s.canvasSize
         if (s.backgroundOps.any { it is OpParams.Geometry }) {
             host.message("Copying the photo to a layer works without crop or optics for now")
             return null
         }
-        val store = sources ?: return null.also { host.message("Layers cannot copy the photo here") }
-        val uri = s.project?.sourceUri ?: return null
-        val (w, h) = s.canvasSize ?: return null
-        val source = withContext(dispatcher) { store.import(uri) } ?: return null.also { host.message("The photo could not be copied") }
-        withContext(dispatcher) { store.file(source.name)?.let { s.canvas?.registerLayerImage(source.name, it) } }
-        return Layer(
-            LayerMath.newId(),
-            ops = s.backgroundOps.filter(AdjustmentKind::isPointOp),
-            type = LayerType.SmartObject,
-            name = "Photo (selection)",
-            source = source.name,
-            sourceSize = listOf(w.toFloat(), h.toFloat()),
-            transform = listOf(1f, 0f, 0f, 1f, 0f, 0f),
-        )
+        if (store == null || uri == null || size == null) return null.also { host.message("Layers cannot copy the photo here") }
+        val source = withContext(dispatcher) { importPhoto(store, uri) }
+        if (source == null) host.message("The photo could not be copied")
+        return source?.let { photoLayer(it, size) }
     }
+
+    private fun importPhoto(
+        store: LayerSources,
+        uri: String,
+    ): String? {
+        val src = store.import(uri) ?: return null
+        store.file(src.name)?.let { state().canvas?.registerLayerImage(src.name, it) }
+        return src.name
+    }
+
+    private fun photoLayer(
+        source: String,
+        size: Pair<Int, Int>,
+    ) = Layer(
+        LayerMath.newId(),
+        ops = state().backgroundOps.filter(AdjustmentKind::isPointOp),
+        type = LayerType.SmartObject,
+        name = "Photo (selection)",
+        source = source,
+        sourceSize = listOf(size.first.toFloat(), size.second.toFloat()),
+        transform = listOf(1f, 0f, 0f, 1f, 0f, 0f),
+    )
 
     // --- Mask rasters the graph names ---
 
@@ -592,7 +615,7 @@ internal class EditorSelectionActions(
                 for (name in missing) {
                     val raster = store.load(name) ?: continue
                     canvas.registerMaskRaster(name, raster)
-                    synchronized(thumbnails) { thumbnails[name] = thumbnail(raster) }
+                    synchronized(thumbnails) { thumbnails[name] = maskThumbnail(raster) }
                 }
             }
             publishThumbnails()
@@ -627,29 +650,5 @@ internal class EditorSelectionActions(
         const val LASSO_SPACING = 0.002f
         const val CLOSE_DISTANCE = 0.02f
         const val MIN_POLYGON = 6
-        private const val THUMB = 64
-
-        fun rasterNames(graph: EditGraph): Set<String> =
-            LayerMath
-                .flatten(graph)
-                .mapNotNull { it.first.mask }
-                .flatMap { it.paint }
-                .filterIsInstance<MaskPaint.Raster>()
-                .map { it.source }
-                .toSet()
-
-        /** A small grey picture of a saved selection (the mask thumbnail). */
-        fun thumbnail(raster: MaskRaster): ImageBitmap {
-            val w = THUMB
-            val h = max(1, (THUMB.toFloat() * raster.height / raster.width).roundToInt())
-            val pixels =
-                IntArray(w * h) { i ->
-                    val x = (i % w) * raster.width / w
-                    val y = (i / w) * raster.height / h
-                    val g = (raster.values[y * raster.width + x].coerceIn(0f, 1f) * 255f).roundToInt()
-                    (0xFF shl 24) or (g shl 16) or (g shl 8) or g
-                }
-            return Bitmap.createBitmap(pixels, w, h, Bitmap.Config.ARGB_8888).asImageBitmap()
-        }
     }
 }

@@ -36,8 +36,30 @@ data class ImageSummary(
     val exif: PhotoExif = PhotoExif(),
 )
 
+/** Stage 15: what the selection needs of the engine (part of [EditorCanvas]). */
+interface SelectionCanvas {
+    /** Stage 15: evaluates the selection recipe (JSON, empty = none) for the canvas and its ants. Off the main thread. */
+    fun setSelection(json: String): String? = null
+
+    /** The selection at image point (u, v), or null without one. Off the main thread. */
+    fun selectionAt(
+        u: Float,
+        v: Float,
+    ): Float? = null
+
+    /** The selection as pixels, or null. Off the main thread. */
+    fun selectionRaster(): SelectionRaster? = null
+
+    /** A saved selection the graph's masks can name. */
+    fun registerMaskRaster(
+        name: String,
+        raster: MaskRaster,
+    ) = Unit
+}
+
 /** The image engine as the editor sees it: draws the canvas, takes edits, reports loading. */
 interface EditorCanvas :
+    SelectionCanvas,
     CanvasRenderer,
     AutoCloseable {
     val summary: ImageSummary
@@ -84,24 +106,6 @@ interface EditorCanvas :
         id: String,
         file: File,
     ): Boolean = false
-
-    /** Stage 15: evaluates the selection recipe (JSON, empty = none) for the canvas and its ants. Off the main thread. */
-    fun setSelection(json: String): String? = null
-
-    /** The selection at image point (u, v), or null without one. Off the main thread. */
-    fun selectionAt(
-        u: Float,
-        v: Float,
-    ): Float? = null
-
-    /** The selection as pixels, or null. Off the main thread. */
-    fun selectionRaster(): SelectionRaster? = null
-
-    /** A saved selection the graph's masks can name. */
-    fun registerMaskRaster(
-        name: String,
-        raster: MaskRaster,
-    ) = Unit
 
     /** Stage 14: the canvas shows layer [layerId]'s mask ([view]: 0 none, 1 grey, 2 red overlay). Off the main thread. */
     fun setMaskView(
