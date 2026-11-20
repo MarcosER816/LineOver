@@ -2,6 +2,29 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 17 — Local masks (0.17.0)
+
+### Added
+
+- **Masks**: Linear gradient, Radial gradient, Brush (size, feather, flow, erase and an
+  edge-aware Auto mask), Color range (tap colours), Luminance range, Depth range, and the AI
+  masks Subject, Sky, Background and People, all made on the phone.
+- Combine masks with **Add**, **Subtract** and **Intersect** (e.g. a linear gradient
+  intersected with Sky), invert any part, and remove parts.
+- Each mask has its own **Exposure, Contrast, Highlights, Shadows, Whites, Blacks, Temp, Tint,
+  Saturation, Texture, Clarity, Dehaze, Sharpness, Noise and Color** sliders, and an
+  **Amount** slider for the whole mask.
+- **Pins** on the photo: tap one to edit its mask. An eye button shows where the mask applies
+  in red. **Duplicate and invert** makes the opposite mask in one tap.
+- Depth range uses the depth map stored in the photo when there is one; otherwise it
+  downloads Depth Anything V2 Small (91.9 MB, Apache-2.0) on first use.
+
+### Changed
+
+- Adjustment layers can now hold Highlights / Shadows, Texture, Clarity, Dehaze, Sharpening
+  and Noise reduction.
+- Settings → AI models lists the depth model and which masks use each model.
+
 ## Stage 16 — Selections II (0.16.0)
 
 ### Added
