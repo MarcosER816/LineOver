@@ -523,6 +523,7 @@ internal class EditorSmartActions(
             SmartTool.Subject -> SelectionOp.Raster.TOOL_SUBJECT
             SmartTool.Sky -> SelectionOp.Raster.TOOL_SKY
             SmartTool.Object -> SelectionOp.Raster.TOOL_OBJECT
+            SmartTool.Depth -> "depth"
         }
 
     companion object {

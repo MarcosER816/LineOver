@@ -88,9 +88,12 @@ class AiModelsSettingsTest {
             val vm = SettingsViewModel("1.0", showDebug = false, preferences = prefs, smartModels = models)
             advanceUntilIdle()
             val rows = vm.state.value.models
-            assertEquals(listOf("Subject", "Sky", "Object"), rows.map { it.id })
-            assertEquals(listOf("Select subject", "Select sky", "Object select"), rows.map { it.usedBy })
-            assertEquals(listOf(false, true, false), rows.map { it.downloaded })
+            assertEquals(listOf("Subject", "Sky", "Object", "Depth"), rows.map { it.id })
+            assertEquals(
+                listOf("Select subject, Subject / Background mask", "Select sky, Sky / People mask", "Object select", "Depth range mask"),
+                rows.map { it.usedBy },
+            )
+            assertEquals(listOf(false, true, false, false), rows.map { it.downloaded })
             assertEquals(0L, rows[0].sizeBytes) // Google Play services knows its size
             assertEquals("Downloading 50 %", rows[2].status)
             // Delete: the store forgets it, the row says so, and the tool will ask again.
