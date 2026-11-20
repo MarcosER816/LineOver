@@ -104,6 +104,15 @@ public:
     // Stage 13: for a graph with layers, renders the whole document (background, geometry,
     // layers, finishing) on the CPU at preview size and shows it on the canvas instead of
     // the photo and its tiles; clears it otherwise. Any thread but the render thread.
+    // Stage 15: the selection recipe ({"ops":[...]}, document px; empty = none), evaluated on
+    // the calling thread (never the main thread: the wand's flood fill runs here) at the
+    // composite's resolution; its outline becomes the marching ants. Error text or empty.
+    std::string setSelection(const std::string& json);
+    void setAntsPhase(float phase);
+    // The selection at image point (u, v) in 0..1, or -1 without one.
+    float selectionAt(float u, float v);
+    // A copy of the selection (R16F values) and the document size it covers; false without one.
+    bool selectionRaster(std::vector<float>* values, int* width, int* height, int* docWidth, int* docHeight);
     // Stage 14: the canvas shows layer [layerId]'s mask (layers::MaskView); the next renderComposite applies it.
     void setMaskView(const std::string& layerId, int view);
     void renderComposite();
@@ -259,6 +268,16 @@ private:
     std::shared_ptr<const ImageF32> compositeSource_;
     std::vector<float> pendingComposite_;
     int pendingCompositeW_ = 0, pendingCompositeH_ = 0;
+    // Stage 15: the selection (selectionMutex_), its outline for the render thread (mutex_).
+    std::mutex selectionMutex_;
+    std::string selectionJson_;
+    std::vector<float> selection_;
+    int selectionW_ = 0, selectionH_ = 0, selectionDocW_ = 0, selectionDocH_ = 0;
+    std::shared_ptr<const Graph> sampledGraph_;
+    ImageF32 sampledAll_, sampledPhoto_;
+    std::vector<float> pendingAnts_;
+    bool antsChanged_ = false;
+    float antsPhase_ = 0.f;
     std::string maskViewLayer_;
     int maskView_ = 0;
     bool compositeChanged_ = false;

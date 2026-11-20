@@ -37,7 +37,8 @@ struct Grid {
     int width = 0;
     int height = 0;
     double scale = 1.0;
-    const float* rgba = nullptr;
+    const float* rgba = nullptr;       // all layers (the composite)
+    const float* rgbaPhoto = nullptr;  // the photo alone ("sample all layers" off); null = rgba
 };
 
 // The selection of [ops] on [grid], from nothing (R16F-rounded values).

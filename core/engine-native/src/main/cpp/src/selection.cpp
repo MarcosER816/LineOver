@@ -245,12 +245,12 @@ int seedIndex(double v, double scale, int n) {
     return std::clamp(static_cast<int>(std::floor(v * scale)), 0, n - 1);
 }
 
-std::vector<float> labGrid(const Grid& g) {
+std::vector<float> labGrid(const Grid& g, const float* rgba) {
     std::vector<float> lab(static_cast<std::size_t>(g.width) * g.height * 3, 0.f);
-    if (g.rgba == nullptr) return lab;
+    if (rgba == nullptr) return lab;
     for (std::size_t p = 0; p < static_cast<std::size_t>(g.width) * g.height; ++p) {
         float l[3];
-        colorops::toOklab(g.rgba + 4 * p, l);
+        colorops::toOklab(rgba + 4 * p, l);
         for (int c = 0; c < 3; ++c) lab[3 * p + c] = l[c] * 100.f;
     }
     return lab;
@@ -328,14 +328,16 @@ void combine(std::vector<float>* s, const std::vector<float>& a, const std::stri
 std::vector<float> evaluate(const std::vector<SelectionOp>& ops, const Grid& g) {
     std::vector<float> s(static_cast<std::size_t>(g.width) * g.height, 0.f);
     if (g.width <= 0 || g.height <= 0) return s;
-    std::vector<float> lab;
+    std::vector<float> lab, labPhoto;
     for (const SelectionOp& op : ops) {
         const std::string& k = op.kind;
         if (k == "rect" || k == "ellipse" || k == "lasso" || k == "polygon") {
             combine(&s, shape(op, g), op.mode);
         } else if (k == "wand" || k == "color_range") {
-            if (lab.empty()) lab = labGrid(g);
-            combine(&s, k == "wand" ? wand(op, g, lab) : colorRange(op, g, lab), op.mode);
+            const bool photo = !op.allLayers && g.rgbaPhoto != nullptr;
+            std::vector<float>& source = photo ? labPhoto : lab;
+            if (source.empty()) source = labGrid(g, photo ? g.rgbaPhoto : g.rgba);
+            combine(&s, k == "wand" ? wand(op, g, source) : colorRange(op, g, source), op.mode);
         } else if (k == "all") {
             std::fill(s.begin(), s.end(), 1.f);
         } else if (k == "invert") {

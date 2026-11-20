@@ -103,6 +103,16 @@ void lo_release_full_layer_images(void);
 void lo_engine_render_composite(lo_engine* engine);
 /* Stage 14: show a layer's mask on the canvas: view 0 none, 1 mask only (grey), 2 red overlay. */
 void lo_engine_set_mask_view(lo_engine* engine, const char* layer_id, int view);
+/* Stage 15: the selection recipe (JSON, empty = none), evaluated on the calling thread (never
+ * the main thread). 1 on success, else 0 and the error in [error]. */
+int lo_engine_set_selection(lo_engine* engine, const char* json, char* error, size_t error_len);
+void lo_engine_set_ants_phase(lo_engine* engine, float phase);
+float lo_engine_selection_at(lo_engine* engine, float u, float v);
+/* A malloc'd copy of the selection (R16F values as float; free()), its size and the document's; NULL without one. */
+float* lo_engine_selection_raster(lo_engine* engine, int* width, int* height, int* doc_width, int* doc_height);
+/* Saved selections for masks (MaskPaint "raster"), process-wide. */
+void lo_register_mask_raster(const char* name, const float* values, int width, int height);
+void lo_unregister_mask_raster(const char* name);
 void lo_unregister_lut(const char* id);
 void lo_engine_set_show_original(lo_engine* engine, int original);
 void lo_engine_set_compare(lo_engine* engine, int mode, float split);

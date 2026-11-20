@@ -333,6 +333,52 @@ JNIEXPORT void LO_NATIVE(nativeSetMaskView)(JNIEnv* env, jobject, jlong engine, 
     env->ReleaseStringUTFChars(layerId, text);
 }
 
+JNIEXPORT jstring LO_NATIVE(nativeSetSelection)(JNIEnv* env, jobject, jlong engine, jstring json) {
+    const char* text = env->GetStringUTFChars(json, nullptr);
+    char error[256] = {0};
+    const int ok = lo_engine_set_selection(handle(engine), text, error, sizeof(error));
+    env->ReleaseStringUTFChars(json, text);
+    return errorOrNull(env, ok, error);
+}
+
+JNIEXPORT void LO_NATIVE(nativeSetAntsPhase)(JNIEnv*, jobject, jlong engine, jfloat phase) {
+    lo_engine_set_ants_phase(handle(engine), phase);
+}
+
+JNIEXPORT jfloat LO_NATIVE(nativeSelectionAt)(JNIEnv*, jobject, jlong engine, jfloat u, jfloat v) {
+    return lo_engine_selection_at(handle(engine), u, v);
+}
+
+// [width, height, docWidth, docHeight, values...] or null.
+JNIEXPORT jfloatArray LO_NATIVE(nativeSelectionRaster)(JNIEnv* env, jobject, jlong engine) {
+    int w = 0, h = 0, dw = 0, dh = 0;
+    float* values = lo_engine_selection_raster(handle(engine), &w, &h, &dw, &dh);
+    if (values == nullptr) return nullptr;
+    const jsize n = static_cast<jsize>(w) * h;
+    jfloatArray out = env->NewFloatArray(n + 4);
+    if (out != nullptr) {
+        const jfloat header[4] = {static_cast<jfloat>(w), static_cast<jfloat>(h), static_cast<jfloat>(dw), static_cast<jfloat>(dh)};
+        env->SetFloatArrayRegion(out, 0, 4, header);
+        env->SetFloatArrayRegion(out, 4, n, values);
+    }
+    free(values);
+    return out;
+}
+
+JNIEXPORT void LO_NATIVE(nativeRegisterMaskRaster)(JNIEnv* env, jobject, jstring name, jfloatArray values, jint width, jint height) {
+    const char* text = env->GetStringUTFChars(name, nullptr);
+    jfloat* data = env->GetFloatArrayElements(values, nullptr);
+    if (env->GetArrayLength(values) >= width * height) lo_register_mask_raster(text, data, width, height);
+    env->ReleaseFloatArrayElements(values, data, JNI_ABORT);
+    env->ReleaseStringUTFChars(name, text);
+}
+
+JNIEXPORT void LO_NATIVE(nativeUnregisterMaskRaster)(JNIEnv* env, jobject, jstring name) {
+    const char* text = env->GetStringUTFChars(name, nullptr);
+    lo_unregister_mask_raster(text);
+    env->ReleaseStringUTFChars(name, text);
+}
+
 JNIEXPORT void LO_NATIVE(nativeRenderComposite)(JNIEnv*, jobject, jlong engine) { lo_engine_render_composite(handle(engine)); }
 
 JNIEXPORT void LO_NATIVE(nativeUnregisterLut)(JNIEnv* env, jobject, jstring id) {
