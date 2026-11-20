@@ -2,6 +2,21 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 14 — Layer masks (0.14.0)
+
+### Added
+
+- **Layer masks** (Layers → Layer mask → Add, or Hide all).
+  - Tap the mask thumbnail to edit the mask (accent outline). One finger then paints it:
+    a round brush with size, hardness and opacity, or a gradient.
+  - The swap button switches between painting black (hide) and white (show).
+  - Feather (soft edges), density, invert, and fill white or black.
+  - Long-press the thumbnail to switch the mask off and on.
+  - Red overlay and Mask only show exactly what the mask covers.
+- **Clipping**: "Clip to the layer below" limits a layer to where the layer under it is.
+  Several layers can clip to the same one.
+- Exports and thumbnails include masks and clipping.
+
 ## Stage 13 — Layers (0.13.0)
 
 ### Added

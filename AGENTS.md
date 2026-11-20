@@ -224,6 +224,18 @@ python3 tools/golden/generate.py --check
 - Merge down and flatten group layers (pass-through); never combine pixels outside export and
   never merge into the photo.
 
+## Layer masks (Stage 14)
+
+- A mask is its paint in the graph (`LayerMask`, `MaskPaint`), rendered per region into R16F
+  tiles by `masks::render`; never store a feathered mask in 8 bit and never paint pixels
+  into a separate store before the Stage 18 brush engine.
+- `masks.cpp`, `layers.cpp` (clipping, mask weights), `tools/golden/blend_reference.py` and
+  `testdata/golden/mask/` change together; feather goldens come from `cv2.GaussianBlur`.
+- A region renders its mask with the blur's reach of neighbour pixels (reflect-101 only at
+  the document's edges): set `Region.docWidth/docHeight` for any partial region, or tiles
+  show seams.
+- Mask and clip JSON round-trips `testdata/graph/edit_graph_masks.json` in C++ and Kotlin.
+
 ## History and projects (Stage 8)
 
 - Every edit goes through `EditorViewModel.reduce`, which records it in `EditHistory`; never
