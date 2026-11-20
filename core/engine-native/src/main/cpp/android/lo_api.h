@@ -101,6 +101,8 @@ void lo_unregister_layer_image(const char* id);
 void lo_release_full_layer_images(void);
 /* Renders a layered graph's composite for the canvas (or clears it); CPU, any thread. */
 void lo_engine_render_composite(lo_engine* engine);
+/* Stage 14: show a layer's mask on the canvas: view 0 none, 1 mask only (grey), 2 red overlay. */
+void lo_engine_set_mask_view(lo_engine* engine, const char* layer_id, int view);
 void lo_unregister_lut(const char* id);
 void lo_engine_set_show_original(lo_engine* engine, int original);
 void lo_engine_set_compare(lo_engine* engine, int mode, float split);

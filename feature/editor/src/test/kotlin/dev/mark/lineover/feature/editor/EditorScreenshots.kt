@@ -31,9 +31,11 @@ import dev.mark.lineover.core.model.HistoryLabels
 import dev.mark.lineover.core.model.HslBand
 import dev.mark.lineover.core.model.HslChannel
 import dev.mark.lineover.core.model.Layer
+import dev.mark.lineover.core.model.LayerMask
 import dev.mark.lineover.core.model.LayerType
 import dev.mark.lineover.core.model.LightAdjustments
 import dev.mark.lineover.core.model.LightParam
+import dev.mark.lineover.core.model.MaskPaint
 import dev.mark.lineover.core.model.OpParams
 import dev.mark.lineover.core.model.ProjectDocument
 import dev.mark.lineover.core.model.Snapshot
@@ -338,6 +340,40 @@ abstract class EditorScreenshots(
                     ),
             )
         shot("sheet_layers_stack", base().copy(panel = EditorPanel.Layers, graph = graph, selectedLayerId = "p2"))
+    }
+
+    /** Stage 14: a masked adjustment layer with its mask targeted (accent outline) and a clipped colour layer. */
+    @Test
+    fun layersMask() {
+        val mask =
+            LayerMask(
+                feather = 40f,
+                paint =
+                    listOf(
+                        MaskPaint.Gradient(0f, 600f, 0f, 2400f, 0f, 1f),
+                        MaskPaint.Stroke(1f, 500f, 0.5f, 100f, listOf(1000f, 2000f, 4000f, 2600f, 6000f, 2100f)),
+                    ),
+            )
+        val graph =
+            EditGraph(
+                layers =
+                    listOf(
+                        Layer(EditGraph.BACKGROUND),
+                        Layer("sky", ops = listOf(OpParams.Exposure(-1f)), type = LayerType.Adjustment, name = "Sky", mask = mask),
+                        Layer("tone", ops = listOf(OpParams.Saturation(40f)), type = LayerType.Adjustment, name = "Colour", clip = true),
+                    ),
+            )
+        shot(
+            "sheet_layers_mask",
+            base().copy(
+                panel = EditorPanel.Layers,
+                graph = graph,
+                selectedLayerId = "sky",
+                maskTarget = true,
+                maskView = MaskView.Overlay,
+                image = ImageSummary(8160, 6120, 2048, 1536, "Display P3", "8-bit Display P3", ultraHdr = false),
+            ),
+        )
     }
 
     @Test

@@ -394,6 +394,22 @@ The JNI bridge only marshals Java values to the C API (`android/lo_api.h`). The 
 `CMakeLists.txt` builds the Android shared library (through Gradle) and, on Linux, the
 host static library plus the ctest tests.
 
+### Layer masks (Stage 14)
+
+```
+Layer.mask = base + paint (strokes: polyline / radius / hardness / opacity / value; linear gradients), document px
+  -> masks::render(region): rasterise region + blur reach (reflect-101 at the document edges)
+     -> invert -> Gaussian feather (OpenCV kernel) -> density -> R16F tiles (cached)
+  -> compositor: source alpha (or pass-through k) x mask; clipped layers x base coverage
+```
+
+- `masks.cpp`, `layers.cpp` and `blend_reference.py` change together; ctest `mask_test`
+  holds feather against `cv2.GaussianBlur`, the scene with masks and clipping, and tiles
+  that meet without seams.
+- The canvas paints with `PickMode.Paint` while a mask is targeted; strokes grow in the
+  graph (one History step each). The canvas shows `MaskView` (grey or red overlay) through
+  `EngineSession.setMaskView`.
+
 ### Layers (Stage 13)
 
 ```

@@ -33,6 +33,10 @@ data class Layer(
     /** Source px -> document (output) px: a, b, c, d, e, f (x = a sx + c sy + e, y = b sx + d sy + f). */
     @EncodeDefault(EncodeDefault.Mode.NEVER) val transform: List<Float> = emptyList(),
     @EncodeDefault(EncodeDefault.Mode.NEVER) val children: List<Layer> = emptyList(),
+    /** Stage 14: shown only where the layer below (its clipping base) covers. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val clip: Boolean = false,
+    /** Stage 14: the layer mask, or none. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val mask: LayerMask? = null,
 ) {
     val isBackground: Boolean get() = type == LayerType.Background
 

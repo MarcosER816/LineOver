@@ -80,6 +80,7 @@ def build_outputs() -> dict[str, np.ndarray]:
     outputs.update(lut_outputs())
     outputs.update(export_outputs())
     outputs.update(blend_outputs())
+    outputs.update(mask_outputs())
     return outputs
 
 
@@ -351,6 +352,37 @@ def blend_outputs() -> dict:
     out["blend/scene_linear_f32.npy"] = blend.composite_document(scene, blend.scene_layers(True), images, "linear")
     half = scene[::2, ::2]  # the preview: half the document, a background at that scale
     out["blend/scene_half_f32.npy"] = blend.composite_document(half, blend.scene_layers(True), images, "gamma", scale=0.5)
+    return out
+
+
+def mask_outputs() -> dict:
+    """Stage 14: a rasterised mask, its feather against OpenCV's GaussianBlur, and the
+    compositor scene with masks and clipping (full size, preview half, linear)."""
+    out = {}
+    h, w = 96, 128
+    jj, ii = np.mgrid[0:h, 0:w]
+    raw = blend.rasterize_mask(blend.test_mask(), ii + 0.5, jj + 0.5, 1.0).astype(np.float32)
+    out["mask/raster_f32.npy"] = raw[..., None]
+    for sigma in blend.FEATHER_SIGMAS:
+        out[f"mask/feather_{sigma}_f32.npy"] = cv2.GaussianBlur(raw, (0, 0), sigma)[..., None]
+    half_raw = blend.rasterize_mask(blend.test_mask(), (ii[::2, ::2] + 1.0), (jj[::2, ::2] + 1.0), 0.5).astype(np.float32)
+    out["mask/raster_half_f32.npy"] = half_raw[..., None]
+    scene = reference.scene_rec2020()
+    images = {"s1": blend.layer_source()}
+    layers = blend.mask_scene_layers()
+
+    def graph(space="gamma"):
+        named = [dict({"id": f"m{i}"}, **layer) for i, layer in enumerate(layers)]
+        g = {"schemaVersion": 1, "layers": [{"id": "background", "ops": []}] + named}
+        if space != "gamma":
+            g["blendSpace"] = space
+        return json.dumps(g, indent=1) + "\n"
+
+    out["mask/scene_graph.json"] = graph()
+    out["mask/scene_linear_graph.json"] = graph("linear")
+    out["mask/scene_f32.npy"] = blend.composite_document(scene, layers, images, "gamma")
+    out["mask/scene_linear_f32.npy"] = blend.composite_document(scene, layers, images, "linear")
+    out["mask/scene_half_f32.npy"] = blend.composite_document(scene[::2, ::2], layers, images, "gamma", scale=0.5)
     return out
 
 

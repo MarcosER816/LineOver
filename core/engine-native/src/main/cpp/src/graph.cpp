@@ -281,6 +281,42 @@ std::string formatKotlinFloat(float value) {
 
 namespace {
 
+void parseMask(const Value& value, LayerMask* out) {
+    auto num = [](const Value& v, const char* key, double* into) {
+        if (const Value* n = v.find(key); n != nullptr && n->kind == Value::Kind::Number) *into = n->number;
+    };
+    auto flag = [](const Value& v, const char* key, bool* into) {
+        if (const Value* n = v.find(key); n != nullptr && n->kind == Value::Kind::Bool) *into = n->boolean;
+    };
+    num(value, "base", &out->base);
+    flag(value, "enabled", &out->enabled);
+    flag(value, "inverted", &out->inverted);
+    num(value, "density", &out->density);
+    num(value, "feather", &out->feather);
+    const Value* paint = value.find("paint");
+    if (paint == nullptr || paint->kind != Value::Kind::Array) return;
+    for (const Value& item : paint->items) {
+        const Value* kind = item.find("kind");
+        if (item.kind != Value::Kind::Object || kind == nullptr || kind->kind != Value::Kind::String) continue;
+        MaskPaint p;
+        p.kind = kind->text;
+        num(item, "value", &p.value);
+        num(item, "radius", &p.radius);
+        num(item, "hardness", &p.hardness);
+        num(item, "opacity", &p.opacity);
+        if (const Value* pts = item.find("points"); pts != nullptr && pts->kind == Value::Kind::Array)
+            for (const Value& v : pts->items)
+                if (v.kind == Value::Kind::Number) p.points.push_back(v.number);
+        num(item, "x0", &p.x0);
+        num(item, "y0", &p.y0);
+        num(item, "x1", &p.x1);
+        num(item, "y1", &p.y1);
+        num(item, "from", &p.from);
+        num(item, "to", &p.to);
+        out->paint.push_back(std::move(p));
+    }
+}
+
 bool parseLayer(const Value& layerValue, Layer* out, std::string* error) {
     if (layerValue.kind != Value::Kind::Object) {
         *error = "layer is not an object";
@@ -344,6 +380,11 @@ bool parseLayer(const Value& layerValue, Layer* out, std::string* error) {
             if (!parseLayer(child, &c, error)) return false;
             layer.children.push_back(std::move(c));
         }
+    }
+    flag("clip", &layer.clip);
+    if (const Value* mask = layerValue.find("mask"); mask != nullptr && mask->kind == Value::Kind::Object) {
+        layer.hasMask = true;
+        parseMask(*mask, &layer.mask);
     }
     *out = std::move(layer);
     return true;
@@ -414,6 +455,67 @@ void serializeOps(const std::vector<OpParams>& ops, std::string* out) {
     out->append("]");
 }
 
+// Kotlin's LayerMask: fields only when not default; MaskPaint: "kind" first, then every field.
+void serializeMask(const LayerMask& mask, std::string* out) {
+    auto number = [&](const char* name, double v, bool first = false) {
+        if (!first) out->push_back(',');
+        out->push_back('"');
+        out->append(name);
+        out->append("\":");
+        out->append(formatKotlinFloat(static_cast<float>(v)));
+    };
+    out->push_back('{');
+    bool first = true;
+    auto lead = [&]() {
+        const bool f = first;
+        first = false;
+        return f;
+    };
+    if (mask.base != 1.0) number("base", mask.base, lead());
+    if (!mask.enabled) {
+        if (!lead()) out->push_back(',');
+        out->append("\"enabled\":false");
+    }
+    if (mask.inverted) {
+        if (!lead()) out->push_back(',');
+        out->append("\"inverted\":true");
+    }
+    if (mask.density != 100.0) number("density", mask.density, lead());
+    if (mask.feather != 0.0) number("feather", mask.feather, lead());
+    if (!mask.paint.empty()) {
+        if (!lead()) out->push_back(',');
+        out->append("\"paint\":[");
+        for (std::size_t i = 0; i < mask.paint.size(); ++i) {
+            const MaskPaint& p = mask.paint[i];
+            if (i > 0) out->push_back(',');
+            out->append("{\"kind\":");
+            writeString(p.kind, out);
+            if (p.kind == "gradient") {
+                number("x0", p.x0);
+                number("y0", p.y0);
+                number("x1", p.x1);
+                number("y1", p.y1);
+                number("from", p.from);
+                number("to", p.to);
+            } else {
+                number("value", p.value);
+                number("radius", p.radius);
+                number("hardness", p.hardness);
+                number("opacity", p.opacity);
+                out->append(",\"points\":[");
+                for (std::size_t k = 0; k < p.points.size(); ++k) {
+                    if (k > 0) out->push_back(',');
+                    out->append(formatKotlinFloat(static_cast<float>(p.points[k])));
+                }
+                out->push_back(']');
+            }
+            out->push_back('}');
+        }
+        out->push_back(']');
+    }
+    out->push_back('}');
+}
+
 void serializeLayer(const Layer& layer, std::string* out) {
     out->append("{\"id\":");
     writeString(layer.id, out);
@@ -482,10 +584,24 @@ void serializeLayer(const Layer& layer, std::string* out) {
         }
         out->push_back(']');
     }
+    if (layer.clip) {
+        key("clip");
+        out->append("true");
+    }
+    if (layer.hasMask) {
+        key("mask");
+        serializeMask(layer.mask, out);
+    }
     out->push_back('}');
 }
 
 }  // namespace
+
+std::string serializeMaskJson(const LayerMask& mask) {
+    std::string out;
+    serializeMask(mask, &out);
+    return out;
+}
 
 std::string serializeGraph(const Graph& graph) {
     std::string out = "{\"schemaVersion\":" + std::to_string(graph.schemaVersion) + ",\"layers\":[";

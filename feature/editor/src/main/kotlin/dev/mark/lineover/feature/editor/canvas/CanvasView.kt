@@ -60,10 +60,24 @@ interface CanvasGestureListener {
 
     /** A two- or three-finger tap (no movement, quick): undo / redo per Settings → Gestures. */
     fun onMultiFingerTap(fingers: Int) = Unit
+
+    /** Mask painting (Stage 14): a stroke or gradient starts at image point ([u], [v]), 0..1. */
+    fun onPaintStart(
+        u: Float,
+        v: Float,
+    ) = Unit
+
+    fun onPaintMove(
+        u: Float,
+        v: Float,
+    ) = Unit
+
+    /** The finger lifted, or a second finger arrived (the stroke so far is kept). */
+    fun onPaintEnd() = Unit
 }
 
 /** What one finger does on the canvas while a tool needs the image itself. */
-enum class PickMode { None, Eyedropper, Targeted }
+enum class PickMode { None, Eyedropper, Targeted, Paint }
 
 /**
  * The photo canvas: a SurfaceView the native engine renders into on its own render
@@ -353,12 +367,25 @@ class CanvasView(
             oneFinger = OneFinger.Crop
             return
         }
+        if (beginPick(x, y)) return
+        oneFinger = OneFinger.Pending
+        downX = x
+        downY = y
+        lastX = x
+        selectSteps = 0
+        mainHandler.postDelayed(holdRunnable, HOLD_MILLIS)
+    }
+
+    /** A finger down in a pick mode; false in none (the canvas's own gestures). */
+    private fun beginPick(
+        x: Float,
+        y: Float,
+    ): Boolean {
         when (pickMode) {
             PickMode.Eyedropper -> {
                 oneFinger = OneFinger.Eyedropper
                 val p = toImage(x, y)
                 gestureListener?.onEyedropperMove(x, y, p[0], p[1])
-                return
             }
 
             PickMode.Targeted -> {
@@ -366,19 +393,21 @@ class CanvasView(
                 lastY = y
                 val p = toImage(x, y)
                 gestureListener?.onTargetedStart(p[0], p[1])
-                return
+            }
+
+            PickMode.Paint -> {
+                // Nothing is painted until the finger moves or lifts: a pinch that starts
+                // with one finger leaves no dab.
+                oneFinger = OneFinger.PaintPending
+                downX = x
+                downY = y
             }
 
             PickMode.None -> {
-                Unit
+                return false
             }
         }
-        oneFinger = OneFinger.Pending
-        downX = x
-        downY = y
-        lastX = x
-        selectSteps = 0
-        mainHandler.postDelayed(holdRunnable, HOLD_MILLIS)
+        return true
     }
 
     private fun startHold() {
@@ -416,7 +445,7 @@ class CanvasView(
                 lastX = x
             }
 
-            OneFinger.Eyedropper, OneFinger.Targeted, OneFinger.Crop -> {
+            OneFinger.Eyedropper, OneFinger.Targeted, OneFinger.Crop, OneFinger.PaintPending, OneFinger.Paint -> {
                 movePick(x, y)
             }
 
@@ -435,11 +464,27 @@ class CanvasView(
         }
     }
 
+    private fun movePaint(
+        x: Float,
+        y: Float,
+    ) {
+        if (oneFinger == OneFinger.PaintPending) {
+            if (hypot(x - downX, y - downY) <= touchSlop) return
+            oneFinger = OneFinger.Paint
+            val p = toImage(downX, downY)
+            gestureListener?.onPaintStart(p[0], p[1])
+        }
+        val q = toImage(x, y)
+        gestureListener?.onPaintMove(q[0], q[1])
+    }
+
     private fun movePick(
         x: Float,
         y: Float,
     ) {
-        if (oneFinger == OneFinger.Crop) {
+        if (oneFinger == OneFinger.PaintPending || oneFinger == OneFinger.Paint) {
+            movePaint(x, y)
+        } else if (oneFinger == OneFinger.Crop) {
             crop.move(x, y)
         } else if (oneFinger == OneFinger.Eyedropper) {
             val p = toImage(x, y)
@@ -472,6 +517,19 @@ class CanvasView(
                 gestureListener?.onTargetedEnd()
             }
 
+            OneFinger.PaintPending -> {
+                if (lifted) {
+                    // A tap: one dab.
+                    val p = toImage(x, y)
+                    gestureListener?.onPaintStart(p[0], p[1])
+                    gestureListener?.onPaintEnd()
+                }
+            }
+
+            OneFinger.Paint -> {
+                gestureListener?.onPaintEnd()
+            }
+
             OneFinger.Crop -> {
                 crop.end(x, y, lifted)
             }
@@ -492,7 +550,7 @@ class CanvasView(
         oneFinger = OneFinger.None
     }
 
-    private enum class OneFinger { None, Pending, Hold, Free, SwipeAdjust, SwipeSelect, Eyedropper, Targeted, Crop }
+    private enum class OneFinger { None, Pending, Hold, Free, SwipeAdjust, SwipeSelect, Eyedropper, Targeted, Crop, PaintPending, Paint }
 
     private fun move(event: MotionEvent) {
         if (twoFingers && event.pointerCount >= 2) {

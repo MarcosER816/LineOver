@@ -155,6 +155,16 @@ class EngineSession private constructor(
         }
     }
 
+    /** Stage 14: shows a layer's mask on the canvas (re-renders the composite here: not on the main thread). */
+    fun setMaskView(
+        layerId: String,
+        view: Int,
+    ) {
+        if (closed) return
+        native.setMaskView(layerId, view)
+        if (layered) native.renderComposite()
+    }
+
     /** Drops the export layer images once an export is done (the canvas keeps its own). */
     fun releaseFullLayerImages() = native.releaseFullLayerImages()
 

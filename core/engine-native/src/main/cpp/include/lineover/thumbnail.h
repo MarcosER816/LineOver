@@ -37,7 +37,10 @@ struct Graph;
 // [source], its geometry, the layers above it (Stage 13, preview layer images) and the
 // finishing over them all, at most [maxEdge] pixels on the long edge when there is a
 // geometry (else the source's size). The canvas shows this for layered documents.
+// [maskLayer] / [maskView] (layers::MaskView, Stage 14): the canvas shows that layer's mask
+// instead (grey) or over the composite (red overlay); the finishing is then left out.
 bool renderGraphImage(const ImageF32& source, const GuidedCoefficients* coefficients, const Graph& graph, ImageF32* out,
-                      const DetailFields* fields, int fullWidth, int maxEdge);
+                      const DetailFields* fields, int fullWidth, int maxEdge, const std::string* maskLayer = nullptr,
+                      int maskView = 0);
 
 }  // namespace lo

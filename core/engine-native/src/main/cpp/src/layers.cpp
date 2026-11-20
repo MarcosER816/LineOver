@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "lineover/color.h"
+#include "lineover/masks.h"
 
 namespace lo::layers {
 namespace {
@@ -230,9 +231,11 @@ void sampleLayer(const ImageF32& image, const Layer& layer, const Context& ctx, 
     }
 }
 
-void lerpSpace(const float* before, float* after, float k, const Context& ctx) {
-    if (k >= 1.f) return;
+// A pass-through group's opacity [k], times [weights] per pixel when the group is masked.
+void lerpSpace(const float* before, float* after, float amount, const std::vector<float>& weights, const Context& ctx) {
+    if (amount >= 1.f && weights.empty()) return;
     for (std::size_t p = 0; p < ctx.pixels(); ++p) {
+        const float k = weights.empty() ? amount : amount * weights[p];
         const float* b = before + 4 * p;
         float* a = after + 4 * p;
         for (int c = 0; c < 3; ++c) {
@@ -253,38 +256,156 @@ bool draws(const Layer& layer) {
     return layer.type == "raster" || layer.type == "smart" || layer.type == "adjustment";
 }
 
+// --- Masks (Stage 14) ------------------------------------------------------------------------
+
+struct CachedMask {
+    std::string key;
+    std::shared_ptr<const masks::MaskTiles> tiles;
+};
+std::mutex gMaskMutex;
+std::list<CachedMask> gMasks;  // most recent first
+constexpr std::size_t kMaskCache = 16;
+
+masks::MaskRegion maskRegion(const Context& ctx) {
+    const Region& r = *ctx.region;
+    masks::MaskRegion m;
+    m.originX = static_cast<int>(std::lround(r.originX));
+    m.originY = static_cast<int>(std::lround(r.originY));
+    m.width = r.width;
+    m.height = r.height;
+    m.docWidth = r.docWidth > 0 ? r.docWidth : m.originX + r.width;
+    m.docHeight = r.docHeight > 0 ? r.docHeight : m.originY + r.height;
+    m.scale = r.scale;
+    return m;
+}
+
+// The layer's final mask over the region (1 = shown), from R16F tiles; empty when it has
+// none or it is disabled. Rendered masks are cached (a slider that is not the mask's does not
+// re-render it).
+std::vector<float> maskWeights(const Layer& layer, const Context& ctx) {
+    if (!layer.hasMask || !layer.mask.enabled) return {};
+    const masks::MaskRegion region = maskRegion(ctx);
+    const std::string key = serializeMaskJson(layer.mask) + "@" + std::to_string(region.originX) + "," +
+                            std::to_string(region.originY) + "," + std::to_string(region.width) + "x" +
+                            std::to_string(region.height) + "/" + std::to_string(region.docWidth) + "x" +
+                            std::to_string(region.docHeight) + "*" + std::to_string(region.scale);
+    std::shared_ptr<const masks::MaskTiles> tiles;
+    {
+        std::lock_guard<std::mutex> lock(gMaskMutex);
+        for (auto it = gMasks.begin(); it != gMasks.end(); ++it) {
+            if (it->key == key) {
+                tiles = it->tiles;
+                gMasks.splice(gMasks.begin(), gMasks, it);
+                break;
+            }
+        }
+    }
+    if (!tiles) {
+        auto rendered = std::make_shared<masks::MaskTiles>();
+        masks::render(layer.mask, region, rendered.get());
+        tiles = rendered;
+        std::lock_guard<std::mutex> lock(gMaskMutex);
+        gMasks.push_front({key, tiles});
+        if (gMasks.size() > kMaskCache) gMasks.pop_back();
+    }
+    std::vector<float> out(ctx.pixels());
+    for (int j = 0; j < region.height; ++j)
+        for (int i = 0; i < region.width; ++i) out[static_cast<std::size_t>(j) * region.width + i] = tiles->at(i, j);
+    return out;
+}
+
+void multiply(std::vector<float>* weights, const std::vector<float>& by) {
+    if (by.empty()) return;
+    if (weights->empty()) {
+        *weights = by;
+        return;
+    }
+    for (std::size_t p = 0; p < weights->size(); ++p) (*weights)[p] *= by[p];
+}
+
+const Layer* findLayer(const std::vector<Layer>& layers, const std::string& id) {
+    for (const Layer& l : layers) {
+        if (l.id == id) return &l;
+        if (const Layer* c = findLayer(l.children, id)) return c;
+    }
+    return nullptr;
+}
+
+// Layers bottom to top. A clipped layer shows only where its base (the nearest unclipped layer
+// below it among its siblings) covers: the base's shape alpha x its mask x its opacity; a
+// hidden base hides it. Adjustment layers and pass-through groups cover everywhere.
 void renderLayers(const std::vector<Layer>& layers, float* buffer, const Context& ctx) {
     const std::size_t floats = ctx.pixels() * 4;
+    bool hasBase = false;
+    std::vector<float> base;  // coverage of the clipping base (empty = everywhere)
     for (const Layer& layer : layers) {
-        if (layer.type.empty() || layer.type == "background" || !layer.visible) continue;
+        if (layer.type.empty() || layer.type == "background") continue;
+        const bool clipped = layer.clip && hasBase;
+        if (!layer.visible) {
+            if (!clipped) {
+                base.assign(ctx.pixels(), 0.f);
+                hasBase = true;
+            }
+            continue;
+        }
         const float amount = static_cast<float>(layer.opacity / 100.0 * layer.fill / 100.0);
+        const std::vector<float> mask = maskWeights(layer, ctx);
+        std::vector<float> weight = mask;
+        if (clipped) {
+            if (base.empty()) {
+                if (weight.empty()) weight.assign(ctx.pixels(), 1.f);
+            } else {
+                multiply(&weight, base);
+            }
+        }
+        std::vector<float> shape;  // the layer's own alpha (empty = everywhere)
         if (layer.type == "group") {
             if (layer.isolated) {
                 std::vector<float> group(floats, 0.f);
                 renderLayers(layer.children, group.data(), ctx);
+                shape.resize(ctx.pixels());
+                for (std::size_t p = 0; p < ctx.pixels(); ++p) {
+                    shape[p] = group[4 * p + 3];
+                    if (!weight.empty()) group[4 * p + 3] *= weight[p];
+                }
                 compositeBuffer(buffer, group.data(), modeOf(layer), amount, ctx);
             } else {
                 std::vector<float> before(buffer, buffer + floats);
                 renderLayers(layer.children, buffer, ctx);
-                lerpSpace(before.data(), buffer, amount, ctx);
+                lerpSpace(before.data(), buffer, amount, weight, ctx);
             }
         } else if (layer.type == "raster" || layer.type == "smart") {
             auto image = findLayerImage(layer.source, ctx.full);
             if (!image || image->width <= 0) {
                 report(ctx.skipped, "layer:" + layer.source);
-                continue;
+                shape.assign(ctx.pixels(), 0.f);
+            } else {
+                if (layer.type == "smart") image = smartImage(image, layer, ctx.skipped);
+                std::vector<float> src(floats);
+                sampleLayer(*image, layer, ctx, src.data());
+                shape.resize(ctx.pixels());
+                for (std::size_t p = 0; p < ctx.pixels(); ++p) {
+                    shape[p] = src[4 * p + 3];
+                    if (!weight.empty()) src[4 * p + 3] *= weight[p];
+                }
+                compositeBuffer(buffer, src.data(), modeOf(layer), amount, ctx);
             }
-            if (layer.type == "smart") image = smartImage(image, layer, ctx.skipped);
-            std::vector<float> src(floats);
-            sampleLayer(*image, layer, ctx, src.data());
-            compositeBuffer(buffer, src.data(), modeOf(layer), amount, ctx);
         } else if (layer.type == "adjustment") {
             std::vector<float> src(buffer, buffer + floats);
             buildPointOps(layer.ops, ctx.skipped)->cpuRef(src.data(), src.data(), ctx.pixels());
-            for (std::size_t p = 0; p < ctx.pixels(); ++p) src[4 * p + 3] = 1.f;
+            for (std::size_t p = 0; p < ctx.pixels(); ++p) src[4 * p + 3] = weight.empty() ? 1.f : weight[p];
             compositeBuffer(buffer, src.data(), modeOf(layer), amount, ctx);
+        } else {
+            shape.assign(ctx.pixels(), 0.f);  // "text" / "shape": Stages 23 / 24
         }
-        // "text" / "shape": Stages 23 / 24.
+        if (!clipped) {
+            const float opacity = static_cast<float>(layer.opacity / 100.0);
+            base = shape;
+            multiply(&base, mask);
+            if (base.empty()) base.assign(ctx.pixels(), 1.f);
+            for (float& v : base) v *= opacity;
+            hasBase = true;
+        }
     }
 }
 
@@ -385,6 +506,28 @@ void compositeLayers(const Graph& graph, float* rgba, const Region& region, bool
     if (region.width <= 0 || region.height <= 0 || !hasLayers(graph)) return;
     Context ctx{&region, graph.blendSpace != "linear", full, skipped};
     renderLayers(graph.layers, rgba, ctx);
+}
+
+void showMask(const Graph& graph, const std::string& layerId, MaskView view, float* rgba, const Region& region) {
+    if (view == MaskView::None || region.width <= 0 || region.height <= 0) return;
+    const Layer* layer = findLayer(graph.layers, layerId);
+    if (layer == nullptr) return;
+    Context ctx{&region, true, false, nullptr};
+    const std::vector<float> m = maskWeights(*layer, ctx);
+    if (m.empty()) return;
+    // Rubylith: Photoshop's 50 % red where the mask hides.
+    constexpr float kRed[3] = {1.f, 0.f, 0.f};
+    for (std::size_t p = 0; p < ctx.pixels(); ++p) {
+        float* o = rgba + 4 * p;
+        if (view == MaskView::MaskOnly) {
+            const float g = color::srgbEotf(std::clamp(m[p], 0.f, 1.f));
+            o[0] = o[1] = o[2] = g;
+        } else {
+            const float k = 0.5f * (1.f - std::clamp(m[p], 0.f, 1.f));
+            for (int c = 0; c < 3; ++c) o[c] = color::srgbEotf(color::srgbOetf(o[c]) + k * (kRed[c] - color::srgbOetf(o[c])));
+        }
+        o[3] = 1.f;
+    }
 }
 
 }  // namespace lo::layers

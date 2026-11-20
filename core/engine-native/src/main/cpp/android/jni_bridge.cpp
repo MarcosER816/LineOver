@@ -327,6 +327,12 @@ JNIEXPORT void LO_NATIVE(nativeUnregisterLayerImage)(JNIEnv* env, jobject, jstri
 
 JNIEXPORT void LO_NATIVE(nativeReleaseFullLayerImages)(JNIEnv*, jobject) { lo_release_full_layer_images(); }
 
+JNIEXPORT void LO_NATIVE(nativeSetMaskView)(JNIEnv* env, jobject, jlong engine, jstring layerId, jint view) {
+    const char* text = env->GetStringUTFChars(layerId, nullptr);
+    lo_engine_set_mask_view(handle(engine), text, view);
+    env->ReleaseStringUTFChars(layerId, text);
+}
+
 JNIEXPORT void LO_NATIVE(nativeRenderComposite)(JNIEnv*, jobject, jlong engine) { lo_engine_render_composite(handle(engine)); }
 
 JNIEXPORT void LO_NATIVE(nativeUnregisterLut)(JNIEnv* env, jobject, jstring id) {

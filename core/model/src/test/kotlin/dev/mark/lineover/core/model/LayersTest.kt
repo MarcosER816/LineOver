@@ -215,4 +215,79 @@ class LayersTest {
         assertFalse(AdjustmentKind.isPointOp(OpParams.Clarity(10f)))
         assertTrue(AdjustmentKind.isPointOp(OpParams.Invert))
     }
+
+    private fun fixture(name: String): String {
+        var dir: File? = File(System.getProperty("user.dir").orEmpty()).absoluteFile
+        while (dir != null && !File(dir, "settings.gradle.kts").isFile) dir = dir.parentFile
+        return File(requireNotNull(dir), "testdata/graph/$name").readText().trimEnd()
+    }
+
+    /** Stage 14: masks and clipping, byte for byte as the engine's mask_test writes them. */
+    @Test
+    fun masksEncodeAsTheSharedFixture() {
+        val masked =
+            EditGraph(
+                layers =
+                    listOf(
+                        Layer("background"),
+                        Layer(
+                            "a1",
+                            ops = listOf(OpParams.Exposure(1f)),
+                            type = LayerType.Adjustment,
+                            name = "Sky",
+                            mask =
+                                LayerMask(
+                                    inverted = true,
+                                    density = 80f,
+                                    feather = 12.5f,
+                                    paint =
+                                        listOf(
+                                            MaskPaint.Gradient(0f, 100f, 0f, 900f, 1f, 0f),
+                                            MaskPaint.Stroke(0f, 40f, 0.5f, 100f, listOf(10f, 20f, 30.5f, 40.25f)),
+                                        ),
+                                ),
+                        ),
+                        Layer(
+                            "c1",
+                            type = LayerType.Raster,
+                            name = "Colour",
+                            blend = BlendMode.Color,
+                            source = "abc.jpg",
+                            sourceSize = listOf(400f, 300f),
+                            clip = true,
+                            mask = LayerMask(base = 0f, enabled = false),
+                        ),
+                    ),
+            )
+        val text = fixture("edit_graph_masks.json")
+        assertEquals(text, EditGraphJson.encode(masked))
+        assertEquals(masked, EditGraphJson.decode(text))
+    }
+
+    @Test
+    fun clippingNeedsALayerBelowAndHistoryNamesMasks() {
+        assertFalse(LayerMath.canClip(three, "a")) // only the photo below
+        assertTrue(LayerMath.canClip(three, "b"))
+        val clipped = LayerMath.update(three, "c") { it.copy(clip = true) }
+        assertEquals("b", LayerMath.clippingBase(clipped, "c")?.id)
+        assertEquals("Clip c", HistoryLabels.describe(three, clipped).label)
+        val masked = LayerMath.update(three, "b") { it.copy(mask = LayerMask()) }
+        assertEquals("b: Add mask", HistoryLabels.describe(three, masked).label)
+        val stroke = MaskPaint.Stroke(0f, 30f, 0.5f, 100f, listOf(1f, 2f))
+        val painted = LayerMath.update(masked, "b") { it.copy(mask = it.mask!!.with(stroke)) }
+        val grown = LayerMath.update(painted, "b") { it.copy(mask = it.mask!!.withLast(stroke.plus(5f, 6f))) }
+        // A stroke growing under the finger keeps the key of the stroke: one History step.
+        assertEquals(HistoryLabels.describe(masked, painted).key, HistoryLabels.describe(masked, grown).key)
+        assertEquals("b: Paint mask", HistoryLabels.describe(masked, grown).label)
+        val feathered = LayerMath.update(masked, "b") { it.copy(mask = it.mask!!.copy(feather = 12f)) }
+        assertEquals("b: Mask feather 12 px", HistoryLabels.describe(masked, feathered).label)
+        val gradient = MaskPaint.Gradient(0f, 0f, 1f, 1f, 1f, 0f)
+        assertEquals(
+            listOf<MaskPaint>(gradient),
+            painted.layers[2]
+                .mask!!
+                .with(gradient)
+                .paint,
+        )
+    }
 }

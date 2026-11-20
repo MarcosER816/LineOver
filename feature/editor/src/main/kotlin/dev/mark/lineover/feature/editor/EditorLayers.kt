@@ -6,13 +6,17 @@ import dev.mark.lineover.core.model.BlendMode
 import dev.mark.lineover.core.model.BlendSpace
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.Layer
+import dev.mark.lineover.core.model.LayerMask
 import dev.mark.lineover.core.model.LayerMath
 import dev.mark.lineover.core.model.LayerPlacement
 import dev.mark.lineover.core.model.LayerType
+import dev.mark.lineover.core.model.MaskPaint
+import dev.mark.lineover.feature.editor.canvas.PickMode
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.hypot
 
 /** What the Layers panel does (Stage 13). Continuous changes end with [EditorIntent.EndEdit]. */
 sealed interface LayerAction {
@@ -87,6 +91,12 @@ sealed interface LayerAction {
         val index: Int,
     ) : LayerAction
 
+    /** The undo of a mask delete. */
+    class RestoreMask(
+        val id: String,
+        val mask: LayerMask,
+    ) : LayerAction
+
     data class Duplicate(
         val id: String,
     ) : LayerAction
@@ -120,7 +130,125 @@ sealed interface LayerAction {
     data class SetBlendSpace(
         val space: BlendSpace,
     ) : LayerAction
+
+    // --- Stage 14: masks and clipping ---
+
+    /** A mask on [id]: white (reveal all) or black (hide all); it becomes the target. */
+    data class AddMask(
+        val id: String,
+        val black: Boolean,
+    ) : LayerAction
+
+    data class DeleteMask(
+        val id: String,
+    ) : LayerAction
+
+    /** Long-press on the mask thumbnail. */
+    data class SetMaskEnabled(
+        val id: String,
+        val enabled: Boolean,
+    ) : LayerAction
+
+    /** Tap on the mask thumbnail ([mask] true) or on the layer ([mask] false). */
+    data class TargetMask(
+        val id: String,
+        val mask: Boolean,
+    ) : LayerAction
+
+    data class InvertMask(
+        val id: String,
+    ) : LayerAction
+
+    /** The mask cleared to white or black (its paint removed). */
+    data class FillMask(
+        val id: String,
+        val white: Boolean,
+    ) : LayerAction
+
+    data class SetMaskDensity(
+        val id: String,
+        val value: Float,
+    ) : LayerAction
+
+    data class SetMaskFeather(
+        val id: String,
+        val value: Float,
+    ) : LayerAction
+
+    data class SetClip(
+        val id: String,
+        val clip: Boolean,
+    ) : LayerAction
+
+    data class SetBrush(
+        val brush: MaskBrush,
+    ) : LayerAction
+
+    /** Paint white <-> paint black. */
+    data object SwapPaint : LayerAction
+
+    data class SetMaskView(
+        val view: MaskView,
+    ) : LayerAction
+
+    /** The canvas, while the mask is targeted: image points 0..1. */
+    data class PaintStart(
+        val u: Float,
+        val v: Float,
+    ) : LayerAction
+
+    data class PaintMove(
+        val u: Float,
+        val v: Float,
+    ) : LayerAction
+
+    data object PaintEnd : LayerAction
 }
+
+/** What a finger on the canvas does to a targeted mask. */
+enum class MaskTool { Brush, Gradient }
+
+/** How the canvas shows the targeted mask (the engine's layers::MaskView). */
+enum class MaskView(
+    val engine: Int,
+) {
+    None(0),
+    MaskOnly(1),
+    Overlay(2),
+}
+
+/**
+ * The simple round brush of Stage 14 (the full engine is Stage 18): [radius] in document pixels
+ * (0 = 4 % of the long edge), [hardness] and [opacity] in %, [white] paints white (reveal) or
+ * black (hide); the gradient goes from that colour to the other.
+ */
+data class MaskBrush(
+    val tool: MaskTool = MaskTool.Brush,
+    val radius: Float = 0f,
+    val hardness: Float = DEFAULT_HARDNESS,
+    val opacity: Float = LayerMask.FULL,
+    val white: Boolean = false,
+) {
+    fun radiusFor(longEdge: Int): Float = if (radius > 0f) radius else (longEdge * AUTO_RADIUS).coerceAtLeast(1f)
+
+    companion object {
+        const val DEFAULT_HARDNESS = 50f
+        const val AUTO_RADIUS = 0.04f
+        const val MAX_RADIUS = 2000f
+    }
+}
+
+/** The layer whose mask one finger paints: the selected layer, its mask targeted, the Layers panel open. */
+internal val EditorState.paintedMask: Layer?
+    get() = selectedLayer?.takeIf { maskTarget && it.mask != null && panel == EditorPanel.Layers }
+
+/** What one finger does on the canvas: paint the targeted mask, or the tools' own pick modes. */
+internal val EditorState.canvasPickMode: PickMode
+    get() = if (paintedMask != null) PickMode.Paint else pickMode
+
+/** The mask view the engine draws (only while the mask is targeted). */
+internal val EditorState.engineMaskView: Pair<String, MaskView>?
+    get() = paintedMask?.let { layer -> (layer.id to maskView).takeIf { maskView != MaskView.None } }
 
 /** The selected layer (null = the photo, or a layer that no longer exists). */
 internal val EditorState.selectedLayer: Layer?
@@ -156,9 +284,18 @@ internal class EditorLayersActions(
 
         /** Sends the canvas graph to the engine again (a layer image it names was just registered). */
         fun resubmit()
+
+        fun setState(block: EditorState.() -> EditorState)
+
+        /** Closes the open History step (a stroke is one step). */
+        fun endEdit()
     }
 
     private val registered = HashSet<String>()
+
+    private companion object {
+        const val MIN_SPACING = 0.1f
+    }
 
     private fun state() = host.state
 
@@ -173,7 +310,7 @@ internal class EditorLayersActions(
             is LayerAction.Import -> import(action)
             is LayerAction.AddAdjustment -> addAdjustment(action.kind)
             is LayerAction.AddGroup -> add(Layer(LayerMath.newId(), type = LayerType.Group, name = "Group"), "Add group")
-            is LayerAction.Select -> reduce(null) { copy(selectedLayerId = action.id, compareGraph = null) }
+            is LayerAction.Select -> reduce(null) { copy(selectedLayerId = action.id, maskTarget = false, compareGraph = null) }
             is LayerAction.SetVisible -> change(action.id, null, ignoreLock = true) { it.copy(visible = action.visible) }
             is LayerAction.SetLocked -> change(action.id, null, ignoreLock = true) { it.copy(locked = action.locked) }
             is LayerAction.SetIsolated -> change(action.id, null) { it.copy(isolated = action.isolated) }
@@ -184,6 +321,7 @@ internal class EditorLayersActions(
             is LayerAction.Move -> move(action)
             is LayerAction.Delete -> delete(action.id)
             is LayerAction.Restore -> restore(action)
+            is LayerAction.RestoreMask -> restoreMask(action)
             is LayerAction.Duplicate -> structure(action.id, "Duplicate") { g -> LayerMath.duplicate(g, action.id) }
             is LayerAction.MergeDown -> mergeDown(action.id)
             is LayerAction.Flatten -> flatten()
@@ -192,7 +330,198 @@ internal class EditorLayersActions(
             is LayerAction.SetAdjustment -> change(action.id, null) { it.copy(ops = action.kind.withValue(it.ops, action.value)) }
             is LayerAction.SetPlacement -> setPlacement(action)
             is LayerAction.SetBlendSpace -> setBlendSpace(action.space)
+            else -> onMaskAction(action)
         }
+    }
+
+    @Suppress("CyclomaticComplexMethod") // a table: one branch per mask action
+    private fun onMaskAction(action: LayerAction) {
+        when (action) {
+            is LayerAction.AddMask -> {
+                addMask(action)
+            }
+
+            is LayerAction.DeleteMask -> {
+                deleteMask(action.id)
+            }
+
+            is LayerAction.SetMaskEnabled -> {
+                mask(action.id, ignoreLock = true) { it.copy(enabled = action.enabled) }
+            }
+
+            is LayerAction.TargetMask -> {
+                reduce(null) { copy(selectedLayerId = action.id, maskTarget = action.mask, compareGraph = null) }
+            }
+
+            is LayerAction.InvertMask -> {
+                mask(action.id) { it.copy(inverted = !it.inverted) }
+            }
+
+            is LayerAction.FillMask -> {
+                mask(
+                    action.id,
+                ) { it.copy(base = if (action.white) LayerMask.WHITE else LayerMask.BLACK, paint = emptyList()) }
+            }
+
+            is LayerAction.SetMaskDensity -> {
+                mask(action.id) { it.copy(density = action.value.coerceIn(0f, LayerMask.FULL)) }
+            }
+
+            is LayerAction.SetMaskFeather -> {
+                mask(action.id) { it.copy(feather = action.value.coerceIn(0f, LayerMask.MAX_FEATHER)) }
+            }
+
+            is LayerAction.SetClip -> {
+                setClip(action)
+            }
+
+            is LayerAction.SetBrush -> {
+                host.setState { copy(maskBrush = action.brush) }
+            }
+
+            is LayerAction.SwapPaint -> {
+                host.setState { copy(maskBrush = maskBrush.copy(white = !maskBrush.white)) }
+            }
+
+            is LayerAction.SetMaskView -> {
+                reduce(null) { copy(maskView = action.view) }
+            }
+
+            is LayerAction.PaintStart -> {
+                paintStart(action.u, action.v)
+            }
+
+            is LayerAction.PaintMove -> {
+                paintMove(action.u, action.v)
+            }
+
+            is LayerAction.PaintEnd -> {
+                host.endEdit()
+            }
+
+            else -> {
+                Unit
+            }
+        }
+    }
+
+    /** [f] on [id]'s mask (refused while the layer is locked, except switching it on or off). */
+    private fun mask(
+        id: String,
+        ignoreLock: Boolean = false,
+        f: (LayerMask) -> LayerMask,
+    ) {
+        val layer = LayerMath.find(state().graph, id)
+        if (layer?.mask == null) return
+        change(id, null, ignoreLock) { it.copy(mask = it.mask?.let(f)) }
+    }
+
+    private fun addMask(action: LayerAction.AddMask) {
+        val layer = LayerMath.find(state().graph, action.id) ?: return
+        if (layer.mask != null) return
+        if (layer.locked) return host.message("${nameOf(layer)} is locked")
+        val mask = LayerMask(base = if (action.black) LayerMask.BLACK else LayerMask.WHITE)
+        reduce("${nameOf(layer)}: Add mask") {
+            copy(graph = LayerMath.update(graph, action.id) { it.copy(mask = mask) }, selectedLayerId = action.id, maskTarget = true)
+        }
+    }
+
+    private fun deleteMask(id: String) {
+        val layer = LayerMath.find(state().graph, id) ?: return
+        val mask = layer.mask ?: return
+        if (layer.locked) return host.message("${nameOf(layer)} is locked")
+        reduce("${nameOf(layer)}: Delete mask") { copy(graph = LayerMath.update(graph, id) { it.copy(mask = null) }, maskTarget = false) }
+        host.undoable("Deleted the mask of ${nameOf(layer)}", EditorIntent.Layers(LayerAction.RestoreMask(id, mask)))
+    }
+
+    private fun setClip(action: LayerAction.SetClip) {
+        if (action.clip && !LayerMath.canClip(state().graph, action.id)) {
+            return host.message("A clipped layer needs a layer below it (not the photo)")
+        }
+        change(action.id, null) { it.copy(clip = action.clip) }
+    }
+
+    /** The document point of image point (u, v), or null before the photo is open. */
+    private fun docPoint(
+        u: Float,
+        v: Float,
+    ): Pair<Float, Float>? {
+        val (w, h) = state().canvasSize ?: return null
+        return u * w to v * h
+    }
+
+    private fun paintStart(
+        u: Float,
+        v: Float,
+    ) {
+        val s = state()
+        val layer = s.paintedMask
+        val point = docPoint(u, v)
+        val size = s.canvasSize
+        if (layer == null || point == null || size == null) return
+        if (layer.locked) return host.message("${nameOf(layer)} is locked")
+        val (x, y) = point
+        val brush = s.maskBrush
+        val value = if (brush.white) LayerMask.WHITE else LayerMask.BLACK
+        val op =
+            when (brush.tool) {
+                MaskTool.Brush -> {
+                    val radius = brush.radiusFor(maxOf(size.first, size.second))
+                    MaskPaint.Stroke(value, radius, brush.hardness / LayerMask.FULL, brush.opacity, listOf(x, y))
+                }
+
+                MaskTool.Gradient -> {
+                    MaskPaint.Gradient(x, y, x, y, value, 1f - value)
+                }
+            }
+        host.endEdit()
+        reduce(null) { copy(graph = LayerMath.update(graph, layer.id) { it.copy(mask = it.mask?.with(op)) }) }
+    }
+
+    private fun paintMove(
+        u: Float,
+        v: Float,
+    ) {
+        val layer = state().paintedMask?.takeUnless { it.locked }
+        val point = docPoint(u, v)
+        val next = if (layer != null && point != null) grown(layer.mask?.paint?.lastOrNull(), point) else null
+        if (layer == null || next == null) return
+        reduce(null) { copy(graph = LayerMath.update(graph, layer.id) { it.copy(mask = it.mask?.withLast(next)) }) }
+    }
+
+    /** The operation being painted, reaching [point]; null when nothing changes. */
+    private fun grown(
+        last: MaskPaint?,
+        point: Pair<Float, Float>,
+    ): MaskPaint? {
+        val (x, y) = point
+        return when (last) {
+            is MaskPaint.Stroke -> {
+                val n = last.points.size
+                // Points closer than a tenth of the radius add nothing visible.
+                val close = n >= 2 && hypot(x - last.points[n - 2], y - last.points[n - 1]) < last.radius * MIN_SPACING
+                if (close) null else last.plus(x, y)
+            }
+
+            is MaskPaint.Gradient -> {
+                last.copy(x1 = x, y1 = y)
+            }
+
+            null -> {
+                null
+            }
+        }
+    }
+
+    /** After a state change: the canvas shows the targeted mask as asked (grey or red overlay). */
+    fun afterSync(
+        before: EditorState?,
+        after: EditorState,
+    ) {
+        val view = after.engineMaskView
+        if (before != null && before.engineMaskView == view) return
+        val canvas = after.canvas ?: return
+        scope.launch { withContext(dispatcher) { canvas.setMaskView(view?.first, view?.second?.engine ?: 0) } }
     }
 
     private fun nameOf(layer: Layer) = layer.name.ifBlank { layer.type.label }
@@ -291,6 +620,12 @@ internal class EditorLayersActions(
             copy(graph = LayerMath.remove(graph, id), selectedLayerId = selectedLayerId.takeIf { it != id }, compareGraph = null)
         }
         host.undoable("Deleted ${nameOf(layer)}", EditorIntent.Layers(LayerAction.Restore(layer, parent, index)))
+    }
+
+    private fun restoreMask(action: LayerAction.RestoreMask) {
+        val layer = LayerMath.find(state().graph, action.id) ?: return
+        if (layer.mask != null) return
+        reduce("${nameOf(layer)}: Restore mask") { copy(graph = LayerMath.update(graph, action.id) { it.copy(mask = action.mask) }) }
     }
 
     private fun restore(action: LayerAction.Restore) {

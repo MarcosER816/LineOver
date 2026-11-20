@@ -104,6 +104,8 @@ public:
     // Stage 13: for a graph with layers, renders the whole document (background, geometry,
     // layers, finishing) on the CPU at preview size and shows it on the canvas instead of
     // the photo and its tiles; clears it otherwise. Any thread but the render thread.
+    // Stage 14: the canvas shows layer [layerId]'s mask (layers::MaskView); the next renderComposite applies it.
+    void setMaskView(const std::string& layerId, int view);
     void renderComposite();
     // The average working-space RGB of the 5 x 5 preview pixels around image point (u, v)
     // (0..1, oriented image), run through the ops that come before the first op of type
@@ -257,6 +259,8 @@ private:
     std::shared_ptr<const ImageF32> compositeSource_;
     std::vector<float> pendingComposite_;
     int pendingCompositeW_ = 0, pendingCompositeH_ = 0;
+    std::string maskViewLayer_;
+    int maskView_ = 0;
     bool compositeChanged_ = false;
     std::shared_ptr<const ImageF32> analysisSource_;    // the preview box-filtered to <= 1024 px
     bool hasGeometry_ = false;

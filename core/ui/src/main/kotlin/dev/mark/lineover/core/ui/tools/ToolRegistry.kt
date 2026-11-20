@@ -879,8 +879,8 @@ private class ToolListBuilder {
         @DrawableRes icon: Int,
         vararg synonyms: String,
     ) {
-        // Stage 13 built the layer list, its add menu and the layer properties.
-        val done = stage == LAYERS_STAGE
+        // Stage 13 built the layer list, its add menu and the layer properties; Stage 14 the masks.
+        val done = stage == LAYERS_STAGE || stage == MASKS_STAGE
         tools +=
             ToolSpec(id, name, null, ToolPlace.LayersPanel, "panel/layers/$slot", stage, panelType, icon, synonyms.toList(), done = done)
     }
@@ -900,5 +900,6 @@ private class ToolListBuilder {
     private companion object {
         const val EXPORT_STAGE = 12
         const val LAYERS_STAGE = 13
+        const val MASKS_STAGE = 14
     }
 }
