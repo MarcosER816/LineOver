@@ -18,7 +18,6 @@ import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.ExportFormat
 import dev.mark.lineover.core.model.ExportSettings
 import dev.mark.lineover.core.model.LayerMath
-import dev.mark.lineover.core.model.MaskPaint
 import dev.mark.lineover.core.model.OpParams
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -247,9 +246,7 @@ class ExportRunner(
             LayerMath
                 .flatten(graph)
                 .mapNotNull { it.first.mask }
-                .flatMap { it.paint }
-                .filterIsInstance<MaskPaint.Raster>()
-                .flatMap { listOfNotNull(it.source, it.guide) } // Stage 16: and its colour guide
+                .flatMap { it.rasterNames } // Stage 16: and colour guides; Stage 17: model and depth masks
                 .toSet()
         for (name in names) {
             val raster = store?.load(name)

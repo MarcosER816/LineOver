@@ -36,6 +36,7 @@ struct MaskPaint {
     double hardness = 1.0;   // 0..1: where the falloff starts
     double opacity = 100.0;  // percent
     std::vector<double> points;
+    std::vector<double> color;  // Stage 17, a local brush's auto-mask: OKLab x 100 under its first point
     // gradient: replaces the mask with a linear ramp from (x0, y0) to (x1, y1)
     double x0 = 0.0, y0 = 0.0, x1 = 0.0, y1 = 0.0;
     double from = 1.0, to = 0.0;
@@ -77,6 +78,31 @@ inline bool operator!=(const SelectionOp& a, const SelectionOp& b) { return !(a 
 // {"ops":[...]} (Kotlin's Selection) into [out].
 bool parseSelection(const std::string& json, std::vector<SelectionOp>* out, std::string* error);
 
+// A local mask's component (Stage 17; masks.h evaluates them, tools/golden/local_mask_reference.py
+// is the reference). Coordinates in document px. Combined in order from 0 into the mask group:
+// add max(M, A), subtract min(M, 1 - A), intersect min(M, A); [invert] flips A first.
+struct MaskComponent {
+    std::string kind;          // linear, radial, brush, color_range, luminance_range, depth_range, raster
+    std::string mode = "add";  // add, subtract, intersect
+    bool invert = false;
+    // linear: 1 at (x0, y0) to 0 at (x1, y1)
+    double x0 = 0.0, y0 = 0.0, x1 = 0.0, y1 = 0.0;
+    // radial: an ellipse at (cx, cy), radii (rx, ry), rotated by angle degrees, feather 0..100
+    double cx = 0.0, cy = 0.0, rx = 0.0, ry = 0.0, angle = 0.0, feather = 50.0;
+    // brush: round-brush strokes (MaskPaint "stroke"; with autoMask each carries its colour)
+    std::vector<MaskPaint> strokes;
+    bool autoMask = false;
+    // color_range: OKLab x 100 triples and the fuzziness (delta E)
+    std::vector<double> colors;
+    double fuzziness = 20.0;
+    // luminance_range / depth_range: the ramp lo..hi with smooth edges (0..1)
+    double lo = 0.0, hi = 1.0, smooth = 0.0;
+    // depth_range / raster: a registered raster covering the docWidth x docHeight document
+    // (width x height pixels), optionally with colour guide planes (MaskPaint::guide)
+    std::string source, guide, tool;  // tool: what made a raster (subject, sky, background, people, depth)
+    double width = 0.0, height = 0.0, docWidth = 0.0, docHeight = 0.0;
+};
+
 struct LayerMask {
     double base = 1.0;  // 1 = white (reveal all), 0 = black (hide all)
     bool enabled = true;
@@ -84,6 +110,8 @@ struct LayerMask {
     double density = 100.0;  // percent
     double feather = 0.0;    // Gaussian sigma, document px
     std::vector<MaskPaint> paint;
+    // Stage 17: a mask group; when not empty it is the raw mask (base and paint are ignored).
+    std::vector<MaskComponent> components;
 };
 
 struct Layer {
@@ -121,6 +149,11 @@ bool isPointOp(const std::string& op);
 
 // [ops] as an OpList of point ops; others are skipped and reported.
 std::unique_ptr<OpList> buildPointOps(const std::vector<OpParams>& ops, std::string* skipped);
+
+// Stage 17: an adjustment layer's ops, which may read neighbours and image-wide fields (local
+// masks: Texture, Clarity, Dehaze, Sharpening, Noise): every op but geometry and the finishing.
+bool isLayerOp(const std::string& op);
+std::unique_ptr<OpList> buildLayerOps(const std::vector<OpParams>& ops, std::string* skipped);
 
 // Returns false (and sets `error`) on malformed JSON or a wrong shape.
 bool parseGraph(const std::string& json, Graph* out, std::string* error);

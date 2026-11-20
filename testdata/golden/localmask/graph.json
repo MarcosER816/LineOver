@@ -1,0 +1,279 @@
+{
+ "schemaVersion": 1,
+ "layers": [
+  {
+   "id": "bg",
+   "ops": []
+  },
+  {
+   "id": "linear",
+   "type": "adjustment",
+   "ops": [],
+   "mask": {
+    "base": 0.0,
+    "components": [
+     {
+      "kind": "linear",
+      "x0": 20.3,
+      "y0": 10.7,
+      "x1": 90.2,
+      "y1": 70.4
+     }
+    ]
+   }
+  },
+  {
+   "id": "radial",
+   "type": "adjustment",
+   "ops": [],
+   "mask": {
+    "base": 0.0,
+    "components": [
+     {
+      "kind": "radial",
+      "cx": 60.4,
+      "cy": 45.3,
+      "rx": 40.2,
+      "ry": 25.6,
+      "angle": 30.0,
+      "feather": 60.0
+     }
+    ]
+   }
+  },
+  {
+   "id": "radial_inverted",
+   "type": "adjustment",
+   "ops": [],
+   "mask": {
+    "base": 0.0,
+    "components": [
+     {
+      "kind": "radial",
+      "cx": 60.4,
+      "cy": 45.3,
+      "rx": 40.2,
+      "ry": 25.6,
+      "angle": -15.0,
+      "feather": 35.0,
+      "invert": true
+     }
+    ]
+   }
+  },
+  {
+   "id": "brush",
+   "type": "adjustment",
+   "ops": [],
+   "mask": {
+    "base": 0.0,
+    "components": [
+     {
+      "kind": "brush",
+      "strokes": [
+       {
+        "points": [
+         20.3,
+         20.6,
+         60.4,
+         30.2,
+         100.7,
+         25.1
+        ],
+        "radius": 9.3,
+        "hardness": 0.5,
+        "opacity": 80.0,
+        "value": 1.0
+       },
+       {
+        "points": [
+         55.2,
+         22.4,
+         65.1,
+         32.6
+        ],
+        "radius": 5.2,
+        "hardness": 1.0,
+        "opacity": 100.0,
+        "value": 0.0
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "brush_auto",
+   "type": "adjustment",
+   "ops": [],
+   "mask": {
+    "base": 0.0,
+    "components": [
+     {
+      "kind": "brush",
+      "autoMask": true,
+      "strokes": [
+       {
+        "points": [
+         30.3,
+         50.6,
+         70.4,
+         52.2
+        ],
+        "radius": 12.3,
+        "hardness": 0.3,
+        "opacity": 100.0,
+        "value": 1.0,
+        "color": [
+         61.48,
+         20.95,
+         9.09
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "color_range",
+   "type": "adjustment",
+   "ops": [],
+   "mask": {
+    "base": 0.0,
+    "components": [
+     {
+      "kind": "color_range",
+      "fuzziness": 25.0,
+      "colors": [
+       85.15,
+       -1.1,
+       -4.73,
+       27.14,
+       -0.0,
+       -0.0
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "luminance_range",
+   "type": "adjustment",
+   "ops": [],
+   "mask": {
+    "base": 0.0,
+    "components": [
+     {
+      "kind": "luminance_range",
+      "lo": 0.35,
+      "hi": 0.7,
+      "smooth": 0.12
+     }
+    ]
+   }
+  },
+  {
+   "id": "depth_range",
+   "type": "adjustment",
+   "ops": [],
+   "mask": {
+    "base": 0.0,
+    "components": [
+     {
+      "kind": "depth_range",
+      "source": "depth",
+      "lo": 0.55,
+      "hi": 1.0,
+      "smooth": 0.15,
+      "docWidth": 128.0,
+      "docHeight": 96.0
+     }
+    ]
+   }
+  },
+  {
+   "id": "raster",
+   "type": "adjustment",
+   "ops": [],
+   "mask": {
+    "base": 0.0,
+    "components": [
+     {
+      "kind": "raster",
+      "source": "subject",
+      "docWidth": 128.0,
+      "docHeight": 96.0
+     }
+    ]
+   }
+  },
+  {
+   "id": "group",
+   "type": "adjustment",
+   "ops": [],
+   "mask": {
+    "base": 0.0,
+    "components": [
+     {
+      "kind": "linear",
+      "x0": 20.3,
+      "y0": 10.7,
+      "x1": 90.2,
+      "y1": 70.4,
+      "mode": "add"
+     },
+     {
+      "kind": "raster",
+      "source": "subject",
+      "docWidth": 128.0,
+      "docHeight": 96.0,
+      "mode": "intersect"
+     },
+     {
+      "kind": "radial",
+      "cx": 60.4,
+      "cy": 45.3,
+      "rx": 40.2,
+      "ry": 25.6,
+      "angle": 30.0,
+      "feather": 60.0,
+      "mode": "add"
+     },
+     {
+      "kind": "brush",
+      "strokes": [
+       {
+        "points": [
+         20.3,
+         20.6,
+         60.4,
+         30.2,
+         100.7,
+         25.1
+        ],
+        "radius": 9.3,
+        "hardness": 0.5,
+        "opacity": 80.0,
+        "value": 1.0
+       },
+       {
+        "points": [
+         55.2,
+         22.4,
+         65.1,
+         32.6
+        ],
+        "radius": 5.2,
+        "hardness": 1.0,
+        "opacity": 100.0,
+        "value": 0.0
+       }
+      ],
+      "mode": "subtract"
+     }
+    ]
+   }
+  }
+ ]
+}

@@ -10,6 +10,8 @@
 #include <vector>
 
 #include "lineover/color.h"
+#include "lineover/detail.h"
+#include "lineover/light.h"
 #include "lineover/masks.h"
 
 namespace lo::layers {
@@ -171,6 +173,11 @@ struct Context {
     bool full;
     std::string* skipped;
     const float* guide = nullptr;  // Stage 16: the background of an export region (guided mask rasters)
+    // Stage 17: the background (the photo, edited, in document space) that local mask components
+    // read, and the image-wide fields the adjustment layers' Highlights / Shadows, Clarity,
+    // Texture and Dehaze read (computed from it, document uv).
+    const float* image = nullptr;
+    std::shared_ptr<const LayerFields> fields = nullptr;
     double docX(int i) const { return (region->originX + i + 0.5) / region->scale; }
     double docY(int j) const { return (region->originY + j + 0.5) / region->scale; }
     std::size_t pixels() const { return static_cast<std::size_t>(region->width) * region->height; }
@@ -257,6 +264,104 @@ bool draws(const Layer& layer) {
     return layer.type == "raster" || layer.type == "smart" || layer.type == "adjustment";
 }
 
+// --- Adjustment layer ops (Stage 17) ----------------------------------------------------------
+
+bool readsFields(const std::string& op) {
+    return op == "highlights_shadows" || op == "clarity" || op == "texture" || op == "dehaze";
+}
+
+bool needsFields(const OpList& ops) {
+    return std::any_of(ops.ops().begin(), ops.ops().end(), [](const std::unique_ptr<Op>& op) {
+        if (op->isIdentity()) return false;
+        const OpType t = op->type();
+        return t == OpType::HighlightsShadows || t == OpType::Clarity || t == OpType::Texture || t == OpType::Dehaze;
+    });
+}
+
+// Where the region lies in the document (normalised), for ops that read image-wide fields.
+OpRegion opRegion(const Context& ctx) {
+    const Region& r = *ctx.region;
+    const double docW = r.docWidth > 0 ? r.docWidth : r.originX + r.width;
+    const double docH = r.docHeight > 0 ? r.docHeight : r.originY + r.height;
+    OpRegion o;
+    o.width = r.width;
+    o.height = r.height;
+    o.rect[0] = static_cast<float>(r.originX / docW);
+    o.rect[1] = static_cast<float>(r.originY / docH);
+    o.rect[2] = static_cast<float>(r.width / docW);
+    o.rect[3] = static_cast<float>(r.height / docH);
+    o.scale = static_cast<float>(r.scale);
+    if (ctx.fields) {
+        o.coefficients = &ctx.fields->coefficients;
+        o.fields = &ctx.fields->detail;
+    }
+    return o;
+}
+
+bool layersNeedFields(const std::vector<Layer>& layers) {
+    for (const Layer& l : layers) {
+        if (!l.visible) continue;
+        if (l.type == "adjustment" && std::any_of(l.ops.begin(), l.ops.end(), [](const OpParams& p) { return readsFields(p.op); })) {
+            if (needsFields(*buildLayerOps(l.ops, nullptr))) return true;
+        }
+        if (l.type == "group" && layersNeedFields(l.children)) return true;
+    }
+    return false;
+}
+
+bool layersReadImage(const std::vector<Layer>& layers) {
+    return std::any_of(layers.begin(), layers.end(), [](const Layer& l) {
+        return (l.hasMask && l.mask.enabled && masks::readsImage(l.mask)) || layersReadImage(l.children);
+    });
+}
+
+// The fields of whole-document backgrounds by graph (most recent first); an export region
+// (part of the document) uses the largest one made for its background.
+struct CachedFields {
+    std::string key;
+    std::shared_ptr<const LayerFields> fields = nullptr;
+};
+std::mutex gFieldsMutex;
+std::list<CachedFields> gFields;
+constexpr std::size_t kFieldsCache = 4;
+
+std::string backgroundKey(const Graph& graph) {
+    Graph g = graph;
+    g.layers.clear();
+    if (const Layer* bg = backgroundLayer(graph)) g.layers.push_back(*bg);
+    return serializeGraph(g);
+}
+
+std::shared_ptr<const LayerFields> documentFields(const Graph& graph, const float* rgba, const Region& region) {
+    const std::string key = backgroundKey(graph);
+    const bool whole = region.originX == 0.0 && region.originY == 0.0 &&
+                       (region.docWidth <= 0 || region.docWidth == region.width) &&
+                       (region.docHeight <= 0 || region.docHeight == region.height);
+    {
+        std::lock_guard<std::mutex> lock(gFieldsMutex);
+        std::shared_ptr<const LayerFields> best;
+        for (auto it = gFields.begin(); it != gFields.end(); ++it) {
+            if (it->key != key) continue;
+            const LayerFields& f = *it->fields;
+            if (whole && f.width == region.width && f.height == region.height) {
+                gFields.splice(gFields.begin(), gFields, it);
+                return gFields.front().fields;
+            }
+            if (!whole && (!best || f.width * f.height > best->width * best->height)) best = it->fields;
+        }
+        if (!whole) return best;  // none: the export runs those ops without fields (reported)
+    }
+    auto made = std::make_shared<LayerFields>();
+    made->width = region.width;
+    made->height = region.height;
+    made->coefficients = guidedCoefficients(rgba, region.width, region.height);
+    made->detail = computeDetailFields(rgba, region.width, region.height);
+    std::lock_guard<std::mutex> lock(gFieldsMutex);
+    gFields.push_front({key, made});
+    if (gFields.size() > kFieldsCache) gFields.pop_back();
+    return made;
+}
+
 // --- Masks (Stage 14) ------------------------------------------------------------------------
 
 struct CachedMask {
@@ -291,7 +396,11 @@ std::vector<float> maskWeights(const Layer& layer, const Context& ctx) {
                             std::to_string(region.height) + "/" + std::to_string(region.docWidth) + "x" +
                             std::to_string(region.docHeight) + "*" + std::to_string(region.scale);
     std::shared_ptr<const masks::MaskTiles> tiles;
-    if (ctx.guide != nullptr) {  // an export region: guided by its own pixels, never cached
+    if (masks::readsImage(layer.mask)) {  // Stage 17: reads the photo, which the key does not hold
+        auto rendered = std::make_shared<masks::MaskTiles>();
+        masks::render(layer.mask, region, rendered.get(), ctx.image);
+        tiles = rendered;
+    } else if (ctx.guide != nullptr) {  // an export region: guided by its own pixels, never cached
         auto rendered = std::make_shared<masks::MaskTiles>();
         masks::render(layer.mask, region, rendered.get(), ctx.guide);
         tiles = rendered;
@@ -398,7 +507,9 @@ void renderLayers(const std::vector<Layer>& layers, float* buffer, const Context
             }
         } else if (layer.type == "adjustment") {
             std::vector<float> src(buffer, buffer + floats);
-            buildPointOps(layer.ops, ctx.skipped)->cpuRef(src.data(), src.data(), ctx.pixels());
+            const auto ops = buildLayerOps(layer.ops, ctx.skipped);
+            if (needsFields(*ops) && !ctx.fields) report(ctx.skipped, "layer-fields");
+            ops->cpuRefRegion(src.data(), src.data(), opRegion(ctx));
             for (std::size_t p = 0; p < ctx.pixels(); ++p) src[4 * p + 3] = weight.empty() ? 1.f : weight[p];
             compositeBuffer(buffer, src.data(), modeOf(layer), amount, ctx);
         } else {
@@ -502,6 +613,33 @@ std::shared_ptr<const ImageF32> findLayerImage(const std::string& id, bool full)
     return nullptr;
 }
 
+namespace {
+
+int layersApron(const std::vector<Layer>& layers) {
+    int apron = 0;
+    for (const Layer& l : layers) {
+        if (!l.visible) continue;
+        int a = 0;
+        if (l.type == "adjustment") a += buildLayerOps(l.ops, nullptr)->apron();
+        if (l.hasMask && l.mask.enabled && masks::readsImage(l.mask)) {
+            // Image-reading components see only the region: the feather's and the auto-mask's reach.
+            a += static_cast<int>(masks::gaussianKernel(l.mask.feather).size() / 2);
+            for (const MaskComponent& c : l.mask.components) {
+                if (c.kind != "brush" || !c.autoMask) continue;
+                double radius = 0.0;
+                for (const MaskPaint& p : c.strokes) radius = std::max(radius, p.radius);
+                a += 2 * std::max(1, static_cast<int>(std::nearbyint(radius / 4.0))) + 1;
+            }
+        }
+        apron = std::max(apron, a + layersApron(l.children));
+    }
+    return apron;
+}
+
+}  // namespace
+
+int layerApron(const Graph& graph) { return layersApron(graph.layers); }
+
 bool hasLayers(const Graph& graph) {
     return std::any_of(graph.layers.begin(), graph.layers.end(), [](const Layer& l) {
         return !(l.type.empty() || l.type == "background") && draws(l);
@@ -511,20 +649,24 @@ bool hasLayers(const Graph& graph) {
 void compositeLayers(const Graph& graph, float* rgba, const Region& region, bool full, std::string* skipped) {
     if (region.width <= 0 || region.height <= 0 || !hasLayers(graph)) return;
     Context ctx{&region, graph.blendSpace != "linear", full, skipped};
-    // Exports guide mask rasters by the full-resolution background (Stage 16).
+    // Exports guide mask rasters by the full-resolution background (Stage 16); local mask
+    // components read it everywhere (Stage 17).
     std::vector<float> background;
-    if (full) {
-        background.assign(rgba, rgba + ctx.pixels() * 4);
-        ctx.guide = background.data();
-    }
+    const bool readsImage = layersReadImage(graph.layers);
+    if (full || readsImage) background.assign(rgba, rgba + ctx.pixels() * 4);
+    if (full) ctx.guide = background.data();
+    if (readsImage) ctx.image = background.data();
+    if (layersNeedFields(graph.layers)) ctx.fields = documentFields(graph, rgba, region);
     renderLayers(graph.layers, rgba, ctx);
 }
 
-void showMask(const Graph& graph, const std::string& layerId, MaskView view, float* rgba, const Region& region) {
+void showMask(const Graph& graph, const std::string& layerId, MaskView view, float* rgba, const Region& region,
+              const float* background) {
     if (view == MaskView::None || region.width <= 0 || region.height <= 0) return;
     const Layer* layer = findLayer(graph.layers, layerId);
     if (layer == nullptr) return;
     Context ctx{&region, true, false, nullptr};
+    ctx.image = background;
     const std::vector<float> m = maskWeights(*layer, ctx);
     if (m.empty()) return;
     // Rubylith: Photoshop's 50 % red where the mask hides.

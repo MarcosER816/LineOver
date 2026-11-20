@@ -28,6 +28,8 @@ subtract brushes.
   proven on a device: ML Kit's subject module cannot run on the CI emulators (troubleshooting
   log). Plan B (R11): the same check in the debug build, Settings → Debug → AI self-test, run on
   the phone. Waiting for Mark's run (open question 5).
+  **Deferred by Mark (2026-11-20):** "I can't prove it right now, continue with the next stage."
+  Stage 16 was merged with this item open; it stays unchecked until the phone run is reported.
   - `SubjectIoUTest` (`core/ml/src/androidTest`) runs ML Kit Subject Segmentation on 5 CC0
     photos (two cats, three dogs; `testdata/smart`). Each must reach IoU ≥ 0.85 against its
     reference mask. CI runs it on an added `google_apis_playstore` emulator (API 36): Play

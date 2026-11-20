@@ -46,12 +46,26 @@ std::vector<double> gaussianKernel(double sigma);
 // A separable Gaussian over a whole w x h image with BORDER_REFLECT_101 (cv::GaussianBlur).
 void gaussianBlur(const float* in, int width, int height, double sigma, float* out);
 
-// The raw mask (base and paint, before invert / feather / density) at buffer pixels
+// The raw mask (base and paint, or the components; before invert / feather / density) at buffer pixels
 // (x0 + i, y0 + j), i.e. document points ((x0 + i + 0.5) / scale, (y0 + j + 0.5) / scale).
 // [guideRgba] (optional, Stage 16): the image under those pixels (working space, RGBA); rasters
 // with a guide are then upsampled by joint bilateral filtering against it.
 void rasterize(const LayerMask& mask, int x0, int y0, int width, int height, double scale, float* out,
                const float* guideRgba = nullptr);
+
+// Stage 17: local mask components (graph.h MaskComponent). [image] is the region's pixels (the
+// layer's input, RGBA working space); components that read it (colour / luminance range, the
+// brush's auto-mask, guided rasters) select nothing without it.
+bool componentReadsImage(const MaskComponent& component);
+bool readsImage(const LayerMask& mask);
+// One component's A (0..1, inverted when it says so) at buffer pixels (x0 + i, y0 + j).
+void evaluateComponent(const MaskComponent& component, int x0, int y0, int width, int height, double scale, float* out,
+                       const float* image);
+// M combined with A: add max, subtract min(M, 1 - A), intersect min(M, A).
+float combine(float m, float a, const std::string& mode);
+// The group: every component combined in order from 0 (rasterize() calls it when there are any).
+void rasterizeComponents(const LayerMask& mask, int x0, int y0, int width, int height, double scale, float* out,
+                         const float* image);
 
 // Which buffer pixels a mask is rendered for: [originX, originX + width) x [originY, ...)
 // of a document that is docWidth x docHeight buffer pixels at [scale].

@@ -1767,8 +1767,6 @@ bool Engine::renderOutputTile(int tx, int ty, std::vector<float>* out, int* widt
     const int x0 = tx * kTileSize, y0 = ty * kTileSize;
     const int w = std::min(kTileSize, g.outputWidth - x0), h = std::min(kTileSize, g.outputHeight - y0);
     if (w <= 0 || h <= 0) return false;
-    out->assign(static_cast<std::size_t>(w) * h * 4, 0.f);
-    if (!renderOutputRegion(g, imageW, imageH, x0, y0, w, h, out->data(), w)) return false;
     std::shared_ptr<const Graph> graph;
     bool layered;
     Finishing finishing;
@@ -1778,18 +1776,33 @@ bool Engine::renderOutputTile(int tx, int ty, std::vector<float>* out, int* widt
         layered = layered_;
         finishing = finishing_;
     }
-    if (layered && graph) {
+    if (!(layered && graph)) {
+        out->assign(static_cast<std::size_t>(w) * h * 4, 0.f);
+        if (!renderOutputRegion(g, imageW, imageH, x0, y0, w, h, out->data(), w)) return false;
+    } else {
         // Stage 13: the layers over this output tile (full-size layer images), then the finishing.
+        // Stage 17: adjustment layers read neighbours (local Clarity, Sharpening, auto-masks...):
+        // the tile is rendered with their apron and cropped.
+        const int apron = layers::layerApron(*graph);
+        const int px = std::max(0, x0 - apron), py = std::max(0, y0 - apron);
+        const int pw = std::min(g.outputWidth, x0 + w + apron) - px, ph = std::min(g.outputHeight, y0 + h + apron) - py;
+        std::vector<float> padded(static_cast<std::size_t>(pw) * ph * 4, 0.f);
+        if (!renderOutputRegion(g, imageW, imageH, px, py, pw, ph, padded.data(), pw)) return false;
         layers::Region region;
-        region.width = w;
-        region.height = h;
-        region.originX = x0;
-        region.originY = y0;
+        region.width = pw;
+        region.height = ph;
+        region.originX = px;
+        region.originY = py;
         region.docWidth = g.outputWidth;  // masks feather across tile edges (Stage 14)
         region.docHeight = g.outputHeight;
         std::string skipped;
-        layers::compositeLayers(*graph, out->data(), region, true, &skipped);
+        layers::compositeLayers(*graph, padded.data(), region, true, &skipped);
         if (!skipped.empty()) LOGW("export: layers skipped: %s", skipped.c_str());
+        out->assign(static_cast<std::size_t>(w) * h * 4, 0.f);
+        for (int y = 0; y < h; ++y) {
+            const float* src = padded.data() + (static_cast<std::size_t>(y + y0 - py) * pw + (x0 - px)) * 4;
+            std::copy(src, src + static_cast<std::size_t>(w) * 4, out->data() + static_cast<std::size_t>(y) * w * 4);
+        }
         applyFinishing(finishing, out->data(), w, h, g.outputWidth, g.outputHeight, x0, y0, 1.0);
     }
     *width = w;
