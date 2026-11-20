@@ -31,8 +31,9 @@ UX:
       - clipping: a chain of two clipped layers (one an adjustment) on a masked base, a layer
         clipped to an adjustment layer, and a layer clipped to a hidden base.
 
-      `blend_reference` checks that each of these changes the result (except the disabled
-      mask and the hidden layer, which must not).
+      While building the scene, removing any one of these masks or clips was confirmed to
+      change the result. The two exceptions, as expected, are the disabled mask and the hidden
+      layer, which change nothing.
 - [x] **Feather vs OpenCV GaussianBlur.** The goldens `mask/feather_{0.8,2.5,6.0}_f32.npy`
       are produced by `cv2.GaussianBlur(raw, (0, 0), sigma)` itself:
       - `masks::gaussianBlur` matches them within 1e-3;
@@ -50,7 +51,6 @@ UX:
 | `:core:model` | `LayerMask`, `MaskPaint` (`Stroke`, `Gradient`; JSON `kind`)<br>`Layer.clip` / `Layer.mask`<br>`LayerMath.canClip` / `clippingBase`<br>`HistoryLabels` for mask and clip changes ("Sky: Paint mask", "Sky: Mask feather 40 px", "Clip Colour") |
 | `:core:engine` | `EngineSession.setMaskView` |
 | `:feature:editor` | `MaskSection`:<br>- Layer mask (Add, Hide all, Edit, Delete with Undo)<br>- Clip to the layer below<br>- the vector mask chip, still reserved<br><br>`MaskControls`: Brush / Gradient, swatch and swap, size / hardness / opacity, density, feather, Red overlay, Mask only, Invert, Fill white / black, Disable / Enable<br><br>`MaskThumbnail`: drawn from the paint; tap targets the mask, long-press disables it<br>A ↳ marker on clipped rows<br>`CanvasView`: `PickMode.Paint` (one finger paints while the mask is targeted)<br>`EditorLayersActions`: mask, clip, brush and painting actions, and the engine mask view |
-| `:core:designsystem` | — |
 | `:core:ui` | 2 layer tools `done` (162 tools, 77 done) |
 | `:app` | 0.14.0 (versionCode 19) |
 
