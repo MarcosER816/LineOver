@@ -27,6 +27,7 @@ import export_reference as export
 import selection_reference as sel
 import smart_reference as smart
 import lensfun_reference
+import local_mask_reference as local
 import lut_reference as lut
 import reference
 
@@ -85,6 +86,7 @@ def build_outputs() -> dict[str, np.ndarray]:
     outputs.update(mask_outputs())
     outputs.update(selection_outputs())
     outputs.update(smart_outputs())
+    outputs.update(local_mask_outputs())
     return outputs
 
 
@@ -465,6 +467,25 @@ def smart_outputs() -> dict:
     out["smart/scene_ops.json"] = json.dumps(sel.SMART_OPS, indent=1) + "\n"
     out["smart/scene_f32.npy"] = sel.evaluate(sel.SMART_OPS, scene, rasters=rasters)[..., None]
     out["smart/scene_half_f32.npy"] = sel.evaluate(sel.SMART_OPS, scene[::2, ::2], 0.5, rasters=rasters)[..., None]
+    return out
+
+
+def local_mask_outputs() -> dict:
+    """Stage 17: every local mask component on the scene, and a group combining them (full and
+    half scale), as one graph with an adjustment layer per case (the engine parses its masks)."""
+    scene = reference.scene_rec2020()
+    rasters = {k: f() for k, f in local.RASTERS.items()}
+    out = {f"localmask/{k}_raster_f32.npy": v[..., None] for k, v in rasters.items()}
+    cases = {k: [dict(v)] for k, v in local.GENERATORS.items()}
+    cases["color_range"][0]["colors"] = local.scene_colors(scene)
+    cases["brush_auto"][0] = local.stroke_colors(cases["brush_auto"][0], scene)
+    cases["group"] = [dict(c) for c in local.GROUP]
+    layers = [{"id": "bg", "ops": []}]
+    for name, comps in cases.items():
+        out[f"localmask/{name}_f32.npy"] = local.group(comps, scene, 1.0, rasters).astype(np.float32)[..., None]
+        layers.append({"id": name, "type": "adjustment", "ops": [], "mask": {"base": 0.0, "components": comps}})
+    out["localmask/group_half_f32.npy"] = local.group(cases["group"], scene[::2, ::2], 0.5, rasters).astype(np.float32)[..., None]
+    out["localmask/graph.json"] = json.dumps({"schemaVersion": 1, "layers": layers}, indent=1) + "\n"
     return out
 
 

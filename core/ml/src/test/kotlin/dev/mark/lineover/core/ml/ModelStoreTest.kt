@@ -54,6 +54,12 @@ class ModelStoreTest {
     fun start() {
         server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/model.bin") { exchange -> serve(exchange) }
+        server.createContext("/model.zip") { exchange ->
+            exchange.use {
+                it.sendResponseHeaders(200, zipped.size.toLong())
+                it.responseBody.write(zipped)
+            }
+        }
         server.start()
     }
 
@@ -100,6 +106,66 @@ class ModelStoreTest {
             sha256 = sha,
             fileName = "test.bin",
         )
+
+    /** A zip holding a readme and the model as "pkg/model.tflite" (Stage 17's depth model is packed so). */
+    private val zipped: ByteArray by lazy {
+        val out = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use { zip ->
+            zip.putNextEntry(java.util.zip.ZipEntry("pkg/README.txt"))
+            zip.write("hello".toByteArray())
+            zip.putNextEntry(java.util.zip.ZipEntry("pkg/model.tflite"))
+            zip.write(payload)
+            zip.closeEntry()
+        }
+        out.toByteArray()
+    }
+
+    private fun zipSpec(entrySha: String = sha256(payload)) =
+        ModelSpec(
+            id = "zipped",
+            displayName = "Zipped model",
+            downloadUrl = "http://127.0.0.1:${server.address.port}/model.zip",
+            sizeBytes = zipped.size.toLong(),
+            license = "Apache License 2.0",
+            sha256 = sha256(zipped),
+            fileName = "zipped.tflite",
+            archiveEntry = "pkg/model.tflite",
+            entrySize = payload.size.toLong(),
+            entrySha256 = entrySha,
+        )
+
+    @Test
+    fun an_archived_model_is_verified_unpacked_and_verified_again() =
+        runBlocking {
+            val spec = zipSpec()
+            val store = store(spec)
+            assertEquals(ModelState.Ready, store.download(spec))
+            assertArrayEquals(payload, store.file(spec).readBytes())
+            // Only the verified entry is kept: no zip, no part.
+            assertEquals(listOf("zipped.tflite"), folder.root.list()!!.toList())
+            assertEquals(ModelState.Ready, store(spec).state(spec))
+            store.delete(spec)
+            assertTrue(folder.root.list()!!.isEmpty())
+        }
+
+    @Test
+    fun an_archive_entry_that_does_not_match_is_deleted() =
+        runBlocking {
+            val spec = zipSpec(entrySha = "0".repeat(64))
+            val store = store(spec)
+            assertEquals(ModelState.Failed(ModelError.Integrity), store.download(spec))
+            assertTrue(folder.root.list()!!.isEmpty())
+            val missing = zipSpec().copy(archiveEntry = "pkg/other.tflite")
+            assertEquals(ModelState.Failed(ModelError.Integrity), store(missing).download(missing))
+            assertTrue(folder.root.list()!!.isEmpty())
+        }
+
+    @Test
+    fun depth_maps_are_normalised_with_near_at_one() {
+        val d = DepthEstimator.normalised(floatArrayOf(2f, 4f, 6f, Float.NaN))
+        assertArrayEquals(floatArrayOf(0f, 0.5f, 1f, 0f), d, 1e-6f)
+        assertArrayEquals(floatArrayOf(0f, 0f), DepthEstimator.normalised(floatArrayOf(3f, 3f)), 0f)
+    }
 
     private fun store(spec: ModelSpec) =
         ModelStore(folder.root, HttpTransport(5_000), network, { wifiOnly }, listOf(spec), retryDelayMs = 0)
@@ -219,7 +285,9 @@ class ModelStoreTest {
 
     @Test
     fun the_catalog_is_valid_and_sizes_read_well() {
-        assertEquals(2, ModelCatalog.all.size)
+        assertEquals(3, ModelCatalog.all.size)
+        assertEquals("91.9 MB", sizeText(ModelCatalog.DEPTH.sizeBytes))
+        assertEquals(98_917_860L, ModelCatalog.DEPTH.fileSize)
         assertTrue(ModelCatalog.all.all { it.downloadUrl.startsWith("https://") && it.license.isNotBlank() })
         assertEquals(ModelCatalog.SKY, ModelCatalog["sky_deeplabv3_ade20k"])
         assertEquals("30.5 MB", sizeText(ModelCatalog.MAGIC_TOUCH.sizeBytes))

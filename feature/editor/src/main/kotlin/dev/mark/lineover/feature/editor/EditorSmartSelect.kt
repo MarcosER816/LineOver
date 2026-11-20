@@ -193,12 +193,30 @@ internal class EditorSmartActions(
 
     fun onAction(action: SmartAction) {
         when (action) {
-            is SmartAction.Run -> run(action.tool)
-            is SmartAction.Download -> download(action.allowMetered)
-            is SmartAction.DismissSheet -> host.setState { copy(smart = smart.copy(sheet = null)) }
-            is SmartAction.Configure -> host.setState { copy(smart = action.smart) }
-            is SmartAction.SetRefine -> setRefine(action.radius, action.contrast)
-            is SmartAction.ApplyRefine -> applyRefine()
+            is SmartAction.Run -> {
+                run(action.tool)
+            }
+
+            is SmartAction.Download -> {
+                download(action.allowMetered)
+            }
+
+            is SmartAction.DismissSheet -> {
+                whenReady = null
+                host.setState { copy(smart = smart.copy(sheet = null)) }
+            }
+
+            is SmartAction.Configure -> {
+                host.setState { copy(smart = action.smart) }
+            }
+
+            is SmartAction.SetRefine -> {
+                setRefine(action.radius, action.contrast)
+            }
+
+            is SmartAction.ApplyRefine -> {
+                applyRefine()
+            }
         }
     }
 
@@ -229,6 +247,21 @@ internal class EditorSmartActions(
         segment(m, tool, prompt)
     }
 
+    // Stage 17: a Masks tool waits for this model; it runs instead of a selection.
+    private var whenReady: Pair<SmartTool, () -> Unit>? = null
+
+    /** Shows [tool]'s download sheet; once it is ready [then] runs (the Masks category's AI masks). */
+    fun needModel(
+        tool: SmartTool,
+        then: () -> Unit,
+    ) {
+        val m = models ?: return host.message("${tool.label} isn't available in this build")
+        whenReady = tool to then
+        host.setState {
+            copy(smart = smart.copy(sheet = ModelSheet(tool, m.info(tool), m.states.value[tool] ?: ModelState.Missing, wifiOnly())))
+        }
+    }
+
     private fun download(allowMetered: Boolean) {
         val m = models ?: return
         val sheet = smart.sheet ?: return
@@ -237,6 +270,9 @@ internal class EditorSmartActions(
             host.setState { copy(smart = smart.copy(sheet = smart.sheet?.copy(state = result))) }
             if (result == ModelState.Ready) {
                 host.setState { copy(smart = smart.copy(sheet = null)) }
+                val pending = whenReady?.takeIf { it.first == sheet.tool }
+                whenReady = null
+                if (pending != null) return@launch pending.second()
                 // Then the tool runs, as if tapped again.
                 if (sheet.tool == SmartTool.Object && prompts.isNotEmpty()) segment(m, sheet.tool, prompts.toList()) else run(sheet.tool)
             }
@@ -523,6 +559,7 @@ internal class EditorSmartActions(
             SmartTool.Subject -> SelectionOp.Raster.TOOL_SUBJECT
             SmartTool.Sky -> SelectionOp.Raster.TOOL_SKY
             SmartTool.Object -> SelectionOp.Raster.TOOL_OBJECT
+            SmartTool.Depth -> "depth"
         }
 
     companion object {

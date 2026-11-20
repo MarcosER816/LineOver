@@ -207,6 +207,19 @@ internal class NativeEngine(
     /** [width, height (3 planes), planes...] or null without a selection. */
     fun selectionGuide(): FloatArray? = nativeSelectionGuide(h())
 
+    /** Stage 17: OKLab x 100 of the photo under the layers at document point (x, y), or null. */
+    fun photoLabAt(
+        x: Float,
+        y: Float,
+    ): FloatArray? = nativePhotoLabAt(h(), x, y)
+
+    /** Stage 17: [width, height, docWidth, docHeight, values..., guide planes...] or null before a preview. */
+    fun upsampleMask(
+        low: FloatArray,
+        width: Int,
+        height: Int,
+    ): FloatArray? = nativeUpsampleMask(h(), low, width, height)
+
     fun liveWireAnchor(
         x: Float,
         y: Float,
@@ -375,6 +388,19 @@ internal class NativeEngine(
     ): ByteArray?
 
     private external fun nativeSelectionGuide(engine: Long): FloatArray?
+
+    private external fun nativePhotoLabAt(
+        engine: Long,
+        x: Float,
+        y: Float,
+    ): FloatArray?
+
+    private external fun nativeUpsampleMask(
+        engine: Long,
+        low: FloatArray,
+        width: Int,
+        height: Int,
+    ): FloatArray?
 
     private external fun nativeLiveWireAnchor(
         engine: Long,

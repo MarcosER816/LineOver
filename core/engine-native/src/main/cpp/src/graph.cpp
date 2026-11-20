@@ -293,6 +293,53 @@ void parseMask(const Value& value, LayerMask* out) {
     flag(value, "inverted", &out->inverted);
     num(value, "density", &out->density);
     num(value, "feather", &out->feather);
+    auto numbers = [](const Value& v, const char* key, std::vector<double>* into) {
+        if (const Value* a = v.find(key); a != nullptr && a->kind == Value::Kind::Array)
+            for (const Value& n : a->items)
+                if (n.kind == Value::Kind::Number) into->push_back(n.number);
+    };
+    auto text = [](const Value& v, const char* key, std::string* into) {
+        if (const Value* t = v.find(key); t != nullptr && t->kind == Value::Kind::String) *into = t->text;
+    };
+    auto stroke = [&](const Value& item, MaskPaint* p) {
+        num(item, "value", &p->value);
+        num(item, "radius", &p->radius);
+        num(item, "hardness", &p->hardness);
+        num(item, "opacity", &p->opacity);
+        numbers(item, "points", &p->points);
+        numbers(item, "color", &p->color);
+    };
+    if (const Value* comps = value.find("components"); comps != nullptr && comps->kind == Value::Kind::Array) {
+        for (const Value& item : comps->items) {
+            const Value* kind = item.find("kind");
+            if (item.kind != Value::Kind::Object || kind == nullptr || kind->kind != Value::Kind::String) continue;
+            MaskComponent c;
+            c.kind = kind->text;
+            text(item, "mode", &c.mode);
+            flag(item, "invert", &c.invert);
+            for (auto [key, into] : {std::pair{"x0", &c.x0}, {"y0", &c.y0}, {"x1", &c.x1}, {"y1", &c.y1}, {"cx", &c.cx},
+                                     {"cy", &c.cy}, {"rx", &c.rx}, {"ry", &c.ry}, {"angle", &c.angle}, {"feather", &c.feather},
+                                     {"fuzziness", &c.fuzziness}, {"lo", &c.lo}, {"hi", &c.hi}, {"smooth", &c.smooth},
+                                     {"width", &c.width}, {"height", &c.height}, {"docWidth", &c.docWidth},
+                                     {"docHeight", &c.docHeight}})
+                num(item, key, into);
+            if (const Value* st = item.find("strokes"); st != nullptr && st->kind == Value::Kind::Array) {
+                for (const Value& sv : st->items) {
+                    if (sv.kind != Value::Kind::Object) continue;
+                    MaskPaint p;
+                    p.kind = "stroke";
+                    stroke(sv, &p);
+                    c.strokes.push_back(std::move(p));
+                }
+            }
+            flag(item, "autoMask", &c.autoMask);
+            numbers(item, "colors", &c.colors);
+            text(item, "source", &c.source);
+            text(item, "guide", &c.guide);
+            text(item, "tool", &c.tool);
+            out->components.push_back(std::move(c));
+        }
+    }
     const Value* paint = value.find("paint");
     if (paint == nullptr || paint->kind != Value::Kind::Array) return;
     for (const Value& item : paint->items) {
@@ -300,13 +347,7 @@ void parseMask(const Value& value, LayerMask* out) {
         if (item.kind != Value::Kind::Object || kind == nullptr || kind->kind != Value::Kind::String) continue;
         MaskPaint p;
         p.kind = kind->text;
-        num(item, "value", &p.value);
-        num(item, "radius", &p.radius);
-        num(item, "hardness", &p.hardness);
-        num(item, "opacity", &p.opacity);
-        if (const Value* pts = item.find("points"); pts != nullptr && pts->kind == Value::Kind::Array)
-            for (const Value& v : pts->items)
-                if (v.kind == Value::Kind::Number) p.points.push_back(v.number);
+        stroke(item, &p);
         num(item, "x0", &p.x0);
         num(item, "y0", &p.y0);
         num(item, "x1", &p.x1);
@@ -477,6 +518,25 @@ void serializeMask(const LayerMask& mask, std::string* out) {
         first = false;
         return f;
     };
+    auto floats = [&](const char* name, const std::vector<double>& values) {
+        out->append(",\"");
+        out->append(name);
+        out->append("\":[");
+        for (std::size_t k = 0; k < values.size(); ++k) {
+            if (k > 0) out->push_back(',');
+            out->append(formatKotlinFloat(static_cast<float>(values[k])));
+        }
+        out->push_back(']');
+    };
+    // A round-brush stroke's fields (Kotlin MaskPaint.Stroke's order); [bare]: the first in its object.
+    auto writeStroke = [&](const MaskPaint& p, bool bare = false) {
+        number("value", p.value, bare);
+        number("radius", p.radius);
+        number("hardness", p.hardness);
+        number("opacity", p.opacity);
+        floats("points", p.points);
+        if (!p.color.empty()) floats("color", p.color);
+    };
     if (mask.base != 1.0) number("base", mask.base, lead());
     if (!mask.enabled) {
         if (!lead()) out->push_back(',');
@@ -515,17 +575,76 @@ void serializeMask(const LayerMask& mask, std::string* out) {
                 number("from", p.from);
                 number("to", p.to);
             } else {
-                number("value", p.value);
-                number("radius", p.radius);
-                number("hardness", p.hardness);
-                number("opacity", p.opacity);
-                out->append(",\"points\":[");
-                for (std::size_t k = 0; k < p.points.size(); ++k) {
+                writeStroke(p);
+            }
+            out->push_back('}');
+        }
+        out->push_back(']');
+    }
+    if (!mask.components.empty()) {
+        if (!lead()) out->push_back(',');
+        out->append("\"components\":[");
+        for (std::size_t i = 0; i < mask.components.size(); ++i) {
+            const MaskComponent& c = mask.components[i];
+            if (i > 0) out->push_back(',');
+            out->append("{\"kind\":");
+            writeString(c.kind, out);
+            auto raster = [&]() {
+                out->append(",\"source\":");
+                writeString(c.source, out);
+                number("width", c.width);
+                number("height", c.height);
+                number("docWidth", c.docWidth);
+                number("docHeight", c.docHeight);
+                if (!c.guide.empty()) {
+                    out->append(",\"guide\":");
+                    writeString(c.guide, out);
+                }
+            };
+            if (c.kind == "linear") {
+                number("x0", c.x0);
+                number("y0", c.y0);
+                number("x1", c.x1);
+                number("y1", c.y1);
+            } else if (c.kind == "radial") {
+                number("cx", c.cx);
+                number("cy", c.cy);
+                number("rx", c.rx);
+                number("ry", c.ry);
+                number("angle", c.angle);
+                number("feather", c.feather);
+            } else if (c.kind == "brush") {
+                out->append(",\"strokes\":[");
+                for (std::size_t k = 0; k < c.strokes.size(); ++k) {
                     if (k > 0) out->push_back(',');
-                    out->append(formatKotlinFloat(static_cast<float>(p.points[k])));
+                    out->push_back('{');
+                    writeStroke(c.strokes[k], true);
+                    out->push_back('}');
                 }
                 out->push_back(']');
+                if (c.autoMask) out->append(",\"autoMask\":true");
+            } else if (c.kind == "color_range") {
+                floats("colors", c.colors);
+                number("fuzziness", c.fuzziness);
+            } else if (c.kind == "luminance_range") {
+                number("lo", c.lo);
+                number("hi", c.hi);
+                number("smooth", c.smooth);
+            } else if (c.kind == "depth_range") {
+                raster();
+                number("lo", c.lo);
+                number("hi", c.hi);
+                number("smooth", c.smooth);
+            } else if (c.kind == "raster") {
+                raster();
+                out->append(",\"tool\":");
+                writeString(c.tool, out);
             }
+            if (c.mode != "add") {
+                out->append(",\"mode\":");
+                writeString(c.mode, out);
+            }
+            if (c.invert) out->append(",\"invert\":true");
             out->push_back('}');
         }
         out->push_back(']');
@@ -910,6 +1029,24 @@ bool isPointOp(const std::string& op) {
     for (const char* name : kRegional)
         if (op == name) return false;
     return true;
+}
+
+bool isLayerOp(const std::string& op) {
+    // Geometry belongs to the background; the finishing comes after every layer.
+    return op != "geometry" && op != "post_crop_vignette" && op != "grain";
+}
+
+std::unique_ptr<OpList> buildLayerOps(const std::vector<OpParams>& ops, std::string* skipped) {
+    auto list = std::make_unique<OpList>();
+    for (const OpParams& params : ops) {
+        if (isLayerOp(params.op)) {
+            addOp(params, list.get(), skipped);
+        } else if (skipped != nullptr) {
+            if (!skipped->empty()) skipped->push_back(',');
+            skipped->append(params.op);
+        }
+    }
+    return list;
 }
 
 std::unique_ptr<OpList> buildPointOps(const std::vector<OpParams>& ops, std::string* skipped) {

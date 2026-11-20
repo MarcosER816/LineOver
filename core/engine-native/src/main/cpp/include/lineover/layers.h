@@ -13,6 +13,7 @@
 #include <string>
 
 #include "lineover/graph.h"
+#include "lineover/ops.h"
 #include "lineover/thumbnail.h"
 
 namespace lo::layers {
@@ -66,6 +67,22 @@ struct Region {
 // where the mask hides (50 %).
 enum class MaskView : int { None = 0, MaskOnly = 1, Overlay = 2 };
 
+// Stage 17: what adjustment layers' Highlights / Shadows, Clarity, Texture and Dehaze read: the
+// guided coefficients and detail fields of the whole document's background (width x height
+// buffer pixels, sampled by document uv). The compositor makes them for whole-document regions
+// (the canvas composite, thumbnails) and keeps them; a partial region (an export tile) uses the
+// largest made for its background.
+struct LayerFields {
+    int width = 0, height = 0;
+    GuidedCoefficients coefficients;
+    DetailFields detail;
+};
+
+// How far (document px at full resolution) the layers read around a pixel: exports render each
+// tile with this apron so tiles match the whole (adjustment layers' neighbourhood ops, and
+// masks whose components read the image under a feather or the auto-mask).
+int layerApron(const Graph& graph);
+
 // Draws the graph's layers over [rgba] (the rendered background of [region], RGBA, replaced
 // by the composite). Layers whose image is not registered are skipped and named in
 // [skipped] ("layer:<source>"); [full] picks the export images.
@@ -73,6 +90,8 @@ void compositeLayers(const Graph& graph, float* rgba, const Region& region, bool
 
 // [rgba] (a composite of [region]) shows layer [layerId]'s mask as [view]; nothing when the
 // layer has no enabled mask.
-void showMask(const Graph& graph, const std::string& layerId, MaskView view, float* rgba, const Region& region);
+// [background] (optional, Stage 17): the photo under the layers, which local mask components read.
+void showMask(const Graph& graph, const std::string& layerId, MaskView view, float* rgba, const Region& region,
+              const float* background = nullptr);
 
 }  // namespace lo::layers

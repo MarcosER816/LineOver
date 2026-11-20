@@ -122,6 +122,12 @@ public:
     // The selection's colour guide (MaskPaint "raster" guide): 3 planes of sqrt(rgb) of the grid
     // the current selection was evaluated on (width x 3 height); false without a selection.
     bool selectionGuide(std::vector<float>* planes, int* width, int* height);
+    // Stage 17: [low] (lw x lh, a model's mask over the document) upsampled to the selection grid
+    // against the image, and the grid's colour guide planes (width x 3 height).
+    // Stage 17: OKLab x 100 of the photo (the background, edited) at document point (x, y).
+    bool photoLabAt(float x, float y, float lab[3]);
+    bool upsampleMask(const float* low, int lw, int lh, std::vector<float>* values, std::vector<float>* planes, int* width,
+                      int* height, int* docWidth, int* docHeight);
     // The magnetic lasso: a live-wire from the anchor (document px) over the grid's OKLab
     // lightness, within [reach] document px of it; liveWirePath reads the path to (x, y) back
     // as document points x0, y0, x1, y1, ... (empty without an anchor).

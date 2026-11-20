@@ -7,20 +7,17 @@ import androidx.compose.ui.graphics.asImageBitmap
 import dev.mark.lineover.core.io.masks.MaskRaster
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.LayerMath
-import dev.mark.lineover.core.model.MaskPaint
 import dev.mark.lineover.core.model.Selection
 import dev.mark.lineover.core.model.SelectionOp
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-/** Saved selections (Stage 15) the graph's masks name, and their colour guides (Stage 16). */
+/** Saved selections (Stage 15) and model / depth masks (Stage 17) the graph's masks name, and their colour guides (Stage 16). */
 internal fun rasterNames(graph: EditGraph): Set<String> =
     LayerMath
         .flatten(graph)
         .mapNotNull { it.first.mask }
-        .flatMap { it.paint }
-        .filterIsInstance<MaskPaint.Raster>()
-        .flatMap { listOfNotNull(it.source, it.guide) }
+        .flatMap { it.rasterNames }
         .toSet()
 
 /** The model masks (Stage 16) a selection names. */

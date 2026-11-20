@@ -84,10 +84,13 @@ bool renderGraphImage(const ImageF32& source, const GuidedCoefficients* coeffici
     layerRegion.width = width;
     layerRegion.height = height;
     layerRegion.scale = outScale;
+    std::vector<float> background;  // local mask components read the photo under the layers (Stage 17)
+    if (maskLayer != nullptr && maskView != 0) background = working;
     layers::compositeLayers(graph, working.data(), layerRegion, false, nullptr);
     Finishing finishing;
     if (maskLayer != nullptr && maskView != 0) {
-        layers::showMask(graph, *maskLayer, static_cast<layers::MaskView>(maskView), working.data(), layerRegion);
+        layers::showMask(graph, *maskLayer, static_cast<layers::MaskView>(maskView), working.data(), layerRegion,
+                         background.data());
     } else if (finishingOf(graph, &finishing)) applyFinishing(finishing, working.data(), width, height, outW, outH, 0, 0, outScale);
     out->width = width;
     out->height = height;

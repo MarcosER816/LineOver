@@ -15,6 +15,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
+import java.util.zip.ZipInputStream
 import kotlin.coroutines.coroutineContext
 
 /**
@@ -45,7 +46,7 @@ class ModelStore(
 
     private fun initialState(spec: ModelSpec): ModelState =
         if (file(spec).length() ==
-            spec.sizeBytes
+            spec.fileSize
         ) {
             ModelState.Ready
         } else {
@@ -101,12 +102,52 @@ class ModelStore(
                 ModelState.Failed(ModelError.Integrity)
             }
 
+            spec.archiveEntry != null -> {
+                unpack(spec, part)
+            }
+
             else -> {
                 val target = file(spec)
                 target.delete()
                 if (part.renameTo(target)) ModelState.Ready else ModelState.Failed(ModelError.Storage)
             }
         }
+    }
+
+    /** Copies the zip entry [name] of [archive] to [to]; false when there is none. */
+    private fun extract(
+        archive: File,
+        name: String,
+        to: File,
+    ): Boolean =
+        ZipInputStream(archive.inputStream().buffered()).use { zip ->
+            val found = generateSequence { zip.nextEntry }.firstOrNull { it.name == name } != null
+            if (found) FileOutputStream(to).use { out -> zip.copyTo(out, BUFFER) }
+            found
+        }
+
+    /** Stage 17: the verified zip [archive]'s entry, itself verified, into place; the zip is deleted. */
+    private fun unpack(
+        spec: ModelSpec,
+        archive: File,
+    ): ModelState {
+        val entry = File(dir, spec.fileName + ENTRY)
+        val found =
+            try {
+                extract(archive, spec.archiveEntry.orEmpty(), entry)
+            } catch (e: IOException) {
+                lastFailure = e
+                false
+            }
+        archive.delete()
+        val ok = found && entry.length() == spec.entrySize && Sha256.matches(entry, spec.entrySha256)
+        if (!ok) {
+            entry.delete()
+            return ModelState.Failed(if (dir.usableSpace < spec.entrySize) ModelError.Storage else ModelError.Integrity)
+        }
+        val target = file(spec)
+        target.delete()
+        return if (entry.renameTo(target)) ModelState.Ready else ModelState.Failed(ModelError.Storage)
     }
 
     private fun verify(
@@ -209,12 +250,14 @@ class ModelStore(
             withContext(io) {
                 file(spec).delete()
                 part(spec).delete()
+                File(dir, spec.fileName + ENTRY).delete()
                 set(spec, ModelState.Missing)
             }
         }
 
     private companion object {
         const val PART = ".part"
+        const val ENTRY = ".entry"
         const val BUFFER = 64 * 1024
         const val REPORT_EVERY = 256L * 1024L
         const val MAX_ATTEMPTS = 3

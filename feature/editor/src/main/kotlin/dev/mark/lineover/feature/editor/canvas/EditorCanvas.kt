@@ -12,6 +12,7 @@ import dev.mark.lineover.core.engine.Histogram
 import dev.mark.lineover.core.engine.NativeOp
 import dev.mark.lineover.core.engine.SelectionImage
 import dev.mark.lineover.core.engine.SelectionRaster
+import dev.mark.lineover.core.engine.UpsampledMask
 import dev.mark.lineover.core.io.masks.MaskRaster
 import dev.mark.lineover.core.model.AutoResult
 import dev.mark.lineover.core.model.CubeLut
@@ -62,6 +63,19 @@ interface SelectionCanvas {
 
     /** The colour guide of the current selection (3 planes, width x 3 height), or null. Off the main thread. */
     fun selectionGuide(): SelectionRaster? = null
+
+    /** Stage 17: OKLab x 100 of the photo under the layers at document point (x, y). Off the main thread. */
+    fun photoLabAt(
+        x: Float,
+        y: Float,
+    ): FloatArray? = null
+
+    /** Stage 17: a model's mask upsampled to the selection grid against the image, with its guide. Off the main thread. */
+    fun upsampleMask(
+        values: FloatArray,
+        width: Int,
+        height: Int,
+    ): UpsampledMask? = null
 
     /** The magnetic lasso: anchors the live-wire at document point (x, y). Off the main thread. */
     fun liveWireAnchor(
@@ -317,6 +331,17 @@ private class EngineCanvas(
     override fun selectionImage(maxEdge: Int): SelectionImage? = session.selectionImage(maxEdge)
 
     override fun selectionGuide(): SelectionRaster? = session.selectionGuide()
+
+    override fun photoLabAt(
+        x: Float,
+        y: Float,
+    ): FloatArray? = session.photoLabAt(x, y)
+
+    override fun upsampleMask(
+        values: FloatArray,
+        width: Int,
+        height: Int,
+    ): UpsampledMask? = session.upsampleMask(values, width, height)
 
     override fun liveWireAnchor(
         x: Float,

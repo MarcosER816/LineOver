@@ -24,7 +24,29 @@ data class LayerMask(
     /** Gaussian sigma in document pixels. */
     @EncodeDefault(EncodeDefault.Mode.NEVER) val feather: Float = 0f,
     @EncodeDefault(EncodeDefault.Mode.NEVER) val paint: List<MaskPaint> = emptyList(),
+    /**
+     * A local mask's group (Stage 17): when not empty it is the mask ([base] and [paint] are
+     * ignored), its components combined in order from black ([MaskComponent]).
+     */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val components: List<MaskComponent> = emptyList(),
 ) {
+    /** True for a local mask (a group of components). */
+    val isLocal: Boolean get() = components.isNotEmpty()
+
+    /** The mask store's rasters this mask names (saved selections, model masks, depth maps, their guides). */
+    val rasterNames: Set<String>
+        get() =
+            (
+                paint.filterIsInstance<MaskPaint.Raster>().flatMap { listOfNotNull(it.source, it.guide) } +
+                    components.flatMap {
+                        when (it) {
+                            is MaskComponent.Raster -> listOfNotNull(it.source, it.guide)
+                            is MaskComponent.DepthRange -> listOfNotNull(it.source, it.guide)
+                            else -> emptyList()
+                        }
+                    }
+            ).toSet()
+
     /** [paint] with one more operation; a gradient replaces everything before it. */
     fun with(op: MaskPaint): LayerMask = copy(paint = if (op is MaskPaint.Gradient || op is MaskPaint.Raster) listOf(op) else paint + op)
 
@@ -48,6 +70,7 @@ sealed interface MaskPaint {
      * A round brush along a polyline ([points] = x0, y0, x1, y1, ...). [value] 1 paints white,
      * 0 black; [hardness] 0..1 is where the falloff starts; [opacity] 0..100 %.
      */
+    @OptIn(ExperimentalSerializationApi::class)
     @Serializable
     @SerialName("stroke")
     data class Stroke(
@@ -56,6 +79,8 @@ sealed interface MaskPaint {
         val hardness: Float,
         val opacity: Float,
         val points: List<Float>,
+        /** Stage 17, a local brush's auto-mask: OKLab x 100 of the photo under the first point. */
+        @EncodeDefault(EncodeDefault.Mode.NEVER) val color: List<Float>? = null,
     ) : MaskPaint {
         fun plus(
             x: Float,

@@ -14,13 +14,16 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/** The selection tools that need a model (Stage 16). */
+/** The tools that need a model (Stage 16; Stage 17 adds the masks that share them, and depth). */
 enum class SmartTool(
     val label: String,
+    /** Every tool that uses its model (Settings → AI models). */
+    val usedBy: String = label,
 ) {
-    Subject("Select subject"),
-    Sky("Select sky"),
+    Subject("Select subject", "Select subject, Subject / Background mask"),
+    Sky("Select sky", "Select sky, Sky / People mask"),
     Object("Object select"),
+    Depth("Depth range mask"),
 }
 
 /** What the first-use sheet and Settings say about a tool's model. */
@@ -56,12 +59,18 @@ interface SmartModels {
         allowMetered: Boolean = false,
     ): ModelState
 
-    /** Runs [tool] on [image] ([prompts] for Object select); null when its model is not ready or finds nothing. */
+    /**
+     * Runs [tool] on [image] ([prompts] for Object select); null when its model is not ready or
+     * finds nothing. Depth gives the depth map (1 = near).
+     */
     suspend fun segment(
         tool: SmartTool,
         image: ModelImage,
         prompts: List<SegmentPrompt> = emptyList(),
     ): ModelMask?
+
+    /** Stage 17's People mask: the sky model's "person" class (its model is Sky's). */
+    suspend fun people(image: ModelImage): ModelMask? = null
 
     suspend fun delete(tool: SmartTool)
 }
@@ -95,6 +104,7 @@ class DeviceSmartModels(
     private val subjectStates = MutableStateFlow<ModelState>(ModelState.Missing)
     private var sky: Picked<SkySegmenter>? = null
     private var objects: Picked<ObjectSegmenter>? = null
+    private var depth: Picked<DepthEstimator>? = null
     private val mutableLastRun = MutableStateFlow<ModelRun?>(null)
     override val lastRun: StateFlow<ModelRun?> = mutableLastRun.asStateFlow()
 
@@ -104,6 +114,7 @@ class DeviceSmartModels(
                 SmartTool.Subject to subjectState,
                 SmartTool.Sky to (files[ModelCatalog.SKY.id] ?: ModelState.Missing),
                 SmartTool.Object to (files[ModelCatalog.MAGIC_TOUCH.id] ?: ModelState.Missing),
+                SmartTool.Depth to (files[ModelCatalog.DEPTH.id] ?: ModelState.Missing),
             )
         }.stateIn(scope, SharingStarted.Eagerly, emptyMap())
 
@@ -124,6 +135,7 @@ class DeviceSmartModels(
         when (tool) {
             SmartTool.Sky -> ModelCatalog.SKY
             SmartTool.Object -> ModelCatalog.MAGIC_TOUCH
+            SmartTool.Depth -> ModelCatalog.DEPTH
             SmartTool.Subject -> null
         }
 
@@ -185,6 +197,14 @@ class DeviceSmartModels(
                             picked.runner.segment(prompts)
                         }
                     }
+
+                    SmartTool.Depth -> {
+                        openDepth()?.let { picked ->
+                            accelerator = picked.accelerator
+                            trials = picked.trials
+                            picked.runner.estimate(image)
+                        }
+                    }
                 }
             mutableLastRun.value = ModelRun(tool, accelerator, (System.nanoTime() - start) / NANOS_PER_MS, trials)
             mask
@@ -193,6 +213,21 @@ class DeviceSmartModels(
     private fun openSky(): Picked<SkySegmenter>? {
         if (!store.isReady(ModelCatalog.SKY)) return null
         return sky ?: SkySegmenter.open(context, store.file(ModelCatalog.SKY), picker).also { sky = it }
+    }
+
+    override suspend fun people(image: ModelImage): ModelMask? =
+        withContext(worker) {
+            val start = System.nanoTime()
+            val picked = openSky()
+            val mask = picked?.runner?.segment(image, SkySegmenter.PERSON_CLASS)
+            mutableLastRun.value =
+                ModelRun(SmartTool.Sky, picked?.accelerator, (System.nanoTime() - start) / NANOS_PER_MS, picked?.trials.orEmpty())
+            mask
+        }
+
+    private fun openDepth(): Picked<DepthEstimator>? {
+        if (!store.isReady(ModelCatalog.DEPTH)) return null
+        return depth ?: DepthEstimator.open(context, store.file(ModelCatalog.DEPTH), picker).also { depth = it }
     }
 
     private fun openObjects(): Picked<ObjectSegmenter>? {
@@ -205,6 +240,7 @@ class DeviceSmartModels(
             when (tool) {
                 SmartTool.Sky -> sky?.runner?.close().also { sky = null }
                 SmartTool.Object -> objects?.runner?.close().also { objects = null }
+                SmartTool.Depth -> depth?.runner?.close().also { depth = null }
                 SmartTool.Subject -> Unit
             }
         }

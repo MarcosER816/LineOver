@@ -114,6 +114,12 @@ float* lo_engine_selection_raster(lo_engine* engine, int* width, int* height, in
 uint8_t* lo_engine_selection_image(lo_engine* engine, int max_edge, int* width, int* height);
 /* The selection's colour guide planes (malloc'd; free()), width x 3 height; NULL without a selection. */
 float* lo_engine_selection_guide(lo_engine* engine, int* width, int* height);
+/* Stage 17: a model's mask (lw x lh over the document) upsampled to the selection grid against the
+   image: width x height values then 3 x width x height guide planes (malloc'd; free()); NULL before a preview. */
+/* Stage 17: OKLab x 100 of the photo under the layers at document point (x, y); 0 before a preview. */
+int lo_engine_photo_lab_at(lo_engine* engine, float x, float y, float* lab3);
+float* lo_engine_upsample_mask(lo_engine* engine, const float* low, int lw, int lh, int* width, int* height, int* doc_width,
+                               int* doc_height);
 /* The magnetic lasso's live-wire (document px): an anchor, then paths from it (malloc'd x, y pairs; free()). */
 int lo_engine_live_wire_anchor(lo_engine* engine, float x, float y, float reach);
 float* lo_engine_live_wire_path(lo_engine* engine, float x, float y, int* count);

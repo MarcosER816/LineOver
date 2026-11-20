@@ -106,7 +106,7 @@ class SettingsViewModel(
                 sizeBytes = info.sizeBytes ?: 0L,
                 licence = info.license,
                 downloaded = state == ModelState.Ready,
-                usedBy = tool.label,
+                usedBy = tool.usedBy,
                 status =
                     when (state) {
                         is ModelState.Downloading -> "Downloading ${(state.fraction * PERCENT).toInt()} %"

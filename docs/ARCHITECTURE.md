@@ -453,7 +453,10 @@ background layer (the photo): develop ops (GPU tiles / CPU) -> geometry warp   =
 ## AI models (Stage 16)
 
 `ModelSpec` (`:core:ml`) describes a model: id, name, URL, size, licence, SHA-256, file.
-`ModelCatalog` lists the downloadable ones (MagicTouch V2, the ADE20K sky model).
+`ModelCatalog` lists the downloadable ones (MagicTouch V2, the ADE20K sky model and, since
+Stage 17, Depth Anything V2 Small). A spec may name an `archiveEntry`: the download is a zip
+whose SHA-256 is checked, then that entry is unpacked and checked against its own size and
+SHA-256; only the entry stays on the device.
 
 - **ModelStore** downloads into `noBackupFilesDir/models` as `<file>.part` with progress,
   resumes with an HTTP Range request (3 tries per use, the part kept across sessions), verifies
@@ -477,6 +480,35 @@ against the image. Quick selection (GrabCut), the magnetic lasso (live-wire), re
 (guided-filter matting) and the brushes are engine selection ops (`smart_select.h`); costly
 ones are checkpointed (`selection::Cache`). A mask made from a selection carries a colour guide
 raster, and exports upsample it against the full-resolution photo (`masks::render` with a guide).
+
+## Local masks (Stage 17)
+
+A local mask is an **adjustment layer whose mask is a group of components**
+(`LayerMask.components`, Kotlin `MaskComponent`, C++ `MaskComponent`): linear, radial, brush
+(optional auto-mask), colour range, luminance range, depth range and model rasters (subject,
+sky, background = inverted subject, people). Components combine in order from black: add
+max(M, A), subtract min(M, 1 − A), intersect min(M, A); each may be inverted. The layer's own
+invert / feather / density still apply; its opacity is the mask's Amount.
+
+- **No second implementation of the adjustments.** The 15 local sliders (`LocalAdjustments`)
+  are the Stage 5-10 ops in the layer (`buildLayerOps`: every op but geometry and the
+  finishing), composited through the mask by the Stage 13 compositor.
+- **Fields.** Highlights / Shadows, Clarity, Texture and Dehaze in a layer read guided
+  coefficients and detail fields of the document's background (`layers::LayerFields`): made
+  from whole-document composites (the canvas, thumbnails) and cached by the background's graph;
+  export tiles use the largest one made for that background.
+- **The image.** Colour / luminance range, the brush's auto-mask and guided rasters read the
+  background (the photo under the layers). Masks that read it are not cached.
+- **Exports** render each layered tile with `layers::layerApron` of reach (the layer ops'
+  aprons, plus the feather and auto-mask reach of image-reading masks) and crop it.
+- **AI masks.** The model's mask is upsampled to the selection grid against the image
+  (`Engine::upsampleMask`, the Stage 16 JBU) and saved with that grid's colour guide; exports
+  JBU it against the full-resolution photo. Depth comes from the photo's Dynamic Depth item
+  (`EmbeddedDepth`) when present and the photo is not cropped / rotated, else from Depth
+  Anything V2 Small (`DepthEstimator`, near = 1).
+- **Editor.** `EditorLocalMaskActions`: masks from the strip or the Add menu, Add / Subtract /
+  Intersect joins, pins (`maskPins`, drawn by `MaskPinsLayer` in the overlay slot, picked by
+  CanvasView's one-finger gesture), the red overlay (engine mask view), Duplicate and invert.
 
 ## Testing
 

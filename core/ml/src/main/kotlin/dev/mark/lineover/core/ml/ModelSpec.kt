@@ -18,11 +18,24 @@ data class ModelSpec(
     val fileName: String = "$id.bin",
     /** The tool that needs it (shown in Settings → AI models). */
     val usedBy: String = "",
+    /**
+     * Stage 17: the download is a zip ([sizeBytes], [sha256]) and the model is this entry in it,
+     * of [entrySize] bytes and [entrySha256]; only the verified entry is kept.
+     */
+    val archiveEntry: String? = null,
+    val entrySize: Long = 0L,
+    val entrySha256: String = "",
 ) {
+    /** The size of the model file on the device. */
+    val fileSize: Long get() = if (archiveEntry != null) entrySize else sizeBytes
+
     init {
         require(sizeBytes > 0) { "sizeBytes must be positive" }
         require(SHA256_HEX.matches(sha256)) { "sha256 must be 64 lowercase hex characters" }
         require(FILE_NAME.matches(fileName)) { "fileName must be a plain file name" }
+        require(archiveEntry == null || (entrySize > 0 && SHA256_HEX.matches(entrySha256))) {
+            "an archive entry needs its size and sha256"
+        }
     }
 
     private companion object {

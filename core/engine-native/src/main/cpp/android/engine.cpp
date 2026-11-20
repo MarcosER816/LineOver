@@ -12,6 +12,8 @@
 #include "lineover/graph.h"
 #include "lineover/layers.h"
 #include "lineover/selection.h"
+#include "lineover/smart_select.h"
+#include "lineover/color_ops.h"
 #include "lineover/thumbnail.h"
 
 #ifndef EGL_OPENGL_ES3_BIT_KHR
@@ -522,6 +524,44 @@ float Engine::selectionAt(float u, float v) {
     const int x = std::clamp(static_cast<int>(u * selectionW_), 0, selectionW_ - 1);
     const int y = std::clamp(static_cast<int>(v * selectionH_), 0, selectionH_ - 1);
     return selection_[static_cast<std::size_t>(y) * selectionW_ + x];
+}
+
+bool Engine::photoLabAt(float x, float y, float lab[3]) {
+    std::lock_guard<std::mutex> lock(selectionMutex_);
+    double scale = 1.0;
+    int docW = 0, docH = 0;
+    if (!sampleGrid(&scale, &docW, &docH)) return false;
+    // Stage 17: the photo under the layers (what local mask components read); the grid itself without layers.
+    const ImageF32& photo = sampledPhoto_.width > 0 ? sampledPhoto_ : sampledAll_;
+    const int i = std::clamp(static_cast<int>(std::floor(x * scale)), 0, photo.width - 1);
+    const int j = std::clamp(static_cast<int>(std::floor(y * scale)), 0, photo.height - 1);
+    colorops::toOklab(&photo.rgba[4 * (static_cast<std::size_t>(j) * photo.width + i)], lab);
+    for (int c = 0; c < 3; ++c) lab[c] *= 100.f;
+    return true;
+}
+
+bool Engine::upsampleMask(const float* low, int lw, int lh, std::vector<float>* values, std::vector<float>* planes, int* width,
+                          int* height, int* docWidth, int* docHeight) {
+    if (low == nullptr || lw <= 0 || lh <= 0) return false;
+    std::lock_guard<std::mutex> lock(selectionMutex_);
+    double scale = 1.0;
+    int docW = 0, docH = 0;
+    if (!sampleGrid(&scale, &docW, &docH)) return false;
+    const int w = sampledAll_.width, h = sampledAll_.height;
+    // Stage 17: a model's mask on the selection grid, joint-bilateral against the image (as a
+    // SelectionOp raster is), with the grid's colour guide for exports (MaskComponent::guide).
+    const std::vector<double> guide = smart::guide(sampledAll_.rgba.data(), w, h);
+    values->assign(static_cast<std::size_t>(w) * h, 0.f);
+    smart::jointBilateralUpsample(low, lw, lh, smart::lowGuide(guide, w, h, lw, lh), guide, w, h, values->data());
+    const std::size_t n = static_cast<std::size_t>(w) * h;
+    planes->resize(3 * n);
+    for (std::size_t p = 0; p < n; ++p)
+        for (int c = 0; c < 3; ++c) (*planes)[c * n + p] = static_cast<float>(guide[3 * p + c]);
+    *width = w;
+    *height = h;
+    *docWidth = docW;
+    *docHeight = docH;
+    return true;
 }
 
 bool Engine::selectionRaster(std::vector<float>* values, int* width, int* height, int* docWidth, int* docHeight) {
@@ -1767,8 +1807,6 @@ bool Engine::renderOutputTile(int tx, int ty, std::vector<float>* out, int* widt
     const int x0 = tx * kTileSize, y0 = ty * kTileSize;
     const int w = std::min(kTileSize, g.outputWidth - x0), h = std::min(kTileSize, g.outputHeight - y0);
     if (w <= 0 || h <= 0) return false;
-    out->assign(static_cast<std::size_t>(w) * h * 4, 0.f);
-    if (!renderOutputRegion(g, imageW, imageH, x0, y0, w, h, out->data(), w)) return false;
     std::shared_ptr<const Graph> graph;
     bool layered;
     Finishing finishing;
@@ -1778,18 +1816,33 @@ bool Engine::renderOutputTile(int tx, int ty, std::vector<float>* out, int* widt
         layered = layered_;
         finishing = finishing_;
     }
-    if (layered && graph) {
+    if (!(layered && graph)) {
+        out->assign(static_cast<std::size_t>(w) * h * 4, 0.f);
+        if (!renderOutputRegion(g, imageW, imageH, x0, y0, w, h, out->data(), w)) return false;
+    } else {
         // Stage 13: the layers over this output tile (full-size layer images), then the finishing.
+        // Stage 17: adjustment layers read neighbours (local Clarity, Sharpening, auto-masks...):
+        // the tile is rendered with their apron and cropped.
+        const int apron = layers::layerApron(*graph);
+        const int px = std::max(0, x0 - apron), py = std::max(0, y0 - apron);
+        const int pw = std::min(g.outputWidth, x0 + w + apron) - px, ph = std::min(g.outputHeight, y0 + h + apron) - py;
+        std::vector<float> padded(static_cast<std::size_t>(pw) * ph * 4, 0.f);
+        if (!renderOutputRegion(g, imageW, imageH, px, py, pw, ph, padded.data(), pw)) return false;
         layers::Region region;
-        region.width = w;
-        region.height = h;
-        region.originX = x0;
-        region.originY = y0;
+        region.width = pw;
+        region.height = ph;
+        region.originX = px;
+        region.originY = py;
         region.docWidth = g.outputWidth;  // masks feather across tile edges (Stage 14)
         region.docHeight = g.outputHeight;
         std::string skipped;
-        layers::compositeLayers(*graph, out->data(), region, true, &skipped);
+        layers::compositeLayers(*graph, padded.data(), region, true, &skipped);
         if (!skipped.empty()) LOGW("export: layers skipped: %s", skipped.c_str());
+        out->assign(static_cast<std::size_t>(w) * h * 4, 0.f);
+        for (int y = 0; y < h; ++y) {
+            const float* src = padded.data() + (static_cast<std::size_t>(y + y0 - py) * pw + (x0 - px)) * 4;
+            std::copy(src, src + static_cast<std::size_t>(w) * 4, out->data() + static_cast<std::size_t>(y) * w * 4);
+        }
         applyFinishing(finishing, out->data(), w, h, g.outputWidth, g.outputHeight, x0, y0, 1.0);
     }
     *width = w;

@@ -187,6 +187,32 @@ class EngineSession private constructor(
         return SelectionImage(size[0], size[1], bytes)
     }
 
+    /** Stage 17: OKLab x 100 of the photo under the layers at document point (x, y); off the main thread. */
+    fun photoLabAt(
+        x: Float,
+        y: Float,
+    ): FloatArray? = if (closed) null else native.photoLabAt(x, y)
+
+    /**
+     * Stage 17: a model's mask ([width] x [height] over the document) upsampled to the selection
+     * grid against the image (joint bilateral), and that grid's colour guide planes; null before a
+     * preview. Off the main thread.
+     */
+    fun upsampleMask(
+        values: FloatArray,
+        width: Int,
+        height: Int,
+    ): UpsampledMask? {
+        if (closed) return null
+        val a = native.upsampleMask(values, width, height) ?: return null
+        val w = a[0].toInt()
+        val h = a[1].toInt()
+        val n = w * h
+        val mask = SelectionRaster(w, h, a[DOC_W].toInt(), a[DOC_H].toInt(), a.copyOfRange(HEADER, HEADER + n))
+        val guide = SelectionRaster(w, GUIDE_PLANES * h, w, GUIDE_PLANES * h, a.copyOfRange(HEADER + n, HEADER + n * (1 + GUIDE_PLANES)))
+        return UpsampledMask(mask, guide)
+    }
+
     /** The colour guide of the current selection (3 planes of sqrt(rgb), width x 3 height), or null. */
     fun selectionGuide(): SelectionRaster? {
         if (closed) return null
@@ -518,6 +544,7 @@ class EngineSession private constructor(
         private const val LAYER_EXPORT_EDGE = 4096
         private const val REQUEST_SIZE = 3
         private const val THUMB_HEADER = 8
+        private const val GUIDE_PLANES = 3
 
         private fun mb(bytes: Long) = bytes shr MB_SHIFT
     }

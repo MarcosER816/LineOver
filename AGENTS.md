@@ -214,8 +214,9 @@ python3 tools/golden/generate.py --check
   together; `blend_test` checks the 27 modes in both blending spaces and the compositor scene.
   Never premultiply before blending; `SetLum` / `ClipColor` follow the W3C pseudocode.
 - Layers composite in document space after the background's geometry and before finishing
-  (`compositeLayers`); only the background layer feeds `buildOps`. Layers hold point ops only
-  (`buildPointOps`).
+  (`compositeLayers`); only the background layer feeds `buildOps`. Raster and smart layers hold
+  point ops only (`buildPointOps`); adjustment layers take any op but geometry and the
+  finishing (`buildLayerOps`, Stage 17).
 - A layer image is registered (`registerLayerImage`) before a graph names it: the editor does
   it in `EditorLayersActions.onCanvasGraph`, the export in `ExportRunner.render`. Exports release
   their full-size images afterwards.
@@ -269,6 +270,23 @@ python3 tools/golden/generate.py --check
   while waiting for one. Never send an image off the device.
 - `testdata/smart` holds the CC0 photos and reference masks of `SmartSelectIoUTest`; see its
   `SOURCES.md` before changing any of them.
+
+## Local masks (Stage 17)
+
+- A local mask is an adjustment layer whose `LayerMask.components` is not empty. `masks.cpp`
+  (components, combine), `graph.cpp` (parse / serialise, Kotlin `MaskComponent` field order) and
+  `tools/golden/local_mask_reference.py` change together; ctest `local_mask_test` holds every
+  generator and the group against the goldens (`testdata/golden/localmask/`) and round-trips
+  `testdata/graph/edit_graph_local_masks.json` with `LocalMasksTest` (Kotlin).
+- Never add a local-only copy of an op: a new local slider maps to an existing op in
+  `LocalAdjustments.toOps()` / `fromOps()`. Adjustment layers build with `buildLayerOps`
+  (geometry and the finishing excluded); ops that read fields get `layers::LayerFields`.
+- A component that reads the image (`masks::componentReadsImage`) gets the background as its
+  guide, is never cached, and adds its reach to `layers::layerApron` so export tiles match.
+- A brush's auto-mask colour and a colour range's colours are stored in the graph (OKLab × 100,
+  `photoLabAt`), never sampled at render time, so every tile agrees.
+- Model masks are upsampled by the engine (`upsampleMask`) and saved with their guide before a
+  graph names them; never re-run a model to rebuild a mask.
 
 ## History and projects (Stage 8)
 

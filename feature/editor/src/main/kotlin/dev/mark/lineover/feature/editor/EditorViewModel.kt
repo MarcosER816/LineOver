@@ -16,6 +16,7 @@ import dev.mark.lineover.core.io.prefs.TapGestures
 import dev.mark.lineover.core.io.project.DocumentLoad
 import dev.mark.lineover.core.io.project.ProjectLibrary
 import dev.mark.lineover.core.ml.SmartModels
+import dev.mark.lineover.core.ml.SmartTool
 import dev.mark.lineover.core.model.ColorAdjustments
 import dev.mark.lineover.core.model.CropOverlay
 import dev.mark.lineover.core.model.DetailAdjustments
@@ -242,6 +243,8 @@ data class EditorState(
     val smart: SmartSelectState = SmartSelectState(),
     /** Pictures of saved selections (mask thumbnails), by raster name. */
     val maskThumbnails: Map<String, ImageBitmap> = emptyMap(),
+    /** Stage 17: the Masks category (local masks, their pins, the overlay, the brush). */
+    val localMask: LocalMaskState = LocalMaskState(),
 ) {
     val selectedToolId: String? get() = (panel as? EditorPanel.Tool)?.id
 
@@ -489,6 +492,11 @@ sealed interface EditorIntent {
         val action: SelectAction,
     ) : EditorIntent
 
+    /** The Masks category (Stage 17). */
+    data class Mask(
+        val action: MaskAction,
+    ) : EditorIntent
+
     /** Two- or three-finger tap on the canvas (Settings → Gestures maps it to undo / redo). */
     data class MultiFingerTap(
         val fingers: Int,
@@ -575,6 +583,8 @@ class EditorViewModel(
     maskRasters: MaskRasters? = null,
     /** The segmentation models (Stage 16), downloaded on first use. */
     smartModels: SmartModels? = null,
+    /** Stage 17: the original's bytes by its URI (a depth map stored in it), off the main thread. */
+    private val photoBytes: (suspend (String) -> ByteArray?)? = null,
 ) : MviViewModel<EditorState, EditorIntent, EditorEffect>(
         EditorState(
             debuggable = debuggable,
@@ -636,6 +646,39 @@ class EditorViewModel(
     private val layersActions = EditorLayersActions(viewModelScope, renderDispatcher, actionsHost, layers)
 
     private val selectionActions = EditorSelectionActions(viewModelScope, renderDispatcher, actionsHost, maskRasters, layers, smartModels)
+
+    private val localMaskActions =
+        EditorLocalMaskActions(
+            viewModelScope,
+            renderDispatcher,
+            object : EditorLocalMaskActions.Host {
+                override val state get() = this@EditorViewModel.state.value
+
+                override fun reduce(
+                    label: String?,
+                    block: EditorState.() -> EditorState,
+                ) = this@EditorViewModel.reduce(label, block)
+
+                override fun setState(block: EditorState.() -> EditorState) = this@EditorViewModel.setState(block)
+
+                override fun message(text: String) = sendEffect(EditorEffect.Message(text))
+
+                override fun endEdit() = onIntent(EditorIntent.EndEdit)
+
+                override fun registered(name: String) = selectionActions.registered(name)
+
+                override fun needModel(
+                    tool: SmartTool,
+                    then: () -> Unit,
+                ) = selectionActions.needModel(tool, then)
+            },
+            smartModels,
+            maskRasters,
+        ) {
+            state.value.project
+                ?.sourceUri
+                ?.let { photoBytes?.invoke(it) }
+        }
 
     /** Crop handles, perspective corners and guide lines from CanvasView. */
     val cropGestures get() = geometryActions.gestures
@@ -795,6 +838,7 @@ class EditorViewModel(
             intent is EditorIntent.Looks -> looksActions.onAction(intent.action)
             intent is EditorIntent.Layers -> layersActions.onAction(intent.action)
             intent is EditorIntent.Select -> selectionActions.onAction(intent.action)
+            intent is EditorIntent.Mask -> localMaskActions.onAction(intent.action)
             !onHistoryIntent(intent) -> onEditIntent(intent)
         }
     }
@@ -1270,6 +1314,7 @@ class EditorViewModel(
 
     private fun selectTool(id: String) {
         val tool = ToolRegistry[id] ?: return
+        if (id in MaskTools.ALL && selectMaskTool(id)) return
         LightParam.forTool(id)?.let { param -> setState { copy(lightParam = param) } }
         val category = tool.category?.takeIf { tool.place == ToolPlace.Strip }
         if (category != null && state.value.category != ToolCategory.Favorites) preferences.setLastCategory(category.id)
@@ -1288,6 +1333,31 @@ class EditorViewModel(
                 compareGraph = null,
             )
         }
+    }
+
+    /**
+     * Stage 17: a Masks tool joins the selected mask (after Add / Subtract / Intersect), opens the
+     * selected mask's component of that kind, or makes a new mask. True when handled.
+     */
+    private fun selectMaskTool(id: String): Boolean {
+        val s = state.value
+        if (s.selectedToolId == id && s.localMask.joinMode == null) return false // the same tool again closes it
+        val mask = s.selectedLocalMask
+        val existing = mask?.mask?.components?.indexOfFirst { MaskTools.of(it) == id } ?: -1
+        if (s.localMask.joinMode == null && existing >= 0) {
+            setState {
+                copy(
+                    category = ToolCategory.Masks,
+                    panel = EditorPanel.Tool(id),
+                    localMask = localMask.copy(component = existing),
+                    menu = null,
+                )
+            }
+        } else {
+            setState { copy(category = ToolCategory.Masks, menu = null, searchOpen = false) }
+            localMaskActions.add(id)
+        }
+        return true
     }
 
     private fun toggleFavorite(id: String) {

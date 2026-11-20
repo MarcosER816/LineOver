@@ -46,7 +46,32 @@ object ModelCatalog {
             usedBy = "Select sky",
         )
 
-    val all: List<ModelSpec> = listOf(MAGIC_TOUCH, SKY)
+    /**
+     * Depth Anything V2 Small (Stage 17's Depth range mask): relative depth at 518 x 518, float32.
+     * The weights are Apache-2.0 (the upstream README: "Depth-Anything-V2-Small model is under the
+     * Apache-2.0 license"; the Hugging Face card says apache-2.0); this LiteRT conversion is
+     * Qualcomm AI Hub's (release v0.67.0, its card says MIT). The zip holds one .tflite: the
+     * store verifies the zip, unpacks that entry, verifies it and deletes the zip.
+     */
+    val DEPTH =
+        ModelSpec(
+            id = "depth_anything_v2_small",
+            displayName = "Depth Anything V2 Small (depth)",
+            downloadUrl =
+                "https://qaihub-public-assets.s3.us-west-2.amazonaws.com/qai-hub-models/models/" +
+                    "depth_anything_v2/releases/v0.67.0/depth_anything_v2-tflite-float.zip",
+            sizeBytes = 91_862_770L,
+            license = "Apache License 2.0",
+            sha256 = "d3d910013a1e0a3442cda6c26a6a310b700da8f5562d3f620bca60ae48cd1d32",
+            licenseUrl = "https://github.com/DepthAnything/Depth-Anything-V2#license",
+            fileName = "depth_anything_v2_small.tflite",
+            usedBy = "Depth range mask",
+            archiveEntry = "depth_anything_v2-tflite-float/depth_anything_v2.tflite",
+            entrySize = 98_917_860L,
+            entrySha256 = "5cdbc0346c854ddb7033c25b2831dd3ad70398c0148e9c0a70ec30e1786ef03d",
+        )
+
+    val all: List<ModelSpec> = listOf(MAGIC_TOUCH, SKY, DEPTH)
 
     operator fun get(id: String): ModelSpec? = all.firstOrNull { it.id == id }
 }

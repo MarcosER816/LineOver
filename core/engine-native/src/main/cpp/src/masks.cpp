@@ -8,6 +8,9 @@
 #include <mutex>
 #include <unordered_map>
 
+#include "lineover/color_ops.h"
+#include "lineover/smart_select.h"
+
 namespace lo::masks {
 
 std::uint16_t toHalf(float value) {
@@ -284,7 +287,161 @@ void paintGradient(const MaskPaint& p, int x0, int y0, int width, int height, do
     }
 }
 
+// --- Local mask components (Stage 17; tools/golden/local_mask_reference.py) -------------------
+
+constexpr double kAutoMaskDeltaE = 20.0;  // the auto-mask's colour similarity reaches 0 here
+constexpr double kAutoMaskEps = 1e-3;
+
+double ramp(double v, double lo, double hi, double s) {
+    if (s <= 0.0) return v >= lo && v <= hi ? 1.0 : 0.0;
+    return smoothstep((v - lo + s) / s) * (1.0 - smoothstep((v - hi) / s));
+}
+
+// OKLab x 100 of every pixel of [rgba].
+std::vector<float> oklab100(const float* rgba, std::size_t pixels) {
+    std::vector<float> lab(pixels * 3);
+    for (std::size_t p = 0; p < pixels; ++p) {
+        colorops::toOklab(rgba + 4 * p, lab.data() + 3 * p);
+        for (int c = 0; c < 3; ++c) lab[3 * p + c] *= 100.f;
+    }
+    return lab;
+}
+
+double deltaE(const float* lab, const double* to) {
+    const double a = lab[0] - to[0], b = lab[1] - to[1], c = lab[2] - to[2];
+    return std::sqrt(a * a + b * b + c * c);
+}
+
+void linearComponent(const MaskComponent& c, int x0, int y0, int width, int height, double scale, float* out) {
+    MaskPaint g;
+    g.x0 = c.x0;
+    g.y0 = c.y0;
+    g.x1 = c.x1;
+    g.y1 = c.y1;
+    g.from = 1.0;
+    g.to = 0.0;
+    paintGradient(g, x0, y0, width, height, scale, out);
+}
+
+void radialComponent(const MaskComponent& c, int x0, int y0, int width, int height, double scale, float* out) {
+    const double a = c.angle * 3.14159265358979323846 / 180.0, ca = std::cos(a), sa = std::sin(a);
+    const double rx = std::max(c.rx, 1e-9), ry = std::max(c.ry, 1e-9);
+    const double f = std::clamp(c.feather / 100.0, 0.0, 1.0);
+    for (int j = 0; j < height; ++j) {
+        const double py = (y0 + j + 0.5) / scale - c.cy;
+        for (int i = 0; i < width; ++i) {
+            const double px = (x0 + i + 0.5) / scale - c.cx;
+            const double u = (ca * px + sa * py) / rx, v = (-sa * px + ca * py) / ry;
+            const double d = std::sqrt(u * u + v * v);
+            const double m = f <= 0.0 ? (d <= 1.0 ? 1.0 : 0.0) : 1.0 - smoothstep((d - (1.0 - f)) / f);
+            out[static_cast<std::size_t>(j) * width + i] = static_cast<float>(m);
+        }
+    }
+}
+
+// The strokes over 0; with auto-mask times the guided-filtered colour similarity to the
+// painting strokes' colours (needs [image], the region's pixels).
+void brushComponent(const MaskComponent& c, int x0, int y0, int width, int height, double scale, float* out,
+                    const float* image) {
+    const std::size_t n = static_cast<std::size_t>(width) * height;
+    std::fill(out, out + n, 0.f);
+    for (const MaskPaint& p : c.strokes) paintStroke(p, x0, y0, width, height, scale, out);
+    if (!c.autoMask || image == nullptr) return;
+    const std::vector<float> lab = oklab100(image, n);
+    std::vector<float> sim(n, 0.f);
+    double radius = 0.0;
+    for (const MaskPaint& p : c.strokes) {
+        radius = std::max(radius, p.radius);
+        if (p.value <= 0.0 || p.color.size() < 3) continue;
+        for (std::size_t q = 0; q < n; ++q) {
+            const double v = std::clamp(1.0 - deltaE(lab.data() + 3 * q, p.color.data()) / kAutoMaskDeltaE, 0.0, 1.0);
+            sim[q] = std::max(sim[q], static_cast<float>(v));
+        }
+    }
+    // Python's round() (half to even), as the reference.
+    const int r = std::max(1, static_cast<int>(std::nearbyint(radius * scale / 4.0)));
+    std::vector<float> matte(n);
+    smart::guidedMatte(sim.data(), smart::guide(image, width, height), width, height, r, kAutoMaskEps, matte.data());
+    for (std::size_t q = 0; q < n; ++q) out[q] *= std::clamp(matte[q], 0.f, 1.f);
+}
+
+void colorRangeComponent(const MaskComponent& c, std::size_t n, float* out, const float* image) {
+    const std::vector<float> lab = oklab100(image, n);
+    const double fuzz = std::max(c.fuzziness, 1e-6);
+    for (std::size_t q = 0; q < n; ++q) {
+        double best = std::numeric_limits<double>::infinity();
+        for (std::size_t k = 0; k + 2 < c.colors.size(); k += 3) best = std::min(best, deltaE(lab.data() + 3 * q, c.colors.data() + k));
+        out[q] = static_cast<float>(std::clamp(1.0 - best / fuzz, 0.0, 1.0));
+    }
+}
+
+void rasterComponent(const MaskComponent& c, int x0, int y0, int width, int height, double scale, float* out,
+                     const float* image) {
+    std::fill(out, out + static_cast<std::size_t>(width) * height, 0.f);
+    MaskPaint p;
+    p.kind = "raster";
+    p.source = c.source;
+    p.guide = c.guide;
+    p.docWidth = c.docWidth;
+    p.docHeight = c.docHeight;
+    const bool guided = image != nullptr && !p.guide.empty() && paintGuidedRaster(p, x0, y0, width, height, scale, out, image);
+    if (!guided) paintRaster(p, x0, y0, width, height, scale, out);
+}
+
 }  // namespace
+
+bool componentReadsImage(const MaskComponent& c) {
+    return c.kind == "color_range" || c.kind == "luminance_range" || (c.kind == "brush" && c.autoMask) ||
+           ((c.kind == "raster" || c.kind == "depth_range") && !c.guide.empty());
+}
+
+bool readsImage(const LayerMask& mask) { return std::any_of(mask.components.begin(), mask.components.end(), componentReadsImage); }
+
+void evaluateComponent(const MaskComponent& c, int x0, int y0, int width, int height, double scale, float* out,
+                       const float* image) {
+    const std::size_t n = static_cast<std::size_t>(width) * height;
+    if (c.kind == "linear") {
+        linearComponent(c, x0, y0, width, height, scale, out);
+    } else if (c.kind == "radial") {
+        radialComponent(c, x0, y0, width, height, scale, out);
+    } else if (c.kind == "brush") {
+        brushComponent(c, x0, y0, width, height, scale, out, image);
+    } else if (c.kind == "color_range" && image != nullptr) {
+        colorRangeComponent(c, n, out, image);
+    } else if (c.kind == "luminance_range" && image != nullptr) {
+        for (std::size_t q = 0; q < n; ++q) {
+            float lab[3];
+            colorops::toOklab(image + 4 * q, lab);
+            out[q] = static_cast<float>(ramp(lab[0], c.lo, c.hi, c.smooth));
+        }
+    } else if (c.kind == "depth_range") {
+        rasterComponent(c, x0, y0, width, height, scale, out, image);
+        for (std::size_t q = 0; q < n; ++q) out[q] = static_cast<float>(ramp(out[q], c.lo, c.hi, c.smooth));
+    } else if (c.kind == "raster") {
+        rasterComponent(c, x0, y0, width, height, scale, out, image);
+    } else {
+        std::fill(out, out + n, 0.f);  // unknown, or it needs the image and has none: selects nothing
+    }
+    if (c.invert)
+        for (std::size_t q = 0; q < n; ++q) out[q] = 1.f - out[q];
+}
+
+float combine(float m, float a, const std::string& mode) {
+    if (mode == "subtract") return std::min(m, 1.f - a);
+    if (mode == "intersect") return std::min(m, a);
+    return std::max(m, a);
+}
+
+void rasterizeComponents(const LayerMask& mask, int x0, int y0, int width, int height, double scale, float* out,
+                         const float* image) {
+    const std::size_t n = static_cast<std::size_t>(width) * height;
+    std::fill(out, out + n, 0.f);
+    std::vector<float> a(n);
+    for (const MaskComponent& c : mask.components) {
+        evaluateComponent(c, x0, y0, width, height, scale, a.data(), image);
+        for (std::size_t q = 0; q < n; ++q) out[q] = combine(out[q], a[q], c.mode);
+    }
+}
 
 void registerRaster(const std::string& name, std::shared_ptr<const std::vector<float>> values, int width, int height) {
     std::lock_guard<std::mutex> lock(gRasterMutex);
@@ -329,6 +486,10 @@ void gaussianBlur(const float* in, int width, int height, double sigma, float* o
 
 void rasterize(const LayerMask& mask, int x0, int y0, int width, int height, double scale, float* out,
                const float* guideRgba) {
+    if (!mask.components.empty()) {
+        rasterizeComponents(mask, x0, y0, width, height, scale, out, guideRgba);
+        return;
+    }
     std::fill(out, out + static_cast<std::size_t>(width) * height, static_cast<float>(mask.base));
     for (const MaskPaint& p : mask.paint) {
         if (p.kind == "gradient") {
@@ -364,16 +525,27 @@ void render(const LayerMask& mask, const MaskRegion& region, MaskTiles* out, con
     int xlo, xhi, ylo, yhi;
     range(region.originX - r, region.originX + w + r, docW, &xlo, &xhi);
     range(region.originY - r, region.originY + h + r, docH, &ylo, &yhi);
-    std::vector<float> raw(static_cast<std::size_t>(xhi - xlo) * (yhi - ylo));
     // The guide covers exactly the region, so it is used only without a feather apron.
     const bool exact = r == 0 && xlo == region.originX && ylo == region.originY && xhi - xlo == w && yhi - ylo == h;
-    rasterize(mask, xlo, ylo, xhi - xlo, yhi - ylo, region.scale, raw.data(), exact ? guideRgba : nullptr);
+    if (!exact && guideRgba != nullptr && readsImage(mask)) {
+        // Stage 17: components that read the image are evaluated on the region only (its pixels
+        // are all there is); the feather's reach outside it repeats the region's edge. Exports
+        // render layers with an apron (layerApron) so the difference is cropped away.
+        xlo = region.originX;
+        ylo = region.originY;
+        xhi = xlo + w;
+        yhi = ylo + h;
+    }
+    const bool clampToRegion = xlo == region.originX && ylo == region.originY && xhi - xlo == w && yhi - ylo == h && r > 0;
+    std::vector<float> raw(static_cast<std::size_t>(xhi - xlo) * (yhi - ylo));
+    const bool withGuide = exact || (clampToRegion && readsImage(mask));
+    rasterize(mask, xlo, ylo, xhi - xlo, yhi - ylo, region.scale, raw.data(), withGuide ? guideRgba : nullptr);
     const int pw = w + 2 * r, ph = h + 2 * r;
     std::vector<float> padded(static_cast<std::size_t>(pw) * ph);
     for (int j = 0; j < ph; ++j) {
-        const int sy = reflect101(region.originY - r + j, docH) - ylo;
+        const int sy = std::clamp(reflect101(region.originY - r + j, docH) - ylo, 0, yhi - ylo - 1);
         for (int i = 0; i < pw; ++i) {
-            const int sx = reflect101(region.originX - r + i, docW) - xlo;
+            const int sx = std::clamp(reflect101(region.originX - r + i, docW) - xlo, 0, xhi - xlo - 1);
             const float v = raw[static_cast<std::size_t>(sy) * (xhi - xlo) + sx];
             padded[static_cast<std::size_t>(j) * pw + i] = mask.inverted ? 1.f - v : v;
         }

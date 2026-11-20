@@ -319,5 +319,79 @@ private fun maskChanges(
             val label = if (b.paint.lastOrNull() is MaskPaint.Gradient) "Mask gradient" else "Paint mask"
             OpChange(key, "$key.paint.${b.paint.size}", "$name: $label")
         },
+        (a.components != b.components).then { componentChange(a.components, b.components, name, "$key.components") },
     )
 }
+
+/**
+ * Stage 17: a component added or removed, or one changed (a drag of a pin or a slider is one
+ * step: the key names the component and what changed).
+ */
+private fun componentChange(
+    a: List<MaskComponent>,
+    b: List<MaskComponent>,
+    name: String,
+    key: String,
+): OpChange {
+    if (b.size > a.size) return OpChange(key, "$key.${b.size}", "$name: Add ${componentLabel(b.last())}")
+    if (b.size < a.size) return OpChange(key, "$key.${b.size}", "$name: Remove mask component")
+    val i = a.indices.first { a[it] != b[it] }
+    val before = a[i]
+    val after = b[i]
+    val what =
+        when {
+            before.mode != after.mode -> {
+                "mode" to "${componentLabel(after)} ${after.mode.name.lowercase()}"
+            }
+
+            before.invert != after.invert -> {
+                "invert" to "Invert ${componentLabel(after)}"
+            }
+
+            before is MaskComponent.Brush && after is MaskComponent.Brush && before.strokes.size != after.strokes.size -> {
+                "strokes.${after.strokes.size}" to "Paint ${componentLabel(after)}"
+            }
+
+            else -> {
+                "edit" to "Edit ${componentLabel(after)}"
+            }
+        }
+    return OpChange(key, "$key.$i.${what.first}", "$name: ${what.second}")
+}
+
+/** A component's name in History: "Linear gradient", "Sky", ... */
+fun componentLabel(c: MaskComponent): String =
+    when (c) {
+        is MaskComponent.Linear -> {
+            "Linear gradient"
+        }
+
+        is MaskComponent.Radial -> {
+            "Radial gradient"
+        }
+
+        is MaskComponent.Brush -> {
+            "Brush"
+        }
+
+        is MaskComponent.ColorRange -> {
+            "Color range"
+        }
+
+        is MaskComponent.LuminanceRange -> {
+            "Luminance range"
+        }
+
+        is MaskComponent.DepthRange -> {
+            "Depth range"
+        }
+
+        is MaskComponent.Raster -> {
+            when (c.tool) {
+                AiMaskKind.Subject -> "Subject"
+                AiMaskKind.Sky -> "Sky"
+                AiMaskKind.Background -> "Background"
+                AiMaskKind.People -> "People"
+            }
+        }
+    }
