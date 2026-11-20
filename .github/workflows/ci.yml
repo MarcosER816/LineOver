@@ -207,9 +207,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Google Play services downloads optional ML Kit modules through the Play Store, which
-        # google_apis images lack (Stage 16): SubjectIoUTest runs on a Play Store image, every
-        # other instrumented test on the google_apis ones.
+        # Stage 16 (Mark's decision): ML Kit's subject module cannot run on CI emulators
+        # (google_apis has no Play Store to install it; on Play Store images API 34-36 it does not
+        # install or its graph returns no tensor; docs/stages/STAGE_16.md). Its IoU test,
+        # SubjectIoUTest, runs on the phone: debug build, Settings > Debug > AI self-test.
         include:
           - api-level: 34
             target: google_apis
@@ -219,14 +220,6 @@ jobs:
             target: google_apis
             suffix: ""
             tests: connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=dev.mark.lineover.core.ml.SubjectIoUTest
-          - api-level: 34
-            target: google_apis_playstore
-            suffix: ", Play Store"
-            tests: ":core:ml:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=dev.mark.lineover.core.ml.SubjectIoUTest"
-          - api-level: 35
-            target: google_apis_playstore
-            suffix: ", Play Store"
-            tests: ":core:ml:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=dev.mark.lineover.core.ml.SubjectIoUTest"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v6

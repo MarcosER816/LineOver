@@ -242,7 +242,7 @@ Screenshots changed, and why:
 | `NavigationRobolectricTest`: "MlKitContext has not been initialized" | ML Kit's client is created at startup; without its init provider (Robolectric, or a device without Play services) it throws | The subject segmenter is created lazily and its failure becomes `Failed(Unavailable)` (the app keeps working) |
 | `SmartSelectIoUTest` subject case failed on both emulators: `Failed(Network)` after 30 s | logcat: `ZappPhoneskyConn: Unable to bind to Phonesky` — Play services downloads optional ML Kit modules through the Play Store, absent from `google_apis` images | The subject test is its own class (`SubjectIoUTest`), run on an added `google_apis_playstore` emulator row (ci.yml); the other rows run every other test (`notClass`). The install wait is 2 min (was 30 s) |
 | Attempt 2: on `google_apis_playstore` API 36 the module installs, then `MlKitException: Failed to run thin subject segmenter` | Inside Play services' own module: `TensorsToSegmentationCalculator: Tensor should have 2, 3, or 4 dims, received: 0` (its model gives no output on the x86_64 / SwiftShader emulator) | Not in LineOver's code; tried other images |
-| Attempt 3: Play Store API 35 (same graph error) and API 34 (module not installed within 2 min) | The same emulator limits | **Plan B (R11):** the subject IoU check runs on the phone: debug build, Settings → Debug → AI self-test (`app/src/debug/AiSelfTestScreen.kt`, the same photos, masks, IoU and 0.85 threshold as `SubjectIoUTest`). The CI emulator rows for it still fail; removing them is Mark's decision (open question 5) |
+| Attempt 3: Play Store API 35 (same graph error) and API 34 (module not installed within 2 min) | The same emulator limits | **Plan B (R11):** the subject IoU check runs on the phone: debug build, Settings → Debug → AI self-test (`app/src/debug/AiSelfTestScreen.kt`, the same photos, masks, IoU and 0.85 threshold as `SubjectIoUTest`). Mark chose to remove the CI emulator rows for it (open question 5, answer a); the test stays for real devices |
 | Quick selection's first stroke became Add | The mode was recomputed on every move, after the stroke had already started a selection | The mode is fixed when the stroke starts |
 | detekt LargeClass on `EditorViewModel` | Two new lines of wiring passed the limit | Gesture listener moved out; Wi-Fi-only through the actions host; suppression with reason |
 
@@ -290,9 +290,7 @@ POCO F7 Ultra, `lineover-<sha>.apk`:
    (Decision 9), not drawn freehand. Do you want to supply your own masks for these photos, or
    use your own photos? Default: keep these.
 4. (Still open from Stage 14) Is the red mask overlay readable on your photos?
-5. **The subject IoU test and CI (blocking the merge).** ML Kit's subject model cannot run on
-   the CI emulators after three attempts, so CI's emulator rows for `SubjectIoUTest` fail. Please
-   run the AI self-test on the phone (checklist, first item) and choose: (a) I remove those CI
-   rows (the test stays for real devices) and merge once your run passes; (b) keep the PR open
-   while I try something else in CI; (c) replace the requirement (e.g. CI runs the IoU with a
-   model that runs on the emulator, and ML Kit is checked only on the phone).
+5. **The subject IoU test and CI.** ML Kit's subject model cannot run on the CI emulators after
+   three attempts. **Answered by Mark: (a)** — the CI emulator rows for `SubjectIoUTest` are
+   removed (the test stays for real devices), and the PR merges once the AI self-test passes on
+   his phone.
