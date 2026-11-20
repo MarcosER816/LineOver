@@ -1,13 +1,45 @@
 package dev.mark.lineover.core.model
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 
-/** A layer and the ordered, immutable list of ops applied to it. */
+/**
+ * A layer and the ordered, immutable list of ops applied to it. The first [LayerType.Background]
+ * layer is the photo (its ops are the develop edit); Stage 13 added the other layer types and
+ * their properties. Fields after [ops] are written only when not their default, so graphs
+ * without layers keep the exact JSON they had (core/engine-native graph.cpp writes the same).
+ */
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class Layer(
     val id: String,
     val ops: List<OpParams> = emptyList(),
-)
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val type: LayerType = LayerType.Background,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val name: String = "",
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val visible: Boolean = true,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val locked: Boolean = false,
+    /** 0..100 %: the whole layer. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val opacity: Float = FULL,
+    /** 0..100 %: the layer's content (layer styles, when they arrive, ignore it). */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val fill: Float = FULL,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val blend: BlendMode = BlendMode.Normal,
+    /** Groups: isolated (composited on their own, then blended), else pass-through. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val isolated: Boolean = false,
+    /** Raster / smart object: the layer image's file in the app's layers folder. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val source: String = "",
+    /** Its full pixel size (oriented): width, height. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val sourceSize: List<Float> = emptyList(),
+    /** Source px -> document (output) px: a, b, c, d, e, f (x = a sx + c sy + e, y = b sx + d sy + f). */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val transform: List<Float> = emptyList(),
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val children: List<Layer> = emptyList(),
+) {
+    val isBackground: Boolean get() = type == LayerType.Background
+
+    companion object {
+        const val FULL = 100f
+    }
+}
 
 /**
  * The whole edit of one document: layers from bottom to top. The graph is an
@@ -15,9 +47,12 @@ data class Layer(
  * stores (graph snapshots, never pixels).
  */
 @Serializable
+@OptIn(ExperimentalSerializationApi::class)
 data class EditGraph(
     val schemaVersion: Int = SCHEMA_VERSION,
     val layers: List<Layer> = emptyList(),
+    /** Stage 13: where layers blend; written only when linear. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val blendSpace: BlendSpace = BlendSpace.Gamma,
 ) {
     /** A copy whose bottom layer ("background", created if missing) has [ops]. */
     fun withBackgroundOps(ops: List<OpParams>): EditGraph {

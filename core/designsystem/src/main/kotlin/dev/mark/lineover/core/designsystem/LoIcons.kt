@@ -74,6 +74,14 @@ object LoIcons {
 
     @DrawableRes val Visibility: Int = R.drawable.lo_ic_visibility
 
+    @DrawableRes val VisibilityOff: Int = R.drawable.lo_ic_visibility_off
+
+    @DrawableRes val Lock: Int = R.drawable.lo_ic_lock
+
+    @DrawableRes val LockOpen: Int = R.drawable.lo_ic_lock_open
+
+    @DrawableRes val DragHandle: Int = R.drawable.lo_ic_drag_handle
+
     @DrawableRes val ArrowBack: Int = R.drawable.lo_ic_arrow_back
 
     @DrawableRes val Settings: Int = R.drawable.lo_ic_settings

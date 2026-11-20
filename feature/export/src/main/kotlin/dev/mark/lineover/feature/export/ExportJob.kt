@@ -8,12 +8,14 @@ import dev.mark.lineover.core.engine.EngineSession
 import dev.mark.lineover.core.io.export.ExportDestinations
 import dev.mark.lineover.core.io.export.ExportMetadata
 import dev.mark.lineover.core.io.export.ExportTarget
+import dev.mark.lineover.core.io.layers.LayerSources
 import dev.mark.lineover.core.io.looks.LooksStore
 import dev.mark.lineover.core.io.project.DocumentLoad
 import dev.mark.lineover.core.io.project.ProjectLibrary
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.ExportFormat
 import dev.mark.lineover.core.model.ExportSettings
+import dev.mark.lineover.core.model.LayerMath
 import dev.mark.lineover.core.model.OpParams
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +30,9 @@ interface ExportEnvironment {
     val projects: ProjectLibrary
     val looks: LooksStore?
     val versionName: String
+
+    /** The images of the edit's layers (Stage 13). */
+    val layers: LayerSources? get() = null
 
     interface Provider {
         val exportEnvironment: ExportEnvironment
@@ -128,7 +133,7 @@ class ExportRunner(
             val session = EngineSession.open(context, source) ?: fail("This photo's format cannot be exported yet")
             val (file, size) =
                 session.use {
-                    registerLuts(session, graph.layers.flatMap { it.ops })
+                    registerLuts(session, LayerMath.allOps(graph))
                     render(session, RenderJob(graph, settings, project.name), work, ::step)
                 }
             step(ExportStep.Saving, ENCODE_SHARE)
@@ -166,8 +171,15 @@ class ExportRunner(
     ): Pair<File, Pair<Int, Int>> {
         val (graph, settings, name) = job
         val source = session.info.uri
-        session.setGraph(graph)?.let { fail("The edit could not be applied: $it") }
-        val image = session.renderForExport(work) { step(ExportStep.Rendering, RENDER_SHARE * it) }
+        // Layer images at export size (Stage 13), dropped again once the pixels are rendered.
+        registerLayers(session, graph)
+        val image =
+            try {
+                session.setGraph(graph)?.let { fail("The edit could not be applied: $it") }
+                session.renderForExport(work) { step(ExportStep.Rendering, RENDER_SHARE * it) }
+            } finally {
+                session.releaseFullLayerImages()
+            }
         image.use {
             val (width, height) = settings.outputSize(image.width, image.height)
             checkLimits(settings.format, width, height)
@@ -200,6 +212,20 @@ class ExportRunner(
                 !session.registerLut(lut.id, table)
             ) {
                 Log.w(TAG, "LUT ${lut.name} is not on this device; exported without it")
+            }
+        }
+    }
+
+    /** The layer images at export size; a missing one is left out (the engine skips its layer). */
+    private fun registerLayers(
+        session: EngineSession,
+        graph: EditGraph,
+    ) {
+        val store = environment.layers
+        for (name in LayerMath.sources(graph)) {
+            val file = store?.file(name)
+            if (file == null || !session.registerLayerImage(name, file, full = true)) {
+                Log.w(TAG, "layer image $name is not on this device; exported without it")
             }
         }
     }

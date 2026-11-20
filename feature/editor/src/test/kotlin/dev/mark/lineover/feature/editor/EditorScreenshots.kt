@@ -18,6 +18,7 @@ import dev.mark.lineover.core.designsystem.LineOverTheme
 import dev.mark.lineover.core.designsystem.LoColors
 import dev.mark.lineover.core.engine.CompareMode
 import dev.mark.lineover.core.engine.Histogram
+import dev.mark.lineover.core.model.BlendMode
 import dev.mark.lineover.core.model.CropAspect
 import dev.mark.lineover.core.model.CropMath
 import dev.mark.lineover.core.model.DetailTools
@@ -29,6 +30,8 @@ import dev.mark.lineover.core.model.GuideLine
 import dev.mark.lineover.core.model.HistoryLabels
 import dev.mark.lineover.core.model.HslBand
 import dev.mark.lineover.core.model.HslChannel
+import dev.mark.lineover.core.model.Layer
+import dev.mark.lineover.core.model.LayerType
 import dev.mark.lineover.core.model.LightAdjustments
 import dev.mark.lineover.core.model.LightParam
 import dev.mark.lineover.core.model.OpParams
@@ -303,6 +306,39 @@ abstract class EditorScreenshots(
 
     @Test
     fun layersSheet() = shot("sheet_layers", base().copy(panel = EditorPanel.Layers))
+
+    /** Stage 13: a photo layer (selected: its opacity slider in the row), a group with an adjustment, a hidden layer. */
+    @Test
+    fun layersStack() {
+        val graph =
+            EditGraph(
+                layers =
+                    listOf(
+                        Layer(EditGraph.BACKGROUND),
+                        Layer(
+                            "p2",
+                            type = LayerType.Raster,
+                            name = "Photo 2",
+                            opacity = 50f,
+                            blend = BlendMode.Multiply,
+                            source = "0123456789abcdef0123456789abcdef.jpg",
+                            sourceSize = listOf(4000f, 3000f),
+                        ),
+                        Layer(
+                            "g1",
+                            type = LayerType.Group,
+                            name = "Toning",
+                            isolated = true,
+                            children =
+                                listOf(
+                                    Layer("a1", ops = listOf(OpParams.Saturation(-100f)), type = LayerType.Adjustment, name = "Saturation"),
+                                    Layer("h1", type = LayerType.SmartObject, name = "Smart object 1", visible = false, locked = true),
+                                ),
+                        ),
+                    ),
+            )
+        shot("sheet_layers_stack", base().copy(panel = EditorPanel.Layers, graph = graph, selectedLayerId = "p2"))
+    }
 
     @Test
     fun addLayerMenu() = screenShot("menu_add_layer", base().copy(panel = EditorPanel.Layers, menu = EditorMenu.AddLayer))

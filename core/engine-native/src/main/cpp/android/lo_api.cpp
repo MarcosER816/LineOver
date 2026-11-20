@@ -8,6 +8,7 @@
 
 #include "engine.h"
 #include "lineover/color_ops.h"
+#include "lineover/layers.h"
 #include "lineover/lut.h"
 #include "lineover/tiling.h"
 
@@ -228,6 +229,36 @@ int lo_register_lut(const char* id, int size, const float* domain_min3, const fl
     lo::registerLut(id, std::move(lut));
     return 1;
 }
+
+int lo_register_layer_image(const char* id, const void* pixels, size_t stride, int width, int height, int format,
+                            int premultiplied, int full) {
+    if (id == nullptr || pixels == nullptr || width <= 0 || height <= 0 || !validFormat(format)) return 0;
+    lo::RegionSource source;
+    source.pixels = static_cast<const std::uint8_t*>(pixels);
+    source.stride = stride;
+    source.format = static_cast<lo::PixelFormat>(format);
+    source.regionW = width;
+    source.regionH = height;
+    source.rawLevelW = width;
+    source.rawLevelH = height;
+    source.orientation = 1;
+    source.premultiplied = premultiplied != 0;
+    auto image = std::make_shared<lo::ImageF32>();
+    image->width = width;
+    image->height = height;
+    image->rgba.resize(static_cast<std::size_t>(width) * height * 4);
+    lo::regionToTile(source, 0, 0, width, height, image->rgba.data());
+    lo::layers::registerLayerImage(id, std::move(image), full != 0);
+    return 1;
+}
+
+void lo_unregister_layer_image(const char* id) {
+    if (id != nullptr) lo::layers::unregisterLayerImage(id);
+}
+
+void lo_release_full_layer_images(void) { lo::layers::releaseFullLayerImages(); }
+
+void lo_engine_render_composite(lo_engine* engine) { engine->engine->renderComposite(); }
 
 void lo_unregister_lut(const char* id) {
     if (id != nullptr) lo::unregisterLut(id);

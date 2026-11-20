@@ -98,6 +98,7 @@ fun LineOverNavigation(
                         saveScope = container.appScope,
                         lensProfiles = container.lensProfiles,
                         looks = container.looks,
+                        layers = container.layerSources,
                     )
                 }
                 entry<ExportRoute>(

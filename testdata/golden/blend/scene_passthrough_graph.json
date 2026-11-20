@@ -1,0 +1,155 @@
+{
+ "schemaVersion": 1,
+ "layers": [
+  {
+   "id": "background",
+   "ops": []
+  },
+  {
+   "type": "raster",
+   "source": "s1",
+   "sourceSize": [
+    80,
+    60
+   ],
+   "transform": [
+    1.1817693036146495,
+    0.2083778132003164,
+    -0.2083778132003164,
+    1.1817693036146495,
+    20.0,
+    12.0
+   ],
+   "blend": "multiply",
+   "opacity": 80.0,
+   "fill": 90.0
+  },
+  {
+   "type": "group",
+   "isolated": false,
+   "opacity": 70.0,
+   "children": [
+    {
+     "type": "adjustment",
+     "blend": "screen",
+     "opacity": 60.0,
+     "ops": [
+      {
+       "op": "exposure",
+       "ev": 1.0
+      }
+     ]
+    },
+    {
+     "type": "raster",
+     "source": "s1",
+     "sourceSize": [
+      80,
+      60
+     ],
+     "transform": [
+      0.563815572471545,
+      -0.20521208599540122,
+      0.20521208599540122,
+      0.563815572471545,
+      70.0,
+      40.0
+     ]
+    }
+   ]
+  },
+  {
+   "type": "group",
+   "isolated": false,
+   "blend": "difference",
+   "fill": 80.0,
+   "children": [
+    {
+     "type": "smart",
+     "source": "s1",
+     "sourceSize": [
+      80,
+      60
+     ],
+     "transform": [
+      0.9,
+      0.0,
+      -0.0,
+      0.9,
+      30.0,
+      30.0
+     ],
+     "ops": [
+      {
+       "op": "exposure",
+       "ev": -0.5
+      }
+     ]
+    },
+    {
+     "type": "raster",
+     "source": "s1",
+     "sourceSize": [
+      80,
+      60
+     ],
+     "transform": [
+      1.0,
+      0.0,
+      -0.0,
+      1.0,
+      0.0,
+      0.0
+     ],
+     "visible": false
+    },
+    {
+     "type": "adjustment",
+     "ops": [
+      {
+       "op": "invert"
+      }
+     ],
+     "opacity": 50.0
+    }
+   ]
+  },
+  {
+   "type": "text"
+  },
+  {
+   "type": "raster",
+   "source": "s1",
+   "sourceSize": [
+    80,
+    60
+   ],
+   "transform": [
+    0.3535533905932738,
+    0.35355339059327373,
+    -0.35355339059327373,
+    0.3535533905932738,
+    100.37,
+    50.21
+   ],
+   "blend": "color"
+  },
+  {
+   "type": "raster",
+   "source": "s1",
+   "sourceSize": [
+    80,
+    60
+   ],
+   "transform": [
+    0.7,
+    0.0,
+    -0.0,
+    0.7,
+    5.13,
+    60.29
+   ],
+   "blend": "soft_light"
+  }
+ ]
+}

@@ -307,6 +307,28 @@ JNIEXPORT jboolean LO_NATIVE(nativeRegisterLut)(JNIEnv* env, jobject, jstring id
     return ok != 0 ? JNI_TRUE : JNI_FALSE;
 }
 
+// Stage 13: a layer image from a decoded Bitmap (process-wide; the engine handle is not used).
+JNIEXPORT jboolean LO_NATIVE(nativeRegisterLayerImage)(JNIEnv* env, jobject, jstring id, jobject bitmap, jint format,
+                                                       jboolean full) {
+    const char* text = env->GetStringUTFChars(id, nullptr);
+    const bool ok = withPixels(env, bitmap, format, [&](void* pixels, const AndroidBitmapInfo& info) {
+        return lo_register_layer_image(text, pixels, info.stride, static_cast<int>(info.width), static_cast<int>(info.height),
+                                       format, premultiplied(info), full ? 1 : 0) == 1;
+    });
+    env->ReleaseStringUTFChars(id, text);
+    return ok ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void LO_NATIVE(nativeUnregisterLayerImage)(JNIEnv* env, jobject, jstring id) {
+    const char* text = env->GetStringUTFChars(id, nullptr);
+    lo_unregister_layer_image(text);
+    env->ReleaseStringUTFChars(id, text);
+}
+
+JNIEXPORT void LO_NATIVE(nativeReleaseFullLayerImages)(JNIEnv*, jobject) { lo_release_full_layer_images(); }
+
+JNIEXPORT void LO_NATIVE(nativeRenderComposite)(JNIEnv*, jobject, jlong engine) { lo_engine_render_composite(handle(engine)); }
+
 JNIEXPORT void LO_NATIVE(nativeUnregisterLut)(JNIEnv* env, jobject, jstring id) {
     const char* text = env->GetStringUTFChars(id, nullptr);
     lo_unregister_lut(text);

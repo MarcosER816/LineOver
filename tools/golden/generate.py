@@ -21,6 +21,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+import blend_reference as blend
 import detail_reference as detail
 import export_reference as export
 import lensfun_reference
@@ -78,6 +79,7 @@ def build_outputs() -> dict[str, np.ndarray]:
     outputs.update(detail_outputs())
     outputs.update(lut_outputs())
     outputs.update(export_outputs())
+    outputs.update(blend_outputs())
     return outputs
 
 
@@ -322,6 +324,36 @@ def lut_outputs() -> dict:
     return out
 
 
+def blend_outputs() -> dict:
+    """Stage 13: every blend mode on the tie-free grid in both blending spaces, and the
+    compositor scene (layers, pass-through and isolated groups, adjustments, smart object)."""
+    out = {}
+    for space in ("gamma", "linear"):
+        back, src = blend.mode_inputs(space)
+        out[f"blend/{space}_backdrop_f32.npy"] = back
+        out[f"blend/{space}_source_f32.npy"] = src
+        for mode in blend.MODES:
+            out[f"blend/{space}_{mode}_f32.npy"] = blend.mode_output(mode, space)
+    scene = reference.scene_rec2020()
+    images = {"s1": blend.layer_source()}
+    out["blend/layer_source_f32.npy"] = images["s1"]
+    def graph(layers, space="gamma"):
+        g = {"schemaVersion": 1, "layers": [{"id": "background", "ops": []}] + layers}
+        if space != "gamma":
+            g["blendSpace"] = space
+        return json.dumps(g, indent=1) + "\n"
+
+    out["blend/scene_graph.json"] = graph(blend.scene_layers(True))
+    out["blend/scene_passthrough_graph.json"] = graph(blend.scene_layers(False))
+    out["blend/scene_linear_graph.json"] = graph(blend.scene_layers(True), "linear")
+    out["blend/scene_gamma_f32.npy"] = blend.composite_document(scene, blend.scene_layers(True), images, "gamma")
+    out["blend/scene_passthrough_f32.npy"] = blend.composite_document(scene, blend.scene_layers(False), images, "gamma")
+    out["blend/scene_linear_f32.npy"] = blend.composite_document(scene, blend.scene_layers(True), images, "linear")
+    half = scene[::2, ::2]  # the preview: half the document, a background at that scale
+    out["blend/scene_half_f32.npy"] = blend.composite_document(half, blend.scene_layers(True), images, "gamma", scale=0.5)
+    return out
+
+
 def export_outputs() -> dict:
     """Stage 12: the export's pixel steps on the HDR scene (resize, sharpen, watermark,
     conversion to 8 / 16-bit codes) and the three ICC profiles, byte for byte."""
@@ -407,6 +439,7 @@ def main() -> int:
     reference.color_self_check()
     reference.grade_self_check()
     export.self_check()
+    blend.self_check()
     outputs = build_outputs()
 
     if args.check:

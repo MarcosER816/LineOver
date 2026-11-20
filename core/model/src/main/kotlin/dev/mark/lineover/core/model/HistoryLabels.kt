@@ -23,45 +23,85 @@ object HistoryLabels {
         after: EditGraph,
     ): GraphChange {
         if (before == after) return GraphChange("No change", "")
+        // Layers above the photo (Stage 13): added, removed or moved ones are named by the
+        // action that did it; changes of one layer are named after it.
+        val layersMoved = LayerMath.flatten(before).map { it.first.id } != LayerMath.flatten(after).map { it.first.id }
         // A layer missing on one side has no ops (the background appears with the first edit).
-        val ids = (before.layers.map { it.id } + after.layers.map { it.id }).distinct()
+        val ids =
+            (before.layers.map { it.id } + after.layers.map { it.id })
+                .distinct()
+                .filter { id -> (before.layers + after.layers).first { it.id == id }.isBackground }
         val changes =
-            ids.flatMap { id ->
-                opChanges(
-                    before.layers
-                        .firstOrNull { it.id == id }
-                        ?.ops
-                        .orEmpty(),
-                    after.layers
-                        .firstOrNull { it.id == id }
-                        ?.ops
-                        .orEmpty(),
-                )
-            }
-        if (changes.isEmpty()) {
-            return if (before.layers.map { it.id } !=
-                after.layers.map { it.id }
-            ) {
-                GraphChange("Layers", "layers")
+            if (layersMoved) {
+                emptyList()
             } else {
+                layerChanges(before, after)
+            } +
+                ids.flatMap { id ->
+                    opChanges(
+                        before.layers
+                            .firstOrNull { it.id == id }
+                            ?.ops
+                            .orEmpty(),
+                        after.layers
+                            .firstOrNull { it.id == id }
+                            ?.ops
+                            .orEmpty(),
+                    )
+                }
+        return when {
+            layersMoved || (changes.isEmpty() && before.layers.map { it.id } != after.layers.map { it.id }) -> {
+                GraphChange("Layers", "layers")
+            }
+
+            changes.isEmpty() && before.blendSpace != after.blendSpace -> {
+                GraphChange("Blend space: ${if (after.blendSpace == BlendSpace.Linear) "linear" else "gamma"}", "blend_space")
+            }
+
+            changes.isEmpty() -> {
                 GraphChange("Edit", "order")
             }
-        }
-        val key = changes.joinToString(",") { it.key }
-        val label =
-            when {
-                changes.size == 1 -> changes.single().label
-                changes.map { it.op }.distinct().size == 1 -> name(changes.first().op)
-                else -> "${changes.first().label} + ${changes.size - 1} more"
+
+            changes.size == 1 -> {
+                GraphChange(changes.single().label, changes.single().key)
             }
-        return GraphChange(label, key)
+
+            else -> {
+                val label =
+                    if (changes.map { it.op }.distinct().size ==
+                        1
+                    ) {
+                        name(changes.first().op)
+                    } else {
+                        "${changes.first().label} + ${changes.size - 1} more"
+                    }
+                GraphChange(label, changes.joinToString(",") { it.key })
+            }
+        }
     }
 
-    private class OpChange(
-        val op: String,
-        val key: String,
-        val label: String,
-    )
+    /** Property and op changes of each layer above the photo (same layers on both sides). */
+    private fun layerChanges(
+        before: EditGraph,
+        after: EditGraph,
+    ): List<OpChange> {
+        val old = LayerMath.flatten(before).associate { it.first.id to it.first }
+        return LayerMath.flatten(after).map { it.first }.flatMap { b ->
+            val a = old[b.id]
+            if (a == null || a.copy(children = emptyList()) == b.copy(children = emptyList())) return@flatMap emptyList()
+            val name = b.name.ifBlank { b.type.label }
+            val key = "layer.${b.id}"
+            val ops =
+                if (a.ops !=
+                    b.ops
+                ) {
+                    opChanges(a.ops, b.ops).map { c -> OpChange(key, "$key.${c.key}", "$name: ${c.label}") }
+                } else {
+                    emptyList()
+                }
+            (propertyChanges(a, b, name, key) + ops).ifEmpty { listOf(OpChange(key, key, name)) }
+        }
+    }
 
     private fun opChanges(
         before: List<OpParams>,
@@ -216,3 +256,32 @@ object HistoryLabels {
     private val UNSIGNED = setOf("temperature", "levels", "level", "density", "hue", "scale", "vignettingMidpoint")
     private val UNSIGNED_OPS = setOf("posterize", "threshold", "sharpen", "noise_reduction", "grain", "profile", "lut")
 }
+
+/** [value] when true, else null (a list of optional changes). */
+private inline fun <T> Boolean.then(value: () -> T): T? = if (this) value() else null
+
+private class OpChange(
+    val op: String,
+    val key: String,
+    val label: String,
+)
+
+/** What changed of one layer's own settings (opacity, blend, ...), in the order the panel shows them. */
+private fun propertyChanges(
+    a: Layer,
+    b: Layer,
+    name: String,
+    key: String,
+): List<OpChange> =
+    listOfNotNull(
+        (a.opacity != b.opacity).then { OpChange(key, "$key.opacity", "$name: Opacity ${b.opacity.roundToInt()} %") },
+        (a.fill != b.fill).then { OpChange(key, "$key.fill", "$name: Fill ${b.fill.roundToInt()} %") },
+        (a.blend != b.blend).then { OpChange(key, "$key.blend", "$name: ${b.blend.label}") },
+        (a.visible != b.visible).then { OpChange(key, "$key.visible", "${if (b.visible) "Show" else "Hide"} $name") },
+        (a.locked != b.locked).then { OpChange(key, "$key.locked", "${if (b.locked) "Lock" else "Unlock"} $name") },
+        (a.isolated != b.isolated).then {
+            OpChange(key, "$key.isolated", "$name: ${if (b.isolated) "Isolated" else "Pass through"}")
+        },
+        (a.transform != b.transform).then { OpChange(key, "$key.transform", "$name: Place") },
+        (a.name != b.name).then { OpChange(key, "$key.name", "Rename $name") },
+    )

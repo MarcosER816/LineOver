@@ -49,6 +49,7 @@ add_library(lo_engine STATIC
     src/detail.cpp
     src/lut.cpp
     src/auto_adjust.cpp
+    src/layers.cpp
     src/output.cpp
     src/output_files.cpp
     src/tile_store.cpp)
@@ -91,7 +92,7 @@ else()
         target_link_libraries(lo_testing PUBLIC lo_engine lo_spng ZLIB::ZLIB)
 
         foreach(test_name sample_test golden_assert_test golden_identity_test
-                color_test ops_test graph_test tiling_test tile_store_test light_test color_ops_test grade_ops_test photo_test thumbnail_test geometry_test lines_test detail_test lut_test output_test)
+                color_test ops_test graph_test tiling_test tile_store_test light_test color_ops_test grade_ops_test photo_test thumbnail_test geometry_test lines_test detail_test lut_test output_test blend_test)
             add_executable(${test_name} tests/${test_name}.cpp)
             target_compile_options(${test_name} PRIVATE ${LO_WARNINGS})
             target_link_libraries(${test_name} PRIVATE lo_testing)

@@ -170,6 +170,21 @@ internal class NativeEngine(
 
     fun unregisterLut(id: String) = nativeUnregisterLut(id)
 
+    /** Stage 13: a layer image (process-wide) from a decoded bitmap in the engine [format]; [full] = the export set. */
+    fun registerLayerImage(
+        id: String,
+        bitmap: Bitmap,
+        format: Int,
+        full: Boolean,
+    ): Boolean = nativeRegisterLayerImage(id, bitmap, format, full)
+
+    fun unregisterLayerImage(id: String) = nativeUnregisterLayerImage(id)
+
+    fun releaseFullLayerImages() = nativeReleaseFullLayerImages()
+
+    /** Renders a layered graph's composite for the canvas, or clears it (CPU, the calling thread). */
+    fun renderComposite() = nativeRenderComposite(h())
+
     /** Auto (percentile stretch): (exposure EV, blacks) or null before a preview. */
     fun autoLight(): FloatArray? = nativeAutoLight(h())
 
@@ -273,6 +288,19 @@ internal class NativeEngine(
     ): Boolean
 
     private external fun nativeUnregisterLut(id: String)
+
+    private external fun nativeRegisterLayerImage(
+        id: String,
+        bitmap: Bitmap,
+        format: Int,
+        full: Boolean,
+    ): Boolean
+
+    private external fun nativeUnregisterLayerImage(id: String)
+
+    private external fun nativeReleaseFullLayerImages()
+
+    private external fun nativeRenderComposite(engine: Long)
 
     private external fun nativeSample(
         engine: Long,

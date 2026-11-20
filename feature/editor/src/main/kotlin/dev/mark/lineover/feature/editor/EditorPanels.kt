@@ -63,7 +63,7 @@ internal fun ColumnScope.PanelContent(
         }
 
         EditorPanel.Layers -> {
-            LayersSheet(state, onIntent, close)
+            LayersPanel(state, onIntent, close)
         }
 
         EditorPanel.History -> {
@@ -214,93 +214,6 @@ internal fun SlotPlaceholder(
             )
             if (detail != null) Text(detail, style = LoType.Caption, color = LoColors.TextSecondary)
         }
-    }
-}
-
-/** Layers: the layer list, blend mode / opacity / fill, masks and the add-layer menu (Stages 13, 14, 24). */
-@Composable
-private fun LayersSheet(
-    state: EditorState,
-    onIntent: (EditorIntent) -> Unit,
-    onClose: () -> Unit,
-) {
-    PanelHeader("Layers", "Layers arrive in Stage 13", onClose)
-    Column(Modifier.padding(horizontal = LoSpacing.M), verticalArrangement = Arrangement.spacedBy(LoSpacing.Xs)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box {
-                TextButton(onClick = { onIntent(EditorIntent.OpenMenu(EditorMenu.AddLayer)) }) {
-                    Icon(painterResource(LoIcons.Add), contentDescription = null, tint = LoColors.Accent)
-                    Text("Add layer", style = LoType.Body, color = LoColors.Accent)
-                }
-                AddMenu(
-                    expanded = state.menu == EditorMenu.AddLayer,
-                    ids = listOf("layers.raster_layer", "layers.adjustment_layer", "layers.group", "layers.smart_object"),
-                    onIntent = onIntent,
-                )
-            }
-        }
-        // The photo itself is the bottom layer of every project.
-        LayerRow(name = state.project?.name ?: "Photo", caption = "Background · Normal · 100 %")
-        Text("Blend mode, opacity and fill", style = LoType.Caption, color = LoColors.TextSecondary)
-        val blend = requireNotNull(ToolRegistry["layers.blend_modes"])
-        Row(
-            Modifier.fillMaxWidth().testTag(EditorTags.slot(blend.id)),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(LoSpacing.Xs),
-        ) {
-            LoChip("Normal", selected = true, onClick = {}, enabled = false)
-            Text("27 blend modes · Stage ${blend.stage}", style = LoType.Caption, color = LoColors.TextSecondary)
-        }
-        DisabledSlider("layers.opacity", "Opacity")
-        DisabledSlider("layers.fill", "Fill")
-        Text("Masks", style = LoType.Caption, color = LoColors.TextSecondary)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(LoSpacing.Xs)) {
-            listOf("layers.layer_mask", "layers.clipping_mask", "layers.vector_mask").forEach { id ->
-                val tool = requireNotNull(ToolRegistry[id])
-                LoChip(
-                    "${tool.name} · ${tool.stage}",
-                    selected = false,
-                    onClick = { onIntent(EditorIntent.SelectTool(id)) },
-                    modifier = Modifier.testTag(EditorTags.slot(id)),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun DisabledSlider(
-    id: String,
-    label: String,
-) {
-    val tool = requireNotNull(ToolRegistry[id])
-    Column(Modifier.testTag(EditorTags.slot(id))) {
-        LoSlider(value = 100f, onValueChange = {
-        }, label = "$label · Stage ${tool.stage}", valueRange = 0f..100f, defaultValue = 100f, enabled = false)
-    }
-}
-
-@Composable
-private fun LayerRow(
-    name: String,
-    caption: String,
-) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .heightIn(min = LoDimens.TouchTargetMin + LoSpacing.Xs)
-            .clip(LoShapes.Medium)
-            .background(LoColors.Surface2)
-            .padding(horizontal = LoSpacing.S),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(LoSpacing.S),
-    ) {
-        Icon(painterResource(LoIcons.Image), contentDescription = null, tint = LoColors.TextSecondary)
-        Column(Modifier.weight(1f)) {
-            Text(name, style = LoType.Body, color = LoColors.TextPrimary, maxLines = 1)
-            Text(caption, style = LoType.Caption, color = LoColors.TextSecondary)
-        }
-        Icon(painterResource(LoIcons.Visibility), contentDescription = "Visible", tint = LoColors.TextSecondary)
     }
 }
 

@@ -31,4 +31,13 @@ bool renderThumbnail(const ImageF32& source, const GuidedCoefficients* coefficie
                      std::vector<std::uint8_t>* out, std::string* error, int* width, int* height,
                      const DetailFields* fields = nullptr, int fullWidth = 0);
 
+struct Graph;
+
+// The edit as a float image in output space (working colours): the background's ops on
+// [source], its geometry, the layers above it (Stage 13, preview layer images) and the
+// finishing over them all, at most [maxEdge] pixels on the long edge when there is a
+// geometry (else the source's size). The canvas shows this for layered documents.
+bool renderGraphImage(const ImageF32& source, const GuidedCoefficients* coefficients, const Graph& graph, ImageF32* out,
+                      const DetailFields* fields, int fullWidth, int maxEdge);
+
 }  // namespace lo
