@@ -219,7 +219,11 @@ jobs:
             target: google_apis
             suffix: ""
             tests: connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.notClass=dev.mark.lineover.core.ml.SubjectIoUTest
-          - api-level: 36
+          - api-level: 34
+            target: google_apis_playstore
+            suffix: ", Play Store"
+            tests: ":core:ml:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=dev.mark.lineover.core.ml.SubjectIoUTest"
+          - api-level: 35
             target: google_apis_playstore
             suffix: ", Play Store"
             tests: ":core:ml:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=dev.mark.lineover.core.ml.SubjectIoUTest"
