@@ -166,7 +166,7 @@ internal fun PhotoCanvas(
     val canvas = state.canvas
     val surround = state.surround.color.toArgb()
     val swipeMode = state.swipeMode
-    val pickMode = state.pickMode
+    val pickMode = state.canvasPickMode
     val size = state.canvasSize
     val cropFrame = state.cropFrame
     val oneToOne = state.oneToOneRequest

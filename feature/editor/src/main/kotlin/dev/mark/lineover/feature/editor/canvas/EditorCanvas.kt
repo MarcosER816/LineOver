@@ -83,6 +83,12 @@ interface EditorCanvas :
         file: File,
     ): Boolean = false
 
+    /** Stage 14: the canvas shows layer [layerId]'s mask ([view]: 0 none, 1 grey, 2 red overlay). Off the main thread. */
+    fun setMaskView(
+        layerId: String?,
+        view: Int,
+    ) = Unit
+
     /** Registers a 3D LUT so graphs can name [id]; false when refused. */
     fun registerLut(
         id: String,
@@ -244,6 +250,11 @@ private class EngineCanvas(
         id: String,
         file: File,
     ): Boolean = session.registerLayerImage(id, file, full = false)
+
+    override fun setMaskView(
+        layerId: String?,
+        view: Int,
+    ) = session.setMaskView(layerId.orEmpty(), view)
 
     override fun whiteBalanceAt(
         u: Float,

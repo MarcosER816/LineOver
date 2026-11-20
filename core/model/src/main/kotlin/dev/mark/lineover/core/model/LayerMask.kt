@@ -1,0 +1,77 @@
+package dev.mark.lineover.core.model
+
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonClassDiscriminator
+
+/**
+ * A layer mask (Stage 14): a base value (1 = white, the layer shows; 0 = black, hidden) and the
+ * paint on it, in document pixels. The engine rasterises it per region into R16F tiles,
+ * inverts it, feathers it (Gaussian of sigma [feather] document pixels, like OpenCV's
+ * GaussianBlur) and scales it by [density]: shown = 1 - density (1 - mask). The paint is the
+ * mask's history: undoable, non-destructive and the same at any resolution.
+ */
+@OptIn(ExperimentalSerializationApi::class)
+@Serializable
+data class LayerMask(
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val base: Float = WHITE,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val enabled: Boolean = true,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val inverted: Boolean = false,
+    /** 0..100 %: how much the black hides. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val density: Float = FULL,
+    /** Gaussian sigma in document pixels. */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val feather: Float = 0f,
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val paint: List<MaskPaint> = emptyList(),
+) {
+    /** [paint] with one more operation; a gradient replaces everything before it. */
+    fun with(op: MaskPaint): LayerMask = copy(paint = if (op is MaskPaint.Gradient) listOf(op) else paint + op)
+
+    /** The last operation replaced (a stroke that grows while the finger moves). */
+    fun withLast(op: MaskPaint): LayerMask = copy(paint = paint.dropLast(1) + op)
+
+    companion object {
+        const val WHITE = 1f
+        const val BLACK = 0f
+        const val FULL = 100f
+        const val MAX_FEATHER = 250f
+    }
+}
+
+/** Paint on a mask, in document pixels. Serialised with a "kind" (the graph's ops use "op"). */
+@OptIn(ExperimentalSerializationApi::class)
+@Serializable
+@JsonClassDiscriminator("kind")
+sealed interface MaskPaint {
+    /**
+     * A round brush along a polyline ([points] = x0, y0, x1, y1, ...). [value] 1 paints white,
+     * 0 black; [hardness] 0..1 is where the falloff starts; [opacity] 0..100 %.
+     */
+    @Serializable
+    @SerialName("stroke")
+    data class Stroke(
+        val value: Float,
+        val radius: Float,
+        val hardness: Float,
+        val opacity: Float,
+        val points: List<Float>,
+    ) : MaskPaint {
+        fun plus(
+            x: Float,
+            y: Float,
+        ): Stroke = copy(points = points + x + y)
+    }
+
+    /** Replaces the mask with a linear ramp: [from] at (x0, y0) to [to] at (x1, y1). */
+    @Serializable
+    @SerialName("gradient")
+    data class Gradient(
+        val x0: Float,
+        val y0: Float,
+        val x1: Float,
+        val y1: Float,
+        val from: Float,
+        val to: Float,
+    ) : MaskPaint
+}

@@ -24,8 +24,10 @@ import dev.mark.lineover.core.model.ExportColorSpace
 import dev.mark.lineover.core.model.ExportFormat
 import dev.mark.lineover.core.model.ExportSettings
 import dev.mark.lineover.core.model.Layer
+import dev.mark.lineover.core.model.LayerMask
 import dev.mark.lineover.core.model.LayerMath
 import dev.mark.lineover.core.model.LayerType
+import dev.mark.lineover.core.model.MaskPaint
 import dev.mark.lineover.core.model.MetadataMode
 import dev.mark.lineover.core.model.OpParams
 import dev.mark.lineover.core.model.ResizeMode
@@ -314,6 +316,17 @@ class ExportRoundTripTest {
                 assertTrue("($x, $y) = ${Integer.toHexString(c)}", Color.red(c) >= 252 && Color.green(c) <= 3 && Color.blue(c) <= 3)
             }
         }
+        // Stage 14: a mask that hides all, or a feathered gradient that hides the left half.
+        val hidden = withLayer(layer.copy(mask = LayerMask(base = 0f)))
+        assertTrue("a black mask let the layer through", plain.indices.maxOf { i -> channelDiff(plain[i], hidden[i]) } <= 1)
+        val half =
+            withLayer(
+                layer.copy(mask = LayerMask(feather = 4f, paint = listOf(MaskPaint.Gradient(W / 2f - 1f, 0f, W / 2f + 1f, 0f, 0f, 1f)))),
+            )
+        val left = H / 2 * W + W / 4
+        val right = H / 2 * W + 3 * W / 4
+        assertTrue("masked side changed", channelDiff(plain[left], half[left]) <= 1)
+        assertTrue("shown side not red", Color.red(half[right]) >= 252 && Color.green(half[right]) <= 3)
         for (off in listOf(layer.copy(visible = false), layer.copy(opacity = 0f))) {
             val same = withLayer(off)
             val worst = plain.indices.maxOf { i -> channelDiff(plain[i], same[i]) }

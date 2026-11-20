@@ -119,6 +119,7 @@ internal fun LayersPanel(
         AddLayerButton(state, onIntent)
         LayerList(state, layers, onIntent)
         val selected = state.selectedLayer
+        MaskSection(state, selected, onIntent)
         LayerProperties(state, selected, onIntent)
         LayerOperations(state, selected, onIntent)
         Text("Blending", style = LoType.Caption, color = LoColors.TextSecondary)
@@ -127,18 +128,6 @@ internal fun LayersPanel(
             selectedIndex = if (state.graph.blendSpace == BlendSpace.Linear) 1 else 0,
             onSelect = { send(onIntent, LayerAction.SetBlendSpace(if (it == 1) BlendSpace.Linear else BlendSpace.Gamma)) },
         )
-        Text("Masks", style = LoType.Caption, color = LoColors.TextSecondary)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(LoSpacing.Xs)) {
-            listOf("layers.layer_mask", "layers.clipping_mask", "layers.vector_mask").forEach { id ->
-                val tool = requireNotNull(ToolRegistry[id])
-                LoChip(
-                    "${tool.name} · ${tool.stage}",
-                    selected = false,
-                    onClick = { onIntent(EditorIntent.SelectTool(id)) },
-                    modifier = Modifier.testTag(EditorTags.slot(id)),
-                )
-            }
-        }
     }
 }
 
@@ -259,6 +248,7 @@ internal fun captionOf(layer: Layer): String =
         append(" %")
         if (layer.fill != Layer.FULL) append(" · fill ${layer.fill.roundToInt()} %")
         if (layer.type == LayerType.Group) append(if (layer.isolated) " · isolated" else " · pass through")
+        if (layer.clip) append(" · clipped")
     }
 
 /** The rows, top layer first. Dragging a handle moves a layer among its siblings. */
@@ -282,6 +272,8 @@ private fun LayerList(
                     layer = layer,
                     depth = depth,
                     selected = layer.id == selected,
+                    maskTargeted = layer.id == selected && state.maskTarget,
+                    docSize = state.canvasSize,
                     onIntent = onIntent,
                     modifier =
                         Modifier
@@ -336,6 +328,8 @@ private fun LayerRow(
     layer: Layer,
     depth: Int,
     selected: Boolean,
+    maskTargeted: Boolean,
+    docSize: Pair<Int, Int>?,
     onIntent: (EditorIntent) -> Unit,
     modifier: Modifier,
     handle: Modifier,
@@ -398,13 +392,27 @@ private fun LayerRow(
                     if (layer.visible) "Hide $name" else "Show $name",
                     onClick = { send(onIntent, LayerAction.SetVisible(layer.id, !layer.visible)) },
                 )
+                if (layer.clip) {
+                    // Clipped to the layer below (Stage 14).
+                    Text(
+                        "\u21B3",
+                        style = LoType.Body,
+                        color = LoColors.Accent,
+                        modifier =
+                            Modifier.semantics {
+                                contentDescription =
+                                    "Clipped"
+                            },
+                    )
+                }
                 Icon(
                     painterResource(iconOf(layer.type)),
                     contentDescription = null,
-                    tint = LoColors.TextSecondary,
+                    tint = if (selected && !maskTargeted) LoColors.Accent else LoColors.TextSecondary,
                     modifier = Modifier.padding(horizontal = LoSpacing.Xxs),
                 )
-                Column(Modifier.weight(1f).alpha(if (layer.visible) 1f else HIDDEN_ALPHA)) {
+                MaskThumbnail(layer, docSize, maskTargeted, onIntent)
+                Column(Modifier.weight(1f).padding(start = LoSpacing.Xs).alpha(if (layer.visible) 1f else HIDDEN_ALPHA)) {
                     Text(name, style = LoType.Body, color = LoColors.TextPrimary, maxLines = 1)
                     Text(captionOf(layer), style = LoType.Caption, color = LoColors.TextSecondary, maxLines = 1)
                 }

@@ -88,6 +88,15 @@ class FakeEditorCanvas(
     /** 3D LUTs registered with this canvas, by id. */
     val registeredLayers = mutableListOf<String>()
 
+    val maskViews = mutableListOf<Pair<String?, Int>>()
+
+    override fun setMaskView(
+        layerId: String?,
+        view: Int,
+    ) {
+        synchronized(maskViews) { maskViews += layerId to view }
+    }
+
     override fun registerLayerImage(
         id: String,
         file: java.io.File,

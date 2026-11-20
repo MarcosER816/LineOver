@@ -229,6 +229,10 @@ data class EditorState(
     val surround: CanvasSurround = CanvasSurround.Dark,
     /** The layer the Layers panel edits (Stage 13); null = the photo. */
     val selectedLayerId: String? = null,
+    /** Stage 14: the selected layer's mask is the target (one finger paints it). */
+    val maskTarget: Boolean = false,
+    val maskBrush: MaskBrush = MaskBrush(),
+    val maskView: MaskView = MaskView.None,
 ) {
     val selectedToolId: String? get() = (panel as? EditorPanel.Tool)?.id
 
@@ -601,6 +605,8 @@ class EditorViewModel(
             override fun resubmit() {
                 scheduler?.submit(this@EditorViewModel.state.value.canvasGraph)
             }
+
+            override fun endEdit() = onIntent(EditorIntent.EndEdit)
         }
 
     private val looksActions = EditorLooksActions(viewModelScope, renderDispatcher, actionsHost, looks)
@@ -1170,6 +1176,18 @@ class EditorViewModel(
             override fun onTargetedEnd() = onIntent(EditorIntent.TargetedEnd)
 
             override fun onMultiFingerTap(fingers: Int) = onIntent(EditorIntent.MultiFingerTap(fingers))
+
+            override fun onPaintStart(
+                u: Float,
+                v: Float,
+            ) = onIntent(EditorIntent.Layers(LayerAction.PaintStart(u, v)))
+
+            override fun onPaintMove(
+                u: Float,
+                v: Float,
+            ) = onIntent(EditorIntent.Layers(LayerAction.PaintMove(u, v)))
+
+            override fun onPaintEnd() = onIntent(EditorIntent.Layers(LayerAction.PaintEnd))
         }
 
     private fun EditorState.withLight(next: LightAdjustments): EditorState =
@@ -1229,6 +1247,7 @@ class EditorViewModel(
             scheduler?.submit(after.canvasGraph)
         }
         looksActions.afterSync(before, after)
+        layersActions.afterSync(before, after)
         if (before == null || before.clippingShown != after.clippingShown) canvas.setClipping(after.clippingShown)
         if (before == null || before.compare != after.compare || before.split != after.split) {
             canvas.setCompare(after.compare, after.split)

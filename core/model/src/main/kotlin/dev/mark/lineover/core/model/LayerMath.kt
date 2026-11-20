@@ -259,6 +259,24 @@ object LayerMath {
             ?.ops
             .orEmpty() + flatten(graph).flatMap { it.first.ops }
 
+    /** False for a layer with nothing unclipped below it among its siblings (the photo is no clipping base). */
+    fun canClip(
+        graph: EditGraph,
+        id: String,
+    ): Boolean {
+        val (list, i) = siblings(graph, id) ?: return false
+        return list.subList(0, i).any { !it.isBackground && !it.clip }
+    }
+
+    /** The clipping base of [id] (the nearest unclipped layer below it), or null. */
+    fun clippingBase(
+        graph: EditGraph,
+        id: String,
+    ): Layer? {
+        val (list, i) = siblings(graph, id) ?: return null
+        return list.subList(0, i).lastOrNull { !it.clip }?.takeUnless { it.isBackground }
+    }
+
     /** Layer images the graph names (to register them with the engine). */
     fun sources(graph: EditGraph): Set<String> =
         flatten(graph)

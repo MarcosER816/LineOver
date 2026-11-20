@@ -6,10 +6,12 @@ import dev.mark.lineover.core.io.prefs.InMemoryAppPreferences
 import dev.mark.lineover.core.model.AdjustmentKind
 import dev.mark.lineover.core.model.BlendMode
 import dev.mark.lineover.core.model.BlendSpace
+import dev.mark.lineover.core.model.LayerMask
 import dev.mark.lineover.core.model.LayerMath
 import dev.mark.lineover.core.model.LayerPlacement
 import dev.mark.lineover.core.model.LayerType
 import dev.mark.lineover.core.model.LightParam
+import dev.mark.lineover.core.model.MaskPaint
 import dev.mark.lineover.core.model.OpParams
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -270,5 +272,138 @@ class LayersEditingTest {
                     .map { it.id },
             )
             assertTrue(vm.lastLabel.startsWith("Move "))
+        }
+
+    // --- Stage 14: masks and clipping ---
+
+    private fun EditorViewModel.adjustmentWithMask(): String {
+        layers(LayerAction.AddAdjustment(AdjustmentKind.Exposure))
+        val id = state.value.selectedLayerId!!
+        layers(LayerAction.AddMask(id, black = false))
+        onIntent(EditorIntent.OpenPanel(EditorPanel.Layers))
+        return id
+    }
+
+    @Test
+    fun aStrokeOnTheTargetedMaskIsOneStepInDocumentPixels() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+            advanceUntilIdle()
+            val id = vm.adjustmentWithMask()
+            assertTrue(vm.state.value.maskTarget)
+            assertEquals(dev.mark.lineover.feature.editor.canvas.PickMode.Paint, vm.state.value.canvasPickMode)
+            val steps = vm.state.value.history.entries.size
+            vm.layers(LayerAction.PaintStart(0.5f, 0.5f))
+            vm.layers(LayerAction.PaintMove(0.6f, 0.5f))
+            vm.layers(LayerAction.PaintMove(0.7f, 0.55f))
+            vm.layers(LayerAction.PaintEnd)
+            val mask = LayerMath.find(vm.graph, id)!!.mask!!
+            val stroke = mask.paint.single() as MaskPaint.Stroke
+            // 8160 x 6120 photo: image point (0.5, 0.5) is (4080, 3060); black by default; 4 % of the long edge.
+            assertEquals(listOf(4080f, 3060f, 4896f, 3060f, 5712f, 3366f), stroke.points)
+            assertEquals(0f, stroke.value)
+            assertEquals(8160 * 0.04f, stroke.radius, 1e-3f)
+            assertEquals(steps + 1, vm.state.value.history.entries.size)
+            assertEquals("Exposure: Paint mask", vm.lastLabel)
+            advanceUntilIdle()
+            assertEquals(mask, LayerMath.find(canvas.graphs.last(), id)!!.mask)
+            // A second stroke, painting white, is a second step.
+            vm.layers(LayerAction.SwapPaint)
+            vm.layers(LayerAction.PaintStart(0.1f, 0.1f))
+            vm.layers(LayerAction.PaintEnd)
+            assertEquals(steps + 2, vm.state.value.history.entries.size)
+            assertEquals(1f, (LayerMath.find(vm.graph, id)!!.mask!!.paint[1] as MaskPaint.Stroke).value)
+            vm.onIntent(EditorIntent.Undo)
+            assertEquals(
+                1,
+                LayerMath
+                    .find(vm.graph, id)!!
+                    .mask!!
+                    .paint.size,
+            )
+        }
+
+    @Test
+    fun aGradientReplacesTheMaskAndFollowsTheFinger() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+            advanceUntilIdle()
+            val id = vm.adjustmentWithMask()
+            vm.layers(
+                LayerAction.SetBrush(
+                    vm.state.value.maskBrush
+                        .copy(tool = MaskTool.Gradient, white = true),
+                ),
+            )
+            vm.layers(LayerAction.PaintStart(0f, 0.25f))
+            vm.layers(LayerAction.PaintMove(0f, 0.75f))
+            vm.layers(LayerAction.PaintEnd)
+            val g =
+                LayerMath
+                    .find(vm.graph, id)!!
+                    .mask!!
+                    .paint
+                    .single() as MaskPaint.Gradient
+            assertEquals(MaskPaint.Gradient(0f, 1530f, 0f, 4590f, 1f, 0f), g)
+            assertEquals("Exposure: Mask gradient", vm.lastLabel)
+        }
+
+    @Test
+    fun maskSettingsDeleteWithUndoAndLockedLayersRefusePaint() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+            advanceUntilIdle()
+            val id = vm.adjustmentWithMask()
+            vm.layers(LayerAction.SetMaskFeather(id, 30f))
+            vm.layers(LayerAction.SetMaskDensity(id, 60f))
+            vm.layers(LayerAction.InvertMask(id))
+            vm.layers(LayerAction.SetMaskEnabled(id, false))
+            val mask = LayerMath.find(vm.graph, id)!!.mask!!
+            assertEquals(LayerMask(enabled = false, inverted = true, density = 60f, feather = 30f), mask)
+            vm.layers(LayerAction.FillMask(id, white = false))
+            assertEquals(0f, LayerMath.find(vm.graph, id)!!.mask!!.base)
+            val effects = mutableListOf<EditorEffect>()
+            val job = launch { vm.effects.toList(effects) }
+            vm.layers(LayerAction.DeleteMask(id))
+            advanceUntilIdle()
+            assertNull(LayerMath.find(vm.graph, id)!!.mask)
+            vm.onIntent(effects.filterIsInstance<EditorEffect.Undoable>().single().undo)
+            assertEquals(0f, LayerMath.find(vm.graph, id)!!.mask!!.base)
+            job.cancel()
+            vm.layers(LayerAction.TargetMask(id, true))
+            vm.layers(LayerAction.SetLocked(id, true))
+            vm.layers(LayerAction.PaintStart(0.5f, 0.5f))
+            assertTrue(
+                LayerMath
+                    .find(vm.graph, id)!!
+                    .mask!!
+                    .paint
+                    .isEmpty(),
+            )
+            // Selecting the layer row targets the layer again: one finger is back to the canvas tools.
+            vm.layers(LayerAction.Select(id))
+            assertFalse(vm.state.value.maskTarget)
+        }
+
+    @Test
+    fun clippingNeedsALayerBelowAndTheMaskViewReachesTheEngine() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+            advanceUntilIdle()
+            val id = vm.adjustmentWithMask()
+            vm.layers(LayerAction.SetClip(id, true))
+            assertFalse(LayerMath.find(vm.graph, id)!!.clip) // nothing below but the photo
+            vm.layers(LayerAction.AddAdjustment(AdjustmentKind.Saturation))
+            val top = vm.state.value.selectedLayerId!!
+            vm.layers(LayerAction.SetClip(top, true))
+            assertTrue(LayerMath.find(vm.graph, top)!!.clip)
+            assertEquals("Clip Saturation", vm.lastLabel)
+            vm.layers(LayerAction.TargetMask(id, true))
+            vm.layers(LayerAction.SetMaskView(MaskView.Overlay))
+            advanceUntilIdle()
+            assertEquals(id to MaskView.Overlay.engine, canvas.maskViews.last())
+            vm.layers(LayerAction.TargetMask(id, false))
+            advanceUntilIdle()
+            assertEquals(null to 0, canvas.maskViews.last())
         }
 }

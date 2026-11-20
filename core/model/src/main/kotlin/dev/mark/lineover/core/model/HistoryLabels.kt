@@ -257,6 +257,8 @@ object HistoryLabels {
     private val UNSIGNED_OPS = setOf("posterize", "threshold", "sharpen", "noise_reduction", "grain", "profile", "lut")
 }
 
+private const val HALF = 0.5f
+
 /** [value] when true, else null (a list of optional changes). */
 private inline fun <T> Boolean.then(value: () -> T): T? = if (this) value() else null
 
@@ -284,4 +286,27 @@ private fun propertyChanges(
         },
         (a.transform != b.transform).then { OpChange(key, "$key.transform", "$name: Place") },
         (a.name != b.name).then { OpChange(key, "$key.name", "Rename $name") },
+        (a.clip != b.clip).then { OpChange(key, "$key.clip", "${if (b.clip) "Clip" else "Unclip"} $name") },
+    ) + maskChanges(a.mask, b.mask, name, "$key.mask")
+
+/** A mask added, removed, switched, painted or changed (its sliders coalesce while dragged). */
+private fun maskChanges(
+    a: LayerMask?,
+    b: LayerMask?,
+    name: String,
+    key: String,
+): List<OpChange> {
+    if (a == b) return emptyList()
+    if (a == null || b == null) return listOf(OpChange(key, key, if (b != null) "$name: Add mask" else "$name: Delete mask"))
+    return listOfNotNull(
+        (a.enabled != b.enabled).then { OpChange(key, "$key.enabled", "$name: ${if (b.enabled) "Enable" else "Disable"} mask") },
+        (a.inverted != b.inverted).then { OpChange(key, "$key.inverted", "$name: Invert mask") },
+        (a.density != b.density).then { OpChange(key, "$key.density", "$name: Mask density ${b.density.roundToInt()} %") },
+        (a.feather != b.feather).then { OpChange(key, "$key.feather", "$name: Mask feather ${b.feather.roundToInt()} px") },
+        (a.base != b.base).then { OpChange(key, "$key.base", "$name: Fill mask ${if (b.base >= HALF) "white" else "black"}") },
+        (a.paint != b.paint).then {
+            val label = if (b.paint.lastOrNull() is MaskPaint.Gradient) "Mask gradient" else "Paint mask"
+            OpChange(key, "$key.paint.${b.paint.size}", "$name: $label")
+        },
     )
+}

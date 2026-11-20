@@ -185,6 +185,12 @@ internal class NativeEngine(
     /** Renders a layered graph's composite for the canvas, or clears it (CPU, the calling thread). */
     fun renderComposite() = nativeRenderComposite(h())
 
+    /** Stage 14: the composite shows layer [layerId]'s mask (0 none, 1 grey, 2 red overlay) from the next render. */
+    fun setMaskView(
+        layerId: String,
+        view: Int,
+    ) = nativeSetMaskView(h(), layerId, view)
+
     /** Auto (percentile stretch): (exposure EV, blacks) or null before a preview. */
     fun autoLight(): FloatArray? = nativeAutoLight(h())
 
@@ -301,6 +307,12 @@ internal class NativeEngine(
     private external fun nativeReleaseFullLayerImages()
 
     private external fun nativeRenderComposite(engine: Long)
+
+    private external fun nativeSetMaskView(
+        engine: Long,
+        layerId: String,
+        view: Int,
+    )
 
     private external fun nativeSample(
         engine: Long,
