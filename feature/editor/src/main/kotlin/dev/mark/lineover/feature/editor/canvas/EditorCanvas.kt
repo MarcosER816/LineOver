@@ -10,6 +10,8 @@ import dev.mark.lineover.core.engine.EngineSession
 import dev.mark.lineover.core.engine.EngineStats
 import dev.mark.lineover.core.engine.Histogram
 import dev.mark.lineover.core.engine.NativeOp
+import dev.mark.lineover.core.engine.SelectionRaster
+import dev.mark.lineover.core.io.masks.MaskRaster
 import dev.mark.lineover.core.model.AutoResult
 import dev.mark.lineover.core.model.CubeLut
 import dev.mark.lineover.core.model.EditGraph
@@ -34,8 +36,30 @@ data class ImageSummary(
     val exif: PhotoExif = PhotoExif(),
 )
 
+/** Stage 15: what the selection needs of the engine (part of [EditorCanvas]). */
+interface SelectionCanvas {
+    /** Stage 15: evaluates the selection recipe (JSON, empty = none) for the canvas and its ants. Off the main thread. */
+    fun setSelection(json: String): String? = null
+
+    /** The selection at image point (u, v), or null without one. Off the main thread. */
+    fun selectionAt(
+        u: Float,
+        v: Float,
+    ): Float? = null
+
+    /** The selection as pixels, or null. Off the main thread. */
+    fun selectionRaster(): SelectionRaster? = null
+
+    /** A saved selection the graph's masks can name. */
+    fun registerMaskRaster(
+        name: String,
+        raster: MaskRaster,
+    ) = Unit
+}
+
 /** The image engine as the editor sees it: draws the canvas, takes edits, reports loading. */
 interface EditorCanvas :
+    SelectionCanvas,
     CanvasRenderer,
     AutoCloseable {
     val summary: ImageSummary
@@ -255,6 +279,22 @@ private class EngineCanvas(
         layerId: String?,
         view: Int,
     ) = session.setMaskView(layerId.orEmpty(), view)
+
+    override fun setSelection(json: String): String? = session.setSelection(json)
+
+    override fun selectionAt(
+        u: Float,
+        v: Float,
+    ): Float? = session.selectionAt(u, v)
+
+    override fun selectionRaster(): SelectionRaster? = session.selectionRaster()
+
+    override fun registerMaskRaster(
+        name: String,
+        raster: MaskRaster,
+    ) = session.registerMaskRaster(name, SelectionRaster(raster.width, raster.height, 0, 0, raster.values))
+
+    override fun setAntsPhase(phase: Float) = session.setAntsPhase(phase)
 
     override fun whiteBalanceAt(
         u: Float,

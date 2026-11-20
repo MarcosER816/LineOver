@@ -10,6 +10,7 @@
 #include "lineover/color_ops.h"
 #include "lineover/layers.h"
 #include "lineover/lut.h"
+#include "lineover/masks.h"
 #include "lineover/tiling.h"
 
 struct lo_engine {
@@ -259,6 +260,35 @@ void lo_unregister_layer_image(const char* id) {
 void lo_release_full_layer_images(void) { lo::layers::releaseFullLayerImages(); }
 
 void lo_engine_render_composite(lo_engine* engine) { engine->engine->renderComposite(); }
+
+int lo_engine_set_selection(lo_engine* engine, const char* json, char* error, size_t error_len) {
+    const std::string message = engine->engine->setSelection(json != nullptr ? json : "");
+    if (message.empty()) return 1;
+    copyError(message, error, error_len);
+    return 0;
+}
+
+void lo_engine_set_ants_phase(lo_engine* engine, float phase) { engine->engine->setAntsPhase(phase); }
+
+float lo_engine_selection_at(lo_engine* engine, float u, float v) { return engine->engine->selectionAt(u, v); }
+
+float* lo_engine_selection_raster(lo_engine* engine, int* width, int* height, int* doc_width, int* doc_height) {
+    std::vector<float> values;
+    if (!engine->engine->selectionRaster(&values, width, height, doc_width, doc_height)) return nullptr;
+    auto* out = static_cast<float*>(malloc(values.size() * sizeof(float)));
+    if (out != nullptr) std::copy(values.begin(), values.end(), out);
+    return out;
+}
+
+void lo_register_mask_raster(const char* name, const float* values, int width, int height) {
+    if (name == nullptr || values == nullptr || width <= 0 || height <= 0) return;
+    auto copy = std::make_shared<std::vector<float>>(values, values + static_cast<std::size_t>(width) * height);
+    lo::masks::registerRaster(name, copy, width, height);
+}
+
+void lo_unregister_mask_raster(const char* name) {
+    if (name != nullptr) lo::masks::unregisterRaster(name);
+}
 
 void lo_engine_set_mask_view(lo_engine* engine, const char* layer_id, int view) {
     engine->engine->setMaskView(layer_id != nullptr ? layer_id : "", view);

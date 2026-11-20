@@ -313,6 +313,11 @@ void parseMask(const Value& value, LayerMask* out) {
         num(item, "y1", &p.y1);
         num(item, "from", &p.from);
         num(item, "to", &p.to);
+        if (const Value* src = item.find("source"); src != nullptr && src->kind == Value::Kind::String) p.source = src->text;
+        num(item, "width", &p.width);
+        num(item, "height", &p.height);
+        num(item, "docWidth", &p.docWidth);
+        num(item, "docHeight", &p.docHeight);
         out->paint.push_back(std::move(p));
     }
 }
@@ -490,7 +495,14 @@ void serializeMask(const LayerMask& mask, std::string* out) {
             if (i > 0) out->push_back(',');
             out->append("{\"kind\":");
             writeString(p.kind, out);
-            if (p.kind == "gradient") {
+            if (p.kind == "raster") {
+                out->append(",\"source\":");
+                writeString(p.source, out);
+                number("width", p.width);
+                number("height", p.height);
+                number("docWidth", p.docWidth);
+                number("docHeight", p.docHeight);
+            } else if (p.kind == "gradient") {
                 number("x0", p.x0);
                 number("y0", p.y0);
                 number("x1", p.x1);
@@ -596,6 +608,53 @@ void serializeLayer(const Layer& layer, std::string* out) {
 }
 
 }  // namespace
+
+bool parseSelection(const std::string& json, std::vector<SelectionOp>* out, std::string* error) {
+    Reader reader(json);
+    Value root;
+    if (!reader.parse(&root, error)) return false;
+    const Value* ops = root.kind == Value::Kind::Array ? &root : root.find("ops");
+    out->clear();
+    if (ops == nullptr || ops->kind != Value::Kind::Array) return true;
+    auto num = [](const Value& v, const char* key, double* into) {
+        if (const Value* n = v.find(key); n != nullptr && n->kind == Value::Kind::Number) *into = n->number;
+    };
+    auto flag = [](const Value& v, const char* key, bool* into) {
+        if (const Value* n = v.find(key); n != nullptr && n->kind == Value::Kind::Bool) *into = n->boolean;
+    };
+    auto list = [](const Value& v, const char* key, std::vector<double>* into) {
+        if (const Value* n = v.find(key); n != nullptr && n->kind == Value::Kind::Array)
+            for (const Value& item : n->items)
+                if (item.kind == Value::Kind::Number) into->push_back(item.number);
+    };
+    for (const Value& item : ops->items) {
+        const Value* kind = item.find("kind");
+        if (item.kind != Value::Kind::Object || kind == nullptr || kind->kind != Value::Kind::String) {
+            *error = "selection op without a kind";
+            return false;
+        }
+        SelectionOp op;
+        op.kind = kind->text;
+        if (const Value* m = item.find("mode"); m != nullptr && m->kind == Value::Kind::String) op.mode = m->text;
+        flag(item, "antiAlias", &op.antiAlias);
+        num(item, "x0", &op.x0);
+        num(item, "y0", &op.y0);
+        num(item, "x1", &op.x1);
+        num(item, "y1", &op.y1);
+        list(item, "points", &op.points);
+        num(item, "x", &op.x);
+        num(item, "y", &op.y);
+        num(item, "tolerance", &op.tolerance);
+        flag(item, "contiguous", &op.contiguous);
+        flag(item, "allLayers", &op.allLayers);
+        num(item, "fuzziness", &op.fuzziness);
+        list(item, "add", &op.add);
+        list(item, "subtract", &op.subtract);
+        num(item, "px", &op.px);
+        out->push_back(std::move(op));
+    }
+    return true;
+}
 
 std::string serializeMaskJson(const LayerMask& mask) {
     std::string out;

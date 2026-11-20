@@ -50,6 +50,7 @@ import dev.mark.lineover.core.designsystem.component.LoChip
 import dev.mark.lineover.core.designsystem.component.LoIconButton
 import dev.mark.lineover.core.designsystem.component.LoToolButton
 import dev.mark.lineover.core.engine.CompareMode
+import dev.mark.lineover.core.model.SelectionMode
 import dev.mark.lineover.core.model.ToolCategory
 import dev.mark.lineover.core.ui.tools.ToolRegistry
 import dev.mark.lineover.core.ui.tools.categoryBarEntries
@@ -393,9 +394,18 @@ internal fun CategoryRail(
     }
 }
 
-/** Shown above the tool strip in the Select category: how a new selection combines (Stage 15). */
+/**
+ * Shown above the tool strip in the Select category (Stage 15): how a new selection combines
+ * with the current one, anti-aliasing, and Select all / Invert / Deselect.
+ */
 @Composable
-internal fun SelectionOptionsBar(modifier: Modifier = Modifier) {
+internal fun SelectionOptionsBar(
+    state: EditorState,
+    onIntent: (EditorIntent) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val settings = state.selectionSettings
+    val select = { action: SelectAction -> onIntent(EditorIntent.Select(action)) }
     Row(
         modifier
             .fillMaxWidth()
@@ -406,12 +416,16 @@ internal fun SelectionOptionsBar(modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(LoSpacing.Xs),
     ) {
-        listOf("New", "Add", "Subtract", "Intersect").forEachIndexed { index, label ->
-            LoChip(label, selected = index == 0, onClick = {}, enabled = false)
+        SelectionMode.entries.forEach { mode ->
+            LoChip(mode.label, selected = settings.mode == mode, onClick = { select(SelectAction.SetSettings(settings.copy(mode = mode))) })
         }
-        LoChip("Feather 0 px", selected = false, onClick = {}, enabled = false)
-        LoChip("Anti-alias", selected = true, onClick = {}, enabled = false)
-        Text("Selections arrive in Stage 15", style = LoType.Caption, color = LoColors.TextSecondary)
+        LoChip("Anti-alias", selected = settings.antiAlias, onClick = {
+            select(SelectAction.SetSettings(settings.copy(antiAlias = !settings.antiAlias)))
+        })
+        LoChip("All", selected = false, onClick = { select(SelectAction.SelectAll) })
+        val has = state.selection != null
+        LoChip("Invert", selected = false, onClick = { select(SelectAction.Invert) }, enabled = has)
+        LoChip("Deselect", selected = false, onClick = { select(SelectAction.Deselect) }, enabled = has)
     }
 }
 

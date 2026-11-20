@@ -311,6 +311,58 @@ void clipColor(std::uint32_t rgb, const color::Mat3& rec2020ToDisplay, float out
 
 }  // namespace
 
+constexpr const char* kAntsVertex = R"(#version 300 es
+layout(location = 0) in vec2 a_pos;
+uniform mat3 u_matrix;
+void main() {
+    vec3 p = u_matrix * vec3(a_pos, 1.0);
+    gl_Position = vec4(p.xy / p.z, 0.0, 1.0);
+}
+)";
+
+// Marching ants: 4-pixel black and white dashes along screen diagonals, moved by u_phase.
+constexpr const char* kAntsFragment = R"(#version 300 es
+precision mediump float;
+uniform float u_phase;
+out vec4 o_color;
+void main() {
+    float d = floor((gl_FragCoord.x + gl_FragCoord.y + u_phase) / 4.0);
+    o_color = mod(d, 2.0) < 1.0 ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(1.0);
+}
+)";
+
+void GpuPipeline::setAntsSegments(const std::vector<float>& segments) {
+    if (antsVao_ == 0) {
+        glGenVertexArrays(1, &antsVao_);
+        glGenBuffers(1, &antsVbo_);
+        glBindVertexArray(antsVao_);
+        glBindBuffer(GL_ARRAY_BUFFER, antsVbo_);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+    }
+    glBindVertexArray(antsVao_);
+    glBindBuffer(GL_ARRAY_BUFFER, antsVbo_);
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(segments.size() * sizeof(float)), segments.empty() ? nullptr : segments.data(),
+                 GL_STATIC_DRAW);
+    antsVertices_ = static_cast<GLsizei>(segments.size() / 2);
+    glBindVertexArray(vao_);
+}
+
+void GpuPipeline::drawAnts(const float imageToNdc[9], float phase) {
+    if (antsVertices_ == 0 || antsProgram_ == 0) return;
+    glUseProgram(antsProgram_);
+    glBindVertexArray(antsVao_);
+    glUniformMatrix3fv(glGetUniformLocation(antsProgram_, "u_matrix"), 1, GL_TRUE, imageToNdc);
+    glUniform1f(glGetUniformLocation(antsProgram_, "u_phase"), phase);
+    GLfloat range[2] = {1.f, 1.f};
+    glGetFloatv(GL_ALIASED_LINE_WIDTH_RANGE, range);
+    glLineWidth(std::min(2.f, range[1]));
+    glDisable(GL_BLEND);
+    glDrawArrays(GL_LINES, 0, antsVertices_);
+    glLineWidth(1.f);
+    glBindVertexArray(vao_);
+}
+
 bool GpuPipeline::init(std::string* error) {
     halfFloat_ = halfFloatRenderable();
     glGenVertexArrays(1, &vao_);
@@ -328,6 +380,8 @@ bool GpuPipeline::init(std::string* error) {
     if (displayGeomProgram_ == 0) return false;
     warpProgram_ = linkProgram(kDisplayVertex, (head + kGeometrySource + kFinished + kWarpMain).c_str(), error);
     if (warpProgram_ == 0) return false;
+    antsProgram_ = linkProgram(kAntsVertex, kAntsFragment, error);
+    if (antsProgram_ == 0) return false;
     {
         std::vector<std::uint8_t> table;
         grainGradientTable(&table);
@@ -381,6 +435,11 @@ void GpuPipeline::release() {
     if (fbo_ != 0) glDeleteFramebuffers(1, &fbo_);
     if (vbo_ != 0) glDeleteBuffers(1, &vbo_);
     if (vao_ != 0) glDeleteVertexArrays(1, &vao_);
+    if (antsProgram_ != 0) glDeleteProgram(antsProgram_);
+    if (antsVbo_ != 0) glDeleteBuffers(1, &antsVbo_);
+    if (antsVao_ != 0) glDeleteVertexArrays(1, &antsVao_);
+    antsProgram_ = antsVbo_ = antsVao_ = 0;
+    antsVertices_ = 0;
     displayProgram_ = fbo_ = vbo_ = vao_ = 0;
 }
 

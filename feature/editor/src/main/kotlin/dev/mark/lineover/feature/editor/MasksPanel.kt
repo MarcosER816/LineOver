@@ -19,13 +19,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.mark.lineover.core.designsystem.LoColors
 import dev.mark.lineover.core.designsystem.LoIcons
@@ -291,6 +294,7 @@ internal fun MaskThumbnail(
     docSize: Pair<Int, Int>?,
     targeted: Boolean,
     onIntent: (EditorIntent) -> Unit,
+    rasters: Map<String, ImageBitmap> = emptyMap(),
 ) {
     val mask = layer.mask ?: return
     val (docW, docH) = docSize ?: (1 to 1)
@@ -308,46 +312,7 @@ internal fun MaskThumbnail(
             .semantics { contentDescription = "Mask of ${layer.name.ifBlank { layer.type.label }}" },
     ) {
         ComposeCanvas(Modifier.size(THUMB)) {
-            val sx = size.width / docW.coerceAtLeast(1)
-            val sy = size.height / docH.coerceAtLeast(1)
-
-            fun grey(v: Float): Color {
-                val g = if (mask.inverted) 1f - v else v
-                return Color(g, g, g)
-            }
-            drawRect(grey(mask.base))
-            for (op in mask.paint) {
-                when (op) {
-                    is MaskPaint.Gradient -> {
-                        drawRect(
-                            Brush.linearGradient(
-                                listOf(grey(op.from), grey(op.to)),
-                                start = Offset(op.x0 * sx, op.y0 * sy),
-                                end = Offset(op.x1 * sx + 0.01f, op.y1 * sy + 0.01f),
-                            ),
-                        )
-                    }
-
-                    is MaskPaint.Stroke -> {
-                        val path = Path()
-                        op.points.chunked(2).forEachIndexed { i, (x, y) ->
-                            if (i ==
-                                0
-                            ) {
-                                path.moveTo(x * sx, y * sy)
-                            } else {
-                                path.lineTo(x * sx, y * sy)
-                            }
-                        }
-                        if (op.points.size == 2) path.lineTo(op.points[0] * sx + 0.01f, op.points[1] * sy)
-                        drawPath(
-                            path,
-                            grey(op.value).copy(alpha = op.opacity / LayerMask.FULL),
-                            style = Stroke(width = 2 * op.radius * sx, cap = StrokeCap.Round, join = StrokeJoin.Round),
-                        )
-                    }
-                }
-            }
+            drawMask(mask, docW, docH, rasters)
             if (!mask.enabled) {
                 drawLine(danger, Offset.Zero, Offset(size.width, size.height), strokeWidth = 2.dp.toPx())
                 drawLine(danger, Offset(size.width, 0f), Offset(0f, size.height), strokeWidth = 2.dp.toPx())
@@ -356,6 +321,61 @@ internal fun MaskThumbnail(
     }
 }
 
+/** The mask's paint, scaled from the document to the thumbnail (feather and hardness left out). */
+private fun DrawScope.drawMask(
+    mask: LayerMask,
+    docW: Int,
+    docH: Int,
+    rasters: Map<String, ImageBitmap>,
+) {
+    val sx = size.width / docW.coerceAtLeast(1)
+    val sy = size.height / docH.coerceAtLeast(1)
+
+    fun grey(v: Float): Color {
+        val g = if (mask.inverted) 1f - v else v
+        return Color(g, g, g)
+    }
+    drawRect(grey(mask.base))
+    for (op in mask.paint) {
+        when (op) {
+            is MaskPaint.Raster -> {
+                // A saved selection: its picture (made when it was saved or loaded).
+                val picture = rasters[op.source]
+                if (picture !=
+                    null
+                ) {
+                    drawImage(picture, dstSize = IntSize(size.width.toInt(), size.height.toInt()))
+                } else {
+                    drawRect(grey(HALF))
+                }
+            }
+
+            is MaskPaint.Gradient -> {
+                val start = Offset(op.x0 * sx, op.y0 * sy)
+                drawRect(Brush.linearGradient(listOf(grey(op.from), grey(op.to)), start, Offset(op.x1 * sx + TINY, op.y1 * sy + TINY)))
+            }
+
+            is MaskPaint.Stroke -> {
+                val path = Path()
+                op.points.chunked(2).forEachIndexed { i, (x, y) ->
+                    if (i ==
+                        0
+                    ) {
+                        path.moveTo(x * sx, y * sy)
+                    } else {
+                        path.lineTo(x * sx, y * sy)
+                    }
+                }
+                if (op.points.size == 2) path.lineTo(op.points[0] * sx + TINY, op.points[1] * sy)
+                val stroke = Stroke(width = 2 * op.radius * sx, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                drawPath(path, grey(op.value).copy(alpha = op.opacity / LayerMask.FULL), style = stroke)
+            }
+        }
+    }
+}
+
+private const val HALF = 0.5f
+private const val TINY = 0.01f
 private val THUMB = 40.dp
 private val SWATCH = 28.dp
 private const val DEFAULT_EDGE = 4000

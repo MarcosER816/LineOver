@@ -155,6 +155,32 @@ class EngineSession private constructor(
         }
     }
 
+    /** Stage 15: the selection recipe ({"ops":[...]}; empty = none), evaluated on this (background) thread. */
+    fun setSelection(json: String): String? = if (closed) "closed" else native.setSelection(json)
+
+    fun setAntsPhase(phase: Float) {
+        if (!closed) native.setAntsPhase(phase)
+    }
+
+    /** The selection at image point (u, v), or null without one. */
+    fun selectionAt(
+        u: Float,
+        v: Float,
+    ): Float? = if (closed) null else native.selectionAt(u, v).takeIf { it >= 0f }
+
+    /** The current selection (R16F values) over the document, or null. */
+    fun selectionRaster(): SelectionRaster? {
+        if (closed) return null
+        val a = native.selectionRaster() ?: return null
+        return SelectionRaster(a[0].toInt(), a[1].toInt(), a[DOC_W].toInt(), a[DOC_H].toInt(), a.copyOfRange(HEADER, a.size))
+    }
+
+    /** A saved selection a mask can name (MaskPaint.Raster), for every engine of the process. */
+    fun registerMaskRaster(
+        name: String,
+        raster: SelectionRaster,
+    ) = native.registerMaskRaster(name, raster.values, raster.width, raster.height)
+
     /** Stage 14: shows a layer's mask on the canvas (re-renders the composite here: not on the main thread). */
     fun setMaskView(
         layerId: String,
@@ -452,6 +478,9 @@ class EngineSession private constructor(
 
         private const val MB_SHIFT = 20
         private const val LAYER_PREVIEW_EDGE = 2048
+        private const val HEADER = 4
+        private const val DOC_W = 2
+        private const val DOC_H = 3
         private const val LAYER_EXPORT_EDGE = 4096
         private const val REQUEST_SIZE = 3
         private const val THUMB_HEADER = 8

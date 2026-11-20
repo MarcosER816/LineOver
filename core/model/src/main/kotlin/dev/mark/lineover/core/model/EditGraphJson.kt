@@ -5,6 +5,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 
 /** JSON codec for [EditGraph], the format stored inside .loproj project files. */
+@Suppress("TooManyFunctions") // one function per serialised form (graph, op, selection), sharing one Json
 object EditGraphJson {
     private val json =
         Json {
@@ -16,6 +17,9 @@ object EditGraphJson {
     fun encode(graph: EditGraph): String = json.encodeToString(EditGraph.serializer(), graph)
 
     fun decode(text: String): EditGraph = json.decodeFromString(EditGraph.serializer(), text)
+
+    /** Stage 15: the selection as the engine reads it ({"ops":[...]}); empty for none. */
+    fun encodeSelection(selection: Selection?): String = selection?.let { json.encodeToString(Selection.serializer(), it) }.orEmpty()
 
     /** One op as its JSON object (the "op" key holds its serial name). */
     fun opObject(op: OpParams): JsonObject = json.encodeToJsonElement(OpParams.serializer(), op).jsonObject

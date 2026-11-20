@@ -185,6 +185,28 @@ internal class NativeEngine(
     /** Renders a layered graph's composite for the canvas, or clears it (CPU, the calling thread). */
     fun renderComposite() = nativeRenderComposite(h())
 
+    /** Stage 15: the selection recipe (JSON; empty = none), evaluated here; an error or null. */
+    fun setSelection(json: String): String? = nativeSetSelection(h(), json)
+
+    fun setAntsPhase(phase: Float) = nativeSetAntsPhase(h(), phase)
+
+    fun selectionAt(
+        u: Float,
+        v: Float,
+    ): Float = nativeSelectionAt(h(), u, v)
+
+    /** [width, height, docWidth, docHeight, values...] or null without a selection. */
+    fun selectionRaster(): FloatArray? = nativeSelectionRaster(h())
+
+    fun registerMaskRaster(
+        name: String,
+        values: FloatArray,
+        width: Int,
+        height: Int,
+    ) = nativeRegisterMaskRaster(name, values, width, height)
+
+    fun unregisterMaskRaster(name: String) = nativeUnregisterMaskRaster(name)
+
     /** Stage 14: the composite shows layer [layerId]'s mask (0 none, 1 grey, 2 red overlay) from the next render. */
     fun setMaskView(
         layerId: String,
@@ -307,6 +329,33 @@ internal class NativeEngine(
     private external fun nativeReleaseFullLayerImages()
 
     private external fun nativeRenderComposite(engine: Long)
+
+    private external fun nativeSetSelection(
+        engine: Long,
+        json: String,
+    ): String?
+
+    private external fun nativeSetAntsPhase(
+        engine: Long,
+        phase: Float,
+    )
+
+    private external fun nativeSelectionAt(
+        engine: Long,
+        u: Float,
+        v: Float,
+    ): Float
+
+    private external fun nativeSelectionRaster(engine: Long): FloatArray?
+
+    private external fun nativeRegisterMaskRaster(
+        name: String,
+        values: FloatArray,
+        width: Int,
+        height: Int,
+    )
+
+    private external fun nativeUnregisterMaskRaster(name: String)
 
     private external fun nativeSetMaskView(
         engine: Long,

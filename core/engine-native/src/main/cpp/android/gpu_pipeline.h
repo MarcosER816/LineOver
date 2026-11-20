@@ -91,6 +91,12 @@ public:
     bool warp(GLuint texture, const GeometryDraw& geometry, GLuint target, int width, int height, std::string* error,
               const Finishing& finishing = {});
 
+    // Stage 15: the selection outline (segments x0, y0, x1, y1 in image / output pixels) and
+    // the marching ants over it: dashes in screen space whose offset [phase] moves (only the
+    // offset is animated; the outline stays uploaded until it changes).
+    void setAntsSegments(const std::vector<float>& segments);
+    void drawAnts(const float imageToNdc[9], float phase);
+
     // Starts counting the 256-bin R, G, B, L histogram of `texture` (working space;
     // sRGB display values) into the histogram buffer. False without compute support.
     bool dispatchHistogram(GLuint texture, int width, int height);
@@ -131,6 +137,10 @@ private:
     GLuint displayProgram_ = 0;
     GLuint displayGeomProgram_ = 0;
     GLuint warpProgram_ = 0;
+    GLuint antsProgram_ = 0;
+    GLuint antsVao_ = 0;
+    GLuint antsVbo_ = 0;
+    GLsizei antsVertices_ = 0;
     GLuint grainTable_ = 0;  // RG8 grainGradientTable, read by the finishing
     std::string histogramError_;
     GLuint histogramProgram_ = 0;

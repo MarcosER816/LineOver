@@ -2,6 +2,25 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 15 — Selections I (0.15.0)
+
+### Added
+
+- The Select category works:
+  - Marquee: rectangle or ellipse, fixed ratios 1:1, 4:3, 3:2, 16:9.
+  - Lasso, with a loupe above your finger.
+  - Polygonal lasso.
+  - Magic wand: tolerance with a live preview, contiguous, sample all layers.
+  - Color range: fuzziness, add and subtract colours.
+- The options bar above the tools: New, Add, Subtract, Intersect, Anti-alias, Select all,
+  Invert, Deselect.
+- Marching ants show the selection.
+- Tap outside the selection to deselect, with Undo.
+- Grow, shrink, feather, smooth and border the selection.
+- "To mask" turns the selection into a layer mask (or an Exposure layer masked by it).
+- "To new layer" copies a layer or the photo with the selection as its mask.
+- Every selection change is a History step and is saved with the project.
+
 ## Stage 14 — Layer masks (0.14.0)
 
 ### Added

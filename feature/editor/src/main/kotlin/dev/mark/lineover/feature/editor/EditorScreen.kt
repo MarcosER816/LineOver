@@ -69,6 +69,7 @@ import dev.mark.lineover.core.designsystem.component.LoToastState
 import dev.mark.lineover.core.io.layers.LayerSources
 import dev.mark.lineover.core.io.lens.LensProfileStore
 import dev.mark.lineover.core.io.looks.LooksStore
+import dev.mark.lineover.core.io.masks.MaskRasters
 import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.CanvasSurround
 import dev.mark.lineover.core.io.project.ProjectLibrary
@@ -98,6 +99,7 @@ fun EditorRoute(
     lensProfiles: LensProfileStore? = null,
     looks: LooksStore? = null,
     layers: LayerSources? = null,
+    maskRasters: MaskRasters? = null,
 ) {
     val context = LocalContext.current
     val debuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
@@ -113,6 +115,7 @@ fun EditorRoute(
                 lensProfiles = lensProfiles,
                 looks = looks,
                 layers = layers,
+                maskRasters = maskRasters,
             )
         }
     WideColorGamutWindow()
@@ -167,6 +170,7 @@ internal fun PhotoCanvas(
     val surround = state.surround.color.toArgb()
     val swipeMode = state.swipeMode
     val pickMode = state.canvasPickMode
+    val antsActive = state.selection != null
     val size = state.canvasSize
     val cropFrame = state.cropFrame
     val oneToOne = state.oneToOneRequest
@@ -184,6 +188,7 @@ internal fun PhotoCanvas(
             view.cropFrame = cropFrame
             view.swipeMode = swipeMode
             view.pickMode = pickMode
+            view.antsActive = antsActive
             view.requestOneToOne(oneToOne)
         },
         onRelease = { view -> view.setRenderer(null) },
@@ -288,7 +293,7 @@ private fun CompactLayout(
                 }
             }
         }
-        if (state.category == ToolCategory.Select) SelectionOptionsBar()
+        if (state.category == ToolCategory.Select) SelectionOptionsBar(state, onIntent)
         ToolStrip(state, onIntent)
         CategoryBar(state, onIntent)
     }
@@ -307,7 +312,7 @@ private fun WideLayout(
         Column(Modifier.weight(1f).fillMaxHeight()) {
             EditorTopBar(state, wide = true, onIntent = onIntent, onBack = onBack, onExport = onExport)
             Box(Modifier.weight(1f).fillMaxWidth()) { CanvasArea(state, onIntent, canvas) }
-            if (state.category == ToolCategory.Select) SelectionOptionsBar()
+            if (state.category == ToolCategory.Select) SelectionOptionsBar(state, onIntent)
             ToolStrip(state, onIntent)
         }
         Column(

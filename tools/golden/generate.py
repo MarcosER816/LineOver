@@ -24,6 +24,7 @@ import numpy as np
 import blend_reference as blend
 import detail_reference as detail
 import export_reference as export
+import selection_reference as sel
 import lensfun_reference
 import lut_reference as lut
 import reference
@@ -81,6 +82,7 @@ def build_outputs() -> dict[str, np.ndarray]:
     outputs.update(export_outputs())
     outputs.update(blend_outputs())
     outputs.update(mask_outputs())
+    outputs.update(selection_outputs())
     return outputs
 
 
@@ -383,6 +385,33 @@ def mask_outputs() -> dict:
     out["mask/scene_f32.npy"] = blend.composite_document(scene, layers, images, "gamma")
     out["mask/scene_linear_f32.npy"] = blend.composite_document(scene, layers, images, "linear")
     out["mask/scene_half_f32.npy"] = blend.composite_document(scene[::2, ::2], layers, images, "gamma", scale=0.5)
+    return out
+
+
+def selection_outputs() -> dict:
+    """Stage 15: the flood fill against cv2.floodFill, the distance transform and grow / shrink
+    against cv2.distanceTransform, and two selection recipes on the scene (full and half)."""
+    out = {}
+    img = sel.flood_image()
+    out["selection/flood_image_f32.npy"] = img.astype(np.float32)[..., None]
+    for i, (x, y, lo, hi, conn) in enumerate(sel.FLOOD_CASES):
+        out[f"selection/flood_{i}_f32.npy"] = sel.flood_reference(img, (x, y), lo, hi, conn)[..., None]
+    b = sel.blob()
+    out["selection/blob_f32.npy"] = b[..., None]
+    out["selection/distance_f32.npy"] = sel.distances(b >= 0.5).astype(np.float32)[..., None]
+    out["selection/distance_outside_f32.npy"] = sel.distances(b < 0.5).astype(np.float32)[..., None]
+    for r in sel.GROW_RADII:
+        out[f"selection/grow_{r}_f32.npy"] = sel.grow(b.astype(np.float64), r).astype(np.float32)[..., None]
+    out["selection/border_3.0_f32.npy"] = sel.border(b.astype(np.float64), 3.0).astype(np.float32)[..., None]
+    scene = reference.scene_rec2020()
+    for name, ops in (("scene", sel.SCENE_OPS), ("tail", sel.SCENE_TAIL)):
+        margin = sel.tie_margin(ops, scene)
+        assert margin > 1e-3, f"selection {name}: a tie within {margin}"
+        out[f"selection/{name}_ops.json"] = json.dumps(ops, indent=1) + "\n"
+        out[f"selection/{name}_f32.npy"] = sel.evaluate(ops, scene)[..., None]
+    half = scene[::2, ::2]
+    assert sel.tie_margin(sel.SCENE_OPS, half, 0.5) > 1e-3
+    out["selection/scene_half_f32.npy"] = sel.evaluate(sel.SCENE_OPS, half, 0.5)[..., None]
     return out
 
 

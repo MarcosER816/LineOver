@@ -37,4 +37,7 @@ interface CanvasRenderer {
 
     /** Hold to compare: draw the original while true (from the canvas gesture). */
     fun setShowOriginal(original: Boolean) = Unit
+
+    /** Stage 15: the marching ants' dash offset (only the offset animates; the outline stays). */
+    fun setAntsPhase(phase: Float) = Unit
 }

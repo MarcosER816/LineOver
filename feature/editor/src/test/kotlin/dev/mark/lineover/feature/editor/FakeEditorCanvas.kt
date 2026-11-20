@@ -90,6 +90,43 @@ class FakeEditorCanvas(
 
     val maskViews = mutableListOf<Pair<String?, Int>>()
 
+    val selections = mutableListOf<String>()
+    var selectionValue: Float? = null
+    val maskRasters = mutableMapOf<String, dev.mark.lineover.core.io.masks.MaskRaster>()
+
+    override fun setSelection(json: String): String? {
+        synchronized(selections) { selections += json }
+        return null
+    }
+
+    override fun selectionAt(
+        u: Float,
+        v: Float,
+    ): Float? = selectionValue
+
+    override fun selectionRaster(): dev.mark.lineover.core.engine.SelectionRaster? =
+        if (selections.lastOrNull().isNullOrEmpty()) {
+            null
+        } else {
+            dev.mark.lineover.core.engine.SelectionRaster(
+                4,
+                3,
+                8160,
+                6120,
+                FloatArray(12) {
+                    it /
+                        11f
+                },
+            )
+        }
+
+    override fun registerMaskRaster(
+        name: String,
+        raster: dev.mark.lineover.core.io.masks.MaskRaster,
+    ) {
+        maskRasters[name] = raster
+    }
+
     override fun setMaskView(
         layerId: String?,
         view: Int,

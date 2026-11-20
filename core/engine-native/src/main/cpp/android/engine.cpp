@@ -10,6 +10,9 @@
 
 #include "gl_util.h"
 #include "lineover/graph.h"
+#include "lineover/layers.h"
+#include "lineover/selection.h"
+#include "lineover/thumbnail.h"
 
 #ifndef EGL_OPENGL_ES3_BIT_KHR
 #define EGL_OPENGL_ES3_BIT_KHR 0x0040
@@ -358,6 +361,98 @@ bool Engine::autoSettings(AutoSettings* out) {
         source = analysisSource_;
     }
     return source && source->width > 0 && lo::autoSettings(source->rgba.data(), source->width, source->height, out);
+}
+
+std::string Engine::setSelection(const std::string& json) {
+    std::vector<SelectionOp> ops;
+    std::string error;
+    if (!json.empty() && !parseSelection(json, &ops, &error)) return error;
+    std::shared_ptr<const Graph> graph;
+    std::shared_ptr<const ImageF32> source;
+    std::shared_ptr<const GuidedCoefficients> guided;
+    std::shared_ptr<const DetailFields> fields;
+    int imageW, imageH, docW, docH;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        graph = graph_;
+        source = compositeSource_;
+        guided = guided_;
+        fields = fields_;
+        imageW = imageWidth_;
+        imageH = imageHeight_;
+        docW = hasGeometry_ ? geometry_.outputWidth : imageWidth_;
+        docH = hasGeometry_ ? geometry_.outputHeight : imageHeight_;
+    }
+    std::vector<float> segments;
+    {
+        std::lock_guard<std::mutex> lock(selectionMutex_);
+        if (json == selectionJson_ && (!selection_.empty() || ops.empty())) return "";
+        selectionJson_ = json;
+        if (ops.empty() || !graph || !source || source->width <= 0 || docW <= 0) {
+            selection_.clear();
+            selectionW_ = selectionH_ = 0;
+        } else {
+            // The grid is the composite's: what the canvas shows of the document, <= 2048 px.
+            if (graph != sampledGraph_ || sampledAll_.width == 0) {
+                renderGraphImage(*source, guided.get(), *graph, &sampledAll_, fields.get(), imageW, kCompositeEdge);
+                Graph photo = *graph;
+                photo.layers.resize(std::min<std::size_t>(1, photo.layers.size()));
+                if (layers::hasLayers(*graph)) {
+                    renderGraphImage(*source, guided.get(), photo, &sampledPhoto_, fields.get(), imageW, kCompositeEdge);
+                } else {
+                    sampledPhoto_ = ImageF32{};
+                }
+                sampledGraph_ = graph;
+            }
+            selection::Grid grid;
+            grid.width = sampledAll_.width;
+            grid.height = sampledAll_.height;
+            grid.scale = static_cast<double>(sampledAll_.width) / docW;
+            grid.rgba = sampledAll_.rgba.data();
+            grid.rgbaPhoto = sampledPhoto_.width == grid.width ? sampledPhoto_.rgba.data() : nullptr;
+            selection_ = selection::evaluate(ops, grid);
+            selectionW_ = grid.width;
+            selectionH_ = grid.height;
+            selectionDocW_ = docW;
+            selectionDocH_ = docH;
+            selection::contours(selection_.data(), grid.width, grid.height, grid.scale, &segments);
+        }
+    }
+    (void)imageH;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pendingAnts_.swap(segments);
+        antsChanged_ = true;
+    }
+    requestRedraw();
+    return "";
+}
+
+void Engine::setAntsPhase(float phase) {
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        antsPhase_ = phase;
+    }
+    requestRedraw();
+}
+
+float Engine::selectionAt(float u, float v) {
+    std::lock_guard<std::mutex> lock(selectionMutex_);
+    if (selection_.empty()) return -1.f;
+    const int x = std::clamp(static_cast<int>(u * selectionW_), 0, selectionW_ - 1);
+    const int y = std::clamp(static_cast<int>(v * selectionH_), 0, selectionH_ - 1);
+    return selection_[static_cast<std::size_t>(y) * selectionW_ + x];
+}
+
+bool Engine::selectionRaster(std::vector<float>* values, int* width, int* height, int* docWidth, int* docHeight) {
+    std::lock_guard<std::mutex> lock(selectionMutex_);
+    if (selection_.empty()) return false;
+    *values = selection_;
+    *width = selectionW_;
+    *height = selectionH_;
+    *docWidth = selectionDocW_;
+    *docHeight = selectionDocH_;
+    return true;
 }
 
 void Engine::setMaskView(const std::string& layerId, int view) {
@@ -876,6 +971,7 @@ void Engine::frame() {
     std::shared_ptr<const GuidedCoefficients> guided;
     std::shared_ptr<const DetailFields> fields;
     bool showOriginal, clipping;
+    float antsPhase = 0.f;
     CompareMode compare;
     float split;
     bool hasGeometry;
@@ -913,6 +1009,12 @@ void Engine::frame() {
                 std::vector<float>().swap(pendingComposite_);
             }
         }
+        if (antsChanged_) {
+            antsChanged_ = false;
+            gpu_.setAntsSegments(pendingAnts_);
+            std::vector<float>().swap(pendingAnts_);
+        }
+        antsPhase = antsPhase_;
         showOriginal = showOriginal_;
         clipping = clipping_;
         compare = compareMode_;
@@ -1164,6 +1266,7 @@ void Engine::frame() {
         const Geometry* geom = hasGeometry ? &geometry : nullptr;
         if (showOriginal || compare == CompareMode::Off) {
             drawScene(showOriginal, ndc, imageW, imageH, level, drawable, clipping && !showOriginal, geom);
+            if (!showOriginal) gpu_.drawAnts(ndc, antsPhase);  // Stage 15: the selection outline
         } else if (compare == CompareMode::Split) {
             drawScene(false, ndc, imageW, imageH, level, drawable, clipping, geom);
             const int splitPx = static_cast<int>(split * static_cast<float>(viewW) + 0.5f);
