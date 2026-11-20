@@ -25,11 +25,14 @@ subtract brushes.
 ## Definition of Done
 
 - [x] **IoU test on 5 CC0 images vs hand masks (subject IoU ≥ 0.85).**
-  - `SmartSelectIoUTest` (`core/ml/src/androidTest`, CI emulator job, API 34 and 36) runs ML
-    Kit Subject Segmentation on 5 CC0 photos (two cats, three dogs; `testdata/smart`). Each
-    must reach IoU ≥ 0.85 against its reference mask.
-  - It also downloads the sky model through `ModelStore` and checks it on a CC0 landscape
-    (IoU ≥ 0.9; measured 0.988 with LiteRT on the CI host's Python, see Decisions).
+  - `SubjectIoUTest` (`core/ml/src/androidTest`) runs ML Kit Subject Segmentation on 5 CC0
+    photos (two cats, three dogs; `testdata/smart`). Each must reach IoU ≥ 0.85 against its
+    reference mask. CI runs it on an added `google_apis_playstore` emulator (API 36): Play
+    services installs ML Kit's optional module through the Play Store, which the `google_apis`
+    images lack (troubleshooting log).
+  - `SmartSelectIoUTest` (API 34 and 36) downloads the sky model through `ModelStore` and checks
+    it on a CC0 landscape: IoU ≥ 0.9. Measured 0.987 on the emulator (CPU) and 0.988 with LiteRT
+    in Python.
   - How the masks were made: `testdata/smart/SOURCES.md` and Decision 9.
 - [x] **Model manager tests** (`ModelStoreTest`, JVM, against a local HTTP server):
   - integrity failure: one byte differs → `Failed(Integrity)`, nothing left on disk;
@@ -66,7 +69,7 @@ Tests added:
 - ctest `smart_select_test` (9) with 17 golden files under `testdata/golden/smart/`;
 - `ModelStoreTest` (9), `AcceleratorPickerTest` (3);
 - `SmartSelectionTest` (5), `AiModelsSettingsTest` (1);
-- `SmartSelectIoUTest` (2, instrumented);
+- `SubjectIoUTest` and `SmartSelectIoUTest` (instrumented);
 - screenshots `select_subject` and `model_sheet` (2 widths each).
 
 ## Tools delivered
@@ -234,6 +237,7 @@ Screenshots changed, and why:
 | --- | --- | --- |
 | `generate.py --check` failed on `selection/distance_outside` about one run in three | cv2.distanceTransform's float result varies between calls (not threads: `setNumThreads(1)` did not help) | Snap to the exact `sqrt(round(d²))` |
 | `NavigationRobolectricTest`: "MlKitContext has not been initialized" | ML Kit's client is created at startup; without its init provider (Robolectric, or a device without Play services) it throws | The subject segmenter is created lazily and its failure becomes `Failed(Unavailable)` (the app keeps working) |
+| `SmartSelectIoUTest` subject case failed on both emulators: `Failed(Network)` after 30 s | logcat: `ZappPhoneskyConn: Unable to bind to Phonesky` — Play services downloads optional ML Kit modules through the Play Store, absent from `google_apis` images | The subject test is its own class (`SubjectIoUTest`), run on an added `google_apis_playstore` emulator row (ci.yml); the other rows run every other test (`notClass`). The install wait is 2 min (was 30 s) |
 | Quick selection's first stroke became Add | The mode was recomputed on every move, after the stroke had already started a selection | The mode is fixed when the stroke starts |
 | detekt LargeClass on `EditorViewModel` | Two new lines of wiring passed the limit | Gesture listener moved out; Wi-Fi-only through the actions host; suppression with reason |
 

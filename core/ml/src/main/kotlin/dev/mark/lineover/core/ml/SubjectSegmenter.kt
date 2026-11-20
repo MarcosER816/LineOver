@@ -127,7 +127,7 @@ class SubjectSegmenter(
     override fun close() = segmenter.close()
 
     private companion object {
-        const val INSTALL_POLLS = 60
+        const val INSTALL_POLLS = 240
         const val INSTALL_POLL_MS = 500L
     }
 }
