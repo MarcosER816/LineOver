@@ -10,6 +10,8 @@ dependencies {
     implementation(project(":core:io"))
     // The image engine (native render thread, tiles, GPU ops).
     implementation(project(":core:engine"))
+    // Smart selections (Stage 16): the segmentation models and their download manager.
+    implementation(project(":core:ml"))
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
     // BackHandler (already in the app through :app).

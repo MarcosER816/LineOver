@@ -70,6 +70,11 @@ interface AppPreferences {
     val exportSettings: StateFlow<ExportSettings>
 
     fun setExportSettings(settings: ExportSettings)
+
+    /** AI models download on Wi-Fi only (Stage 16; on until changed in Settings → AI models). */
+    val modelsWifiOnly: StateFlow<Boolean>
+
+    fun setModelsWifiOnly(wifiOnly: Boolean)
 }
 
 /** [AppPreferences] in a SharedPreferences file (`lineover_ui`). */
@@ -123,8 +128,17 @@ class SharedAppPreferences(
         prefs.edit().putString(KEY_EXPORT, ExportSettings.encode(settings)).apply()
     }
 
+    private val wifiOnlyFlow = MutableStateFlow(prefs.getBoolean(KEY_WIFI_ONLY, true))
+    override val modelsWifiOnly = wifiOnlyFlow.asStateFlow()
+
+    override fun setModelsWifiOnly(wifiOnly: Boolean) {
+        wifiOnlyFlow.value = wifiOnly
+        prefs.edit().putBoolean(KEY_WIFI_ONLY, wifiOnly).apply()
+    }
+
     private companion object {
         const val FILE = "lineover_ui"
+        const val KEY_WIFI_ONLY = "models.wifi_only"
         const val KEY_CATEGORY = "editor.last_category"
         const val KEY_COACH = "editor.coach_marks_seen"
         const val KEY_FAVORITES = "editor.favorites"
@@ -145,8 +159,14 @@ class InMemoryAppPreferences(
     surround: CanvasSurround = CanvasSurround.Dark,
     tapGestures: TapGestures = TapGestures.Standard,
     exportSettings: ExportSettings = ExportSettings(),
+    modelsWifiOnly: Boolean = true,
 ) : AppPreferences {
     override val exportSettings = MutableStateFlow(exportSettings)
+    override val modelsWifiOnly = MutableStateFlow(modelsWifiOnly)
+
+    override fun setModelsWifiOnly(wifiOnly: Boolean) {
+        modelsWifiOnly.value = wifiOnly
+    }
 
     override fun setExportSettings(settings: ExportSettings) {
         exportSettings.value = settings

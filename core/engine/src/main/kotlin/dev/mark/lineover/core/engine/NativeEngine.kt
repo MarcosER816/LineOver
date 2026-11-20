@@ -198,6 +198,26 @@ internal class NativeEngine(
     /** [width, height, docWidth, docHeight, values...] or null without a selection. */
     fun selectionRaster(): FloatArray? = nativeSelectionRaster(h())
 
+    /** Stage 16: the selection grid's image as sRGB RGBA bytes (<= [maxEdge]); [size] receives (w, h). */
+    fun selectionImage(
+        maxEdge: Int,
+        size: IntArray,
+    ): ByteArray? = nativeSelectionImage(h(), maxEdge, size)
+
+    /** [width, height (3 planes), planes...] or null without a selection. */
+    fun selectionGuide(): FloatArray? = nativeSelectionGuide(h())
+
+    fun liveWireAnchor(
+        x: Float,
+        y: Float,
+        reach: Float,
+    ): Boolean = nativeLiveWireAnchor(h(), x, y, reach)
+
+    fun liveWirePath(
+        x: Float,
+        y: Float,
+    ): FloatArray = nativeLiveWirePath(h(), x, y)
+
     fun registerMaskRaster(
         name: String,
         values: FloatArray,
@@ -347,6 +367,27 @@ internal class NativeEngine(
     ): Float
 
     private external fun nativeSelectionRaster(engine: Long): FloatArray?
+
+    private external fun nativeSelectionImage(
+        engine: Long,
+        maxEdge: Int,
+        size: IntArray,
+    ): ByteArray?
+
+    private external fun nativeSelectionGuide(engine: Long): FloatArray?
+
+    private external fun nativeLiveWireAnchor(
+        engine: Long,
+        x: Float,
+        y: Float,
+        reach: Float,
+    ): Boolean
+
+    private external fun nativeLiveWirePath(
+        engine: Long,
+        x: Float,
+        y: Float,
+    ): FloatArray
 
     private external fun nativeRegisterMaskRaster(
         name: String,

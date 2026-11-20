@@ -43,11 +43,16 @@ struct MaskPaint {
     // width x height pixels covering the docWidth x docHeight document, sampled bilinearly
     std::string source;
     double width = 0.0, height = 0.0, docWidth = 0.0, docHeight = 0.0;
+    // Stage 16: the raster's colour guide (a registered raster of 3 planes, sqrt(rgb) of the
+    // image it was made on, width x 3 height): exports upsample the mask by joint bilateral
+    // filtering against the full-resolution image instead of bilinearly ("" = bilinear)
+    std::string guide;
 };
 
 // A selection operation (Stage 15; selection.h evaluates them). Coordinates in document px.
 struct SelectionOp {
-    std::string kind;          // rect, ellipse, lasso, polygon, wand, color_range, all, invert, grow, feather, smooth, border
+    std::string kind;  // rect, ellipse, lasso, polygon, wand, color_range, all, invert, grow, feather, smooth,
+                       // border; Stage 16: magnetic, brush, raster, quick, refine
     std::string mode = "new";  // new, add, subtract, intersect
     bool antiAlias = true;
     double x0 = 0.0, y0 = 0.0, x1 = 0.0, y1 = 0.0;  // rect / ellipse box
@@ -57,8 +62,17 @@ struct SelectionOp {
     bool allLayers = true;
     double fuzziness = 0.0;                        // color range: delta E
     std::vector<double> add, subtract;             // color range samples: x, y, ...
-    double px = 0.0;                               // grow (< 0 shrinks), feather, smooth, border
+    double px = 0.0;                               // grow (< 0 shrinks), feather, smooth, border, refine radius
+    // Stage 16
+    std::string source;                            // raster: the registered model mask (masks.h)
+    double width = 0.0, height = 0.0;              // raster: its size in pixels (it covers the document)
+    std::string tool;                              // raster: subject, sky or object (the History label)
+    double radius = 0.0, hardness = 1.0;           // brush, quick: the brush (document px)
+    double contrast = 0.0;                         // refine: 0..100
 };
+
+bool operator==(const SelectionOp& a, const SelectionOp& b);
+inline bool operator!=(const SelectionOp& a, const SelectionOp& b) { return !(a == b); }
 
 // {"ops":[...]} (Kotlin's Selection) into [out].
 bool parseSelection(const std::string& json, std::vector<SelectionOp>* out, std::string* error);

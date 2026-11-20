@@ -11,3 +11,10 @@ class SelectionRaster(
     val docHeight: Int,
     val values: FloatArray,
 )
+
+/** The selection grid's image (Stage 16): [width] x [height] sRGB pixels, RGBA bytes row by row. */
+class SelectionImage(
+    val width: Int,
+    val height: Int,
+    val rgba: ByteArray,
+)

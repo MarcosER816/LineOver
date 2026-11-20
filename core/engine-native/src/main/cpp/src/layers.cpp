@@ -170,6 +170,7 @@ struct Context {
     bool gamma;
     bool full;
     std::string* skipped;
+    const float* guide = nullptr;  // Stage 16: the background of an export region (guided mask rasters)
     double docX(int i) const { return (region->originX + i + 0.5) / region->scale; }
     double docY(int j) const { return (region->originY + j + 0.5) / region->scale; }
     std::size_t pixels() const { return static_cast<std::size_t>(region->width) * region->height; }
@@ -290,7 +291,12 @@ std::vector<float> maskWeights(const Layer& layer, const Context& ctx) {
                             std::to_string(region.height) + "/" + std::to_string(region.docWidth) + "x" +
                             std::to_string(region.docHeight) + "*" + std::to_string(region.scale);
     std::shared_ptr<const masks::MaskTiles> tiles;
-    {
+    if (ctx.guide != nullptr) {  // an export region: guided by its own pixels, never cached
+        auto rendered = std::make_shared<masks::MaskTiles>();
+        masks::render(layer.mask, region, rendered.get(), ctx.guide);
+        tiles = rendered;
+    }
+    if (!tiles) {
         std::lock_guard<std::mutex> lock(gMaskMutex);
         for (auto it = gMasks.begin(); it != gMasks.end(); ++it) {
             if (it->key == key) {
@@ -505,6 +511,12 @@ bool hasLayers(const Graph& graph) {
 void compositeLayers(const Graph& graph, float* rgba, const Region& region, bool full, std::string* skipped) {
     if (region.width <= 0 || region.height <= 0 || !hasLayers(graph)) return;
     Context ctx{&region, graph.blendSpace != "linear", full, skipped};
+    // Exports guide mask rasters by the full-resolution background (Stage 16).
+    std::vector<float> background;
+    if (full) {
+        background.assign(rgba, rgba + ctx.pixels() * 4);
+        ctx.guide = background.data();
+    }
     renderLayers(graph.layers, rgba, ctx);
 }
 

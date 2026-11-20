@@ -363,15 +363,12 @@ bool Engine::autoSettings(AutoSettings* out) {
     return source && source->width > 0 && lo::autoSettings(source->rgba.data(), source->width, source->height, out);
 }
 
-std::string Engine::setSelection(const std::string& json) {
-    std::vector<SelectionOp> ops;
-    std::string error;
-    if (!json.empty() && !parseSelection(json, &ops, &error)) return error;
+bool Engine::sampleGrid(double* scale, int* docWOut, int* docHOut) {
     std::shared_ptr<const Graph> graph;
     std::shared_ptr<const ImageF32> source;
     std::shared_ptr<const GuidedCoefficients> guided;
     std::shared_ptr<const DetailFields> fields;
-    int imageW, imageH, docW, docH;
+    int imageW, docW, docH;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         graph = graph_;
@@ -379,38 +376,52 @@ std::string Engine::setSelection(const std::string& json) {
         guided = guided_;
         fields = fields_;
         imageW = imageWidth_;
-        imageH = imageHeight_;
         docW = hasGeometry_ ? geometry_.outputWidth : imageWidth_;
         docH = hasGeometry_ ? geometry_.outputHeight : imageHeight_;
     }
+    if (!graph || !source || source->width <= 0 || docW <= 0) return false;
+    // The grid is the composite's: what the canvas shows of the document, <= 2048 px.
+    if (graph != sampledGraph_ || sampledAll_.width == 0) {
+        renderGraphImage(*source, guided.get(), *graph, &sampledAll_, fields.get(), imageW, kCompositeEdge);
+        Graph photo = *graph;
+        photo.layers.resize(std::min<std::size_t>(1, photo.layers.size()));
+        if (layers::hasLayers(*graph)) {
+            renderGraphImage(*source, guided.get(), photo, &sampledPhoto_, fields.get(), imageW, kCompositeEdge);
+        } else {
+            sampledPhoto_ = ImageF32{};
+        }
+        sampledGraph_ = graph;
+        ++sampledGeneration_;
+    }
+    *scale = static_cast<double>(sampledAll_.width) / docW;
+    *docWOut = docW;
+    *docHOut = docH;
+    return true;
+}
+
+std::string Engine::setSelection(const std::string& json) {
+    std::vector<SelectionOp> ops;
+    std::string error;
+    if (!json.empty() && !parseSelection(json, &ops, &error)) return error;
     std::vector<float> segments;
     {
         std::lock_guard<std::mutex> lock(selectionMutex_);
         if (json == selectionJson_ && (!selection_.empty() || ops.empty())) return "";
         selectionJson_ = json;
-        if (ops.empty() || !graph || !source || source->width <= 0 || docW <= 0) {
+        double scale = 1.0;
+        int docW = 0, docH = 0;
+        if (ops.empty() || !sampleGrid(&scale, &docW, &docH)) {
             selection_.clear();
             selectionW_ = selectionH_ = 0;
         } else {
-            // The grid is the composite's: what the canvas shows of the document, <= 2048 px.
-            if (graph != sampledGraph_ || sampledAll_.width == 0) {
-                renderGraphImage(*source, guided.get(), *graph, &sampledAll_, fields.get(), imageW, kCompositeEdge);
-                Graph photo = *graph;
-                photo.layers.resize(std::min<std::size_t>(1, photo.layers.size()));
-                if (layers::hasLayers(*graph)) {
-                    renderGraphImage(*source, guided.get(), photo, &sampledPhoto_, fields.get(), imageW, kCompositeEdge);
-                } else {
-                    sampledPhoto_ = ImageF32{};
-                }
-                sampledGraph_ = graph;
-            }
             selection::Grid grid;
             grid.width = sampledAll_.width;
             grid.height = sampledAll_.height;
-            grid.scale = static_cast<double>(sampledAll_.width) / docW;
+            grid.scale = scale;
             grid.rgba = sampledAll_.rgba.data();
             grid.rgbaPhoto = sampledPhoto_.width == grid.width ? sampledPhoto_.rgba.data() : nullptr;
-            selection_ = selection::evaluate(ops, grid);
+            grid.generation = sampledGeneration_;
+            selection_ = selection::evaluate(ops, grid, &selectionCache_);
             selectionW_ = grid.width;
             selectionH_ = grid.height;
             selectionDocW_ = docW;
@@ -418,7 +429,6 @@ std::string Engine::setSelection(const std::string& json) {
             selection::contours(selection_.data(), grid.width, grid.height, grid.scale, &segments);
         }
     }
-    (void)imageH;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         pendingAnts_.swap(segments);
@@ -426,6 +436,76 @@ std::string Engine::setSelection(const std::string& json) {
     }
     requestRedraw();
     return "";
+}
+
+bool Engine::selectionImage(int maxEdge, std::vector<std::uint8_t>* rgba, int* width, int* height) {
+    std::lock_guard<std::mutex> lock(selectionMutex_);
+    double scale = 1.0;
+    int docW = 0, docH = 0;
+    if (!sampleGrid(&scale, &docW, &docH)) return false;
+    const int w = sampledAll_.width, h = sampledAll_.height;
+    const double f = std::max(1.0, static_cast<double>(std::max(w, h)) / std::max(1, maxEdge));
+    const int ow = std::max(1, static_cast<int>(std::lround(w / f))), oh = std::max(1, static_cast<int>(std::lround(h / f)));
+    // Box average of the grid pixels whose centres fall in each output pixel.
+    std::vector<float> acc(static_cast<std::size_t>(ow) * oh * 4, 0.f);
+    std::vector<int> count(static_cast<std::size_t>(ow) * oh, 0);
+    for (int j = 0; j < h; ++j) {
+        const int oy = std::min(static_cast<int>((j + 0.5) * oh / h), oh - 1);
+        for (int i = 0; i < w; ++i) {
+            const int ox = std::min(static_cast<int>((i + 0.5) * ow / w), ow - 1);
+            const std::size_t o = static_cast<std::size_t>(oy) * ow + ox;
+            const float* p = &sampledAll_.rgba[4 * (static_cast<std::size_t>(j) * w + i)];
+            for (int c = 0; c < 4; ++c) acc[4 * o + c] += p[c];
+            ++count[o];
+        }
+    }
+    for (std::size_t o = 0; o < count.size(); ++o)
+        for (int c = 0; c < 4; ++c) acc[4 * o + c] /= std::max(1, count[o]);
+    rgba->resize(acc.size());
+    color::workingToDisplay8(acc.data(), rgba->data(), count.size(), color::Display::Srgb);
+    *width = ow;
+    *height = oh;
+    return true;
+}
+
+bool Engine::selectionGuide(std::vector<float>* planes, int* width, int* height) {
+    std::lock_guard<std::mutex> lock(selectionMutex_);
+    if (selection_.empty() || sampledAll_.width != selectionW_ || sampledAll_.height != selectionH_) return false;
+    const std::size_t n = static_cast<std::size_t>(selectionW_) * selectionH_;
+    planes->resize(3 * n);
+    for (std::size_t p = 0; p < n; ++p)
+        for (int c = 0; c < 3; ++c)
+            (*planes)[c * n + p] = std::sqrt(std::clamp(sampledAll_.rgba[4 * p + c], 0.f, 1.f));
+    *width = selectionW_;
+    *height = 3 * selectionH_;
+    return true;
+}
+
+bool Engine::liveWireAnchor(float x, float y, float reach) {
+    std::lock_guard<std::mutex> lock(selectionMutex_);
+    double scale = 1.0;
+    int docW = 0, docH = 0;
+    if (!sampleGrid(&scale, &docW, &docH)) return false;
+    if (liveWire_.empty() || liveWireGeneration_ != sampledGeneration_) {
+        const std::vector<float> grey = selection::lightness(sampledAll_.rgba.data(), sampledAll_.width, sampledAll_.height);
+        liveWire_.setImage(grey.data(), sampledAll_.width, sampledAll_.height);
+        liveWireGeneration_ = sampledGeneration_;
+    }
+    liveWireScale_ = scale;
+    liveWire_.setAnchor(static_cast<int>(std::floor(x * scale)), static_cast<int>(std::floor(y * scale)),
+                        std::max(8, static_cast<int>(std::lround(reach * scale))));
+    return true;
+}
+
+std::vector<float> Engine::liveWirePath(float x, float y) {
+    std::lock_guard<std::mutex> lock(selectionMutex_);
+    std::vector<float> out;
+    if (liveWire_.empty()) return out;
+    const double s = liveWireScale_;
+    const std::vector<int> path = liveWire_.pathTo(static_cast<int>(std::floor(x * s)), static_cast<int>(std::floor(y * s)));
+    out.reserve(path.size());
+    for (int v : path) out.push_back(static_cast<float>((v + 0.5) / s));
+    return out;
 }
 
 void Engine::setAntsPhase(float phase) {

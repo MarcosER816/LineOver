@@ -13,6 +13,11 @@ import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.SharedAppPreferences
 import dev.mark.lineover.core.io.project.ProjectLibraries
 import dev.mark.lineover.core.io.project.ProjectLibrary
+import dev.mark.lineover.core.ml.AndroidNetworkStatus
+import dev.mark.lineover.core.ml.DeviceSmartModels
+import dev.mark.lineover.core.ml.HttpTransport
+import dev.mark.lineover.core.ml.ModelStore
+import dev.mark.lineover.core.ml.SmartModels
 import dev.mark.lineover.feature.editor.canvas.EditorCanvasFactory
 import dev.mark.lineover.feature.editor.canvas.EngineCanvasFactory
 import dev.mark.lineover.feature.export.ExportEnvironment
@@ -71,6 +76,17 @@ class AppContainer(
 
     /** Selections saved as mask pixels (Stage 15). */
     val maskRasters: MaskRasters by lazy { FileMaskRasters(File(app.filesDir, "masks")) }
+
+    /**
+     * The segmentation models (Stage 16, rule D3): downloaded on first use into no-backup storage
+     * (re-downloadable, so never in a device backup), SHA-256 checked, deletable in Settings.
+     */
+    val smartModels: SmartModels by lazy {
+        val network = AndroidNetworkStatus(app)
+        val wifiOnly = { preferences.modelsWifiOnly.value }
+        val store = ModelStore(File(app.noBackupFilesDir, "models"), HttpTransport(), network, wifiOnly)
+        DeviceSmartModels(app, store, network, wifiOnly)
+    }
 
     /** Opens the image engine for the editor's canvas (one session per open project). */
     val canvases: EditorCanvasFactory by lazy { EngineCanvasFactory(app) }

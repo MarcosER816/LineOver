@@ -39,10 +39,32 @@ struct Grid {
     double scale = 1.0;
     const float* rgba = nullptr;       // all layers (the composite)
     const float* rgbaPhoto = nullptr;  // the photo alone ("sample all layers" off); null = rgba
+    std::uint64_t generation = 0;      // changes whenever the pixels do (for Cache)
 };
 
-// The selection of [ops] on [grid], from nothing (R16F-rounded values).
-std::vector<float> evaluate(const std::vector<SelectionOp>& ops, const Grid& grid);
+// Checkpoints of a recipe after its costly operations (model masks, quick selection, refine
+// edge, Stage 16), so the brush strokes and ops after them do not re-run them.
+struct Cache {
+    struct Checkpoint {
+        std::vector<SelectionOp> ops;  // the recipe up to here
+        std::vector<float> s;          // the selection after them (not yet R16F)
+    };
+    std::uint64_t generation = 0;
+    int width = 0, height = 0;
+    double scale = 0.0;
+    std::vector<Checkpoint> checkpoints;  // oldest first
+};
+
+// The selection of [ops] on [grid], from nothing (R16F-rounded values); [cache] (optional)
+// resumes after the longest cached prefix of [ops] on the same grid.
+std::vector<float> evaluate(const std::vector<SelectionOp>& ops, const Grid& grid, Cache* cache = nullptr);
+
+// Quick selection (Stage 16): GrabCut around the brush stroke [op] (kind "quick") on [grid];
+// 1 = the object the stroke is on. Exposed for smart_select_test.
+std::vector<float> quickSelect(const SelectionOp& op, const Grid& grid);
+
+// The grey image the magnetic lasso follows: OKLab lightness (0..1) of [rgba].
+std::vector<float> lightness(const float* rgba, int width, int height);
 
 // Marching squares at 0.5: segments (x0, y0, x1, y1) in document px.
 void contours(const float* s, int width, int height, double scale, std::vector<float>* segments);

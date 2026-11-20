@@ -365,6 +365,49 @@ JNIEXPORT jfloatArray LO_NATIVE(nativeSelectionRaster)(JNIEnv* env, jobject, jlo
     return out;
 }
 
+// [width, height] then RGBA bytes, or null.
+JNIEXPORT jbyteArray LO_NATIVE(nativeSelectionImage)(JNIEnv* env, jobject, jlong engine, jint maxEdge, jintArray size) {
+    int w = 0, h = 0;
+    uint8_t* rgba = lo_engine_selection_image(handle(engine), maxEdge, &w, &h);
+    if (rgba == nullptr) return nullptr;
+    const jsize n = static_cast<jsize>(w) * h * 4;
+    jbyteArray out = env->NewByteArray(n);
+    if (out != nullptr) env->SetByteArrayRegion(out, 0, n, reinterpret_cast<const jbyte*>(rgba));
+    const jint dims[2] = {w, h};
+    env->SetIntArrayRegion(size, 0, 2, dims);
+    free(rgba);
+    return out;
+}
+
+// [width, height, planes...] or null.
+JNIEXPORT jfloatArray LO_NATIVE(nativeSelectionGuide)(JNIEnv* env, jobject, jlong engine) {
+    int w = 0, h = 0;
+    float* planes = lo_engine_selection_guide(handle(engine), &w, &h);
+    if (planes == nullptr) return nullptr;
+    const jsize n = static_cast<jsize>(w) * h;
+    jfloatArray out = env->NewFloatArray(n + 2);
+    if (out != nullptr) {
+        const jfloat header[2] = {static_cast<jfloat>(w), static_cast<jfloat>(h)};
+        env->SetFloatArrayRegion(out, 0, 2, header);
+        env->SetFloatArrayRegion(out, 2, n, planes);
+    }
+    free(planes);
+    return out;
+}
+
+JNIEXPORT jboolean LO_NATIVE(nativeLiveWireAnchor)(JNIEnv*, jobject, jlong engine, jfloat x, jfloat y, jfloat reach) {
+    return lo_engine_live_wire_anchor(handle(engine), x, y, reach) != 0 ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jfloatArray LO_NATIVE(nativeLiveWirePath)(JNIEnv* env, jobject, jlong engine, jfloat x, jfloat y) {
+    int count = 0;
+    float* path = lo_engine_live_wire_path(handle(engine), x, y, &count);
+    jfloatArray out = env->NewFloatArray(count);
+    if (out != nullptr && count > 0) env->SetFloatArrayRegion(out, 0, count, path);
+    free(path);
+    return out;
+}
+
 JNIEXPORT void LO_NATIVE(nativeRegisterMaskRaster)(JNIEnv* env, jobject, jstring name, jfloatArray values, jint width, jint height) {
     const char* text = env->GetStringUTFChars(name, nullptr);
     jfloat* data = env->GetFloatArrayElements(values, nullptr);

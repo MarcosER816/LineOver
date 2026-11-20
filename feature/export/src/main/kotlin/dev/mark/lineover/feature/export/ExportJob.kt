@@ -249,7 +249,7 @@ class ExportRunner(
                 .mapNotNull { it.first.mask }
                 .flatMap { it.paint }
                 .filterIsInstance<MaskPaint.Raster>()
-                .map { it.source }
+                .flatMap { listOfNotNull(it.source, it.guide) } // Stage 16: and its colour guide
                 .toSet()
         for (name in names) {
             val raster = store?.load(name)

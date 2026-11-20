@@ -25,6 +25,7 @@ import blend_reference as blend
 import detail_reference as detail
 import export_reference as export
 import selection_reference as sel
+import smart_reference as smart
 import lensfun_reference
 import lut_reference as lut
 import reference
@@ -83,6 +84,7 @@ def build_outputs() -> dict[str, np.ndarray]:
     outputs.update(blend_outputs())
     outputs.update(mask_outputs())
     outputs.update(selection_outputs())
+    outputs.update(smart_outputs())
     return outputs
 
 
@@ -412,6 +414,57 @@ def selection_outputs() -> dict:
     half = scene[::2, ::2]
     assert sel.tie_margin(sel.SCENE_OPS, half, 0.5) > 1e-3
     out["selection/scene_half_f32.npy"] = sel.evaluate(sel.SCENE_OPS, half, 0.5)[..., None]
+    return out
+
+
+def smart_outputs() -> dict:
+    """Stage 16: live-wire paths (and their agreement with cv2's IntelligentScissorsMB), joint
+    bilateral upsampling, guided-filter matting, cv2.grabCut on the quick-selection test image,
+    and a recipe with a model mask, brushes, a magnetic lasso and refine edge (full and half)."""
+    out = {}
+    img = smart.livewire_image()
+    out["smart/livewire_image_f32.npy"] = img[..., None]
+    u8 = np.clip(img * 255.0, 0, 255).astype(np.uint8)
+    scissors = cv2.segmentation.IntelligentScissorsMB()
+    scissors.setGradientMagnitudeMaxLimit(200)
+    scissors.applyImage(u8)
+    paths = []
+    for i, (a, b) in enumerate(smart.LIVEWIRE_CASES):
+        p = np.array(smart.livewire_path(img, a, b))
+        scissors.buildMap(a)
+        c = np.asarray(scissors.getContour(b)).reshape(-1, 2)
+        edge = lambda q: float(np.abs(np.hypot(q[:, 0] + 0.5 - 30.5, q[:, 1] + 0.5 - 23.5) - 15.0).mean())
+        assert edge(p) < 1.0 and edge(c) < 1.0, f"live-wire {i} leaves the edge"
+        if i < smart.LIVEWIRE_UNIQUE:
+            d = np.hypot(p[:, None, 0] - c[None, :, 0], p[:, None, 1] - c[None, :, 1])
+            assert d.min(1).max() <= 1.0 and d.min(0).max() <= 1.0, f"live-wire {i} differs from IntelligentScissorsMB"
+        paths.append({"anchor": list(a), "target": list(b), "path": p.ravel().tolist()})
+    out["smart/livewire_paths.json"] = json.dumps(paths) + "\n"
+    rgba, low, truth = smart.jbu_inputs()
+    g = smart.guide(rgba)
+    out["smart/jbu_image_f32.npy"] = rgba
+    out["smart/jbu_low_f32.npy"] = low.astype(np.float32)[..., None]
+    up = smart.jbu(low, smart.low_guide(g, low.shape[0], low.shape[1]), g)
+    assert smart.iou(up, truth) > 0.99, "joint bilateral upsampling misses the edge"
+    out["smart/jbu_f32.npy"] = up.astype(np.float32)[..., None]
+    rgba, hard, alpha = smart.matte_image()
+    out["smart/matte_image_f32.npy"] = rgba
+    out["smart/matte_hard_f32.npy"] = hard.astype(np.float32)[..., None]
+    for r, c in ((4, 0.0), (2, 40.0)):
+        out[f"smart/matte_r{r}_c{int(c)}_f32.npy"] = smart.refine(hard, rgba, r, c).astype(np.float32)[..., None]
+    gc_img, obj, trimap = smart.grabcut_image()
+    out["smart/grabcut_image_rgba8.png"] = np.concatenate([gc_img, np.full(gc_img.shape[:2] + (1,), 255, np.uint8)], axis=-1)
+    out["smart/grabcut_trimap_f32.npy"] = trimap.astype(np.float32)[..., None]
+    out["smart/grabcut_truth_f32.npy"] = obj[..., None]
+    cut = smart.grabcut(gc_img, trimap, 4)
+    assert smart.iou(cut, obj) > 0.97, "cv2.grabCut misses the test object"
+    out["smart/grabcut_cv2_f32.npy"] = cut[..., None]
+    scene = reference.scene_rec2020()
+    rasters = {k: f() for k, f in sel.SMART_RASTERS.items()}
+    out["smart/scene_raster_f32.npy"] = rasters["subject"][..., None]
+    out["smart/scene_ops.json"] = json.dumps(sel.SMART_OPS, indent=1) + "\n"
+    out["smart/scene_f32.npy"] = sel.evaluate(sel.SMART_OPS, scene, rasters=rasters)[..., None]
+    out["smart/scene_half_f32.npy"] = sel.evaluate(sel.SMART_OPS, scene[::2, ::2], 0.5, rasters=rasters)[..., None]
     return out
 
 

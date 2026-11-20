@@ -66,8 +66,11 @@ sealed interface MaskPaint {
     /**
      * Replaces the mask with a saved selection (Stage 15): the raster [source] (a file of the
      * app's mask store) of [width] x [height] pixels covering a [docWidth] x [docHeight]
-     * document, sampled bilinearly.
+     * document, sampled bilinearly. With a [guide] (Stage 16: a raster of the image it was made
+     * on, 3 planes of sqrt(rgb), [width] x 3 [height]) an export upsamples it to full resolution
+     * by joint bilateral filtering against the photo, so its edges follow the photo's.
      */
+    @OptIn(ExperimentalSerializationApi::class)
     @Serializable
     @SerialName("raster")
     data class Raster(
@@ -76,6 +79,7 @@ sealed interface MaskPaint {
         val height: Float,
         val docWidth: Float,
         val docHeight: Float,
+        @EncodeDefault(EncodeDefault.Mode.NEVER) val guide: String? = null,
     ) : MaskPaint
 
     /** Replaces the mask with a linear ramp: [from] at (x0, y0) to [to] at (x1, y1). */

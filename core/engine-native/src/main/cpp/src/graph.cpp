@@ -318,6 +318,7 @@ void parseMask(const Value& value, LayerMask* out) {
         num(item, "height", &p.height);
         num(item, "docWidth", &p.docWidth);
         num(item, "docHeight", &p.docHeight);
+        if (const Value* g = item.find("guide"); g != nullptr && g->kind == Value::Kind::String) p.guide = g->text;
         out->paint.push_back(std::move(p));
     }
 }
@@ -502,6 +503,10 @@ void serializeMask(const LayerMask& mask, std::string* out) {
                 number("height", p.height);
                 number("docWidth", p.docWidth);
                 number("docHeight", p.docHeight);
+                if (!p.guide.empty()) {
+                    out->append(",\"guide\":");
+                    writeString(p.guide, out);
+                }
             } else if (p.kind == "gradient") {
                 number("x0", p.x0);
                 number("y0", p.y0);
@@ -609,6 +614,14 @@ void serializeLayer(const Layer& layer, std::string* out) {
 
 }  // namespace
 
+bool operator==(const SelectionOp& a, const SelectionOp& b) {
+    return a.kind == b.kind && a.mode == b.mode && a.antiAlias == b.antiAlias && a.x0 == b.x0 && a.y0 == b.y0 &&
+           a.x1 == b.x1 && a.y1 == b.y1 && a.points == b.points && a.x == b.x && a.y == b.y && a.tolerance == b.tolerance &&
+           a.contiguous == b.contiguous && a.allLayers == b.allLayers && a.fuzziness == b.fuzziness && a.add == b.add &&
+           a.subtract == b.subtract && a.px == b.px && a.source == b.source && a.width == b.width && a.height == b.height &&
+           a.tool == b.tool && a.radius == b.radius && a.hardness == b.hardness && a.contrast == b.contrast;
+}
+
 bool parseSelection(const std::string& json, std::vector<SelectionOp>* out, std::string* error) {
     Reader reader(json);
     Value root;
@@ -651,6 +664,13 @@ bool parseSelection(const std::string& json, std::vector<SelectionOp>* out, std:
         list(item, "add", &op.add);
         list(item, "subtract", &op.subtract);
         num(item, "px", &op.px);
+        if (const Value* v = item.find("source"); v != nullptr && v->kind == Value::Kind::String) op.source = v->text;
+        if (const Value* v = item.find("tool"); v != nullptr && v->kind == Value::Kind::String) op.tool = v->text;
+        num(item, "width", &op.width);
+        num(item, "height", &op.height);
+        num(item, "radius", &op.radius);
+        num(item, "hardness", &op.hardness);
+        num(item, "contrast", &op.contrast);
         out->push_back(std::move(op));
     }
     return true;

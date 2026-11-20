@@ -395,6 +395,54 @@ abstract class EditorScreenshots(
             ),
         )
 
+    /** Stage 16: Select subject's panel (the one-tap buttons, the add / subtract brush, the last run's time). */
+    @Test
+    fun selectSubject() =
+        shot(
+            "select_subject",
+            base(ToolCategory.Select).copy(
+                panel = EditorPanel.Tool(SmartTools.SUBJECT),
+                graph =
+                    EditGraph(
+                        selection =
+                            Selection(
+                                listOf(
+                                    SelectionOp.Raster(SelectionMode.New, "0123456789abcdef0123456789abcdef.lomask", 768f, 576f, "subject"),
+                                ),
+                            ),
+                    ),
+                smart = SmartSelectState(lastRun = "Select subject: 0.64 s (model 0.41 s on GPU)"),
+            ),
+        )
+
+    /** Stage 16: the first use of Object select: its model's sheet (name, size, licence, source, Download). */
+    @Test
+    fun modelSheet() =
+        shot(
+            "model_sheet",
+            base(ToolCategory.Select).copy(
+                panel = EditorPanel.Tool(SmartTools.OBJECT),
+                smart =
+                    SmartSelectState(
+                        sheet =
+                            ModelSheet(
+                                dev.mark.lineover.core.ml.SmartTool.Object,
+                                dev.mark.lineover.core.ml.ModelInfo(
+                                    dev.mark.lineover.core.ml.SmartTool.Object,
+                                    dev.mark.lineover.core.ml.ModelCatalog.MAGIC_TOUCH.displayName,
+                                    dev.mark.lineover.core.ml.ModelCatalog.MAGIC_TOUCH.sizeBytes,
+                                    dev.mark.lineover.core.ml.ModelCatalog.MAGIC_TOUCH.license,
+                                    dev.mark.lineover.core.ml.ModelCatalog.MAGIC_TOUCH.licenseUrl,
+                                    "storage.googleapis.com",
+                                ),
+                                dev.mark.lineover.core.ml.ModelState
+                                    .Downloading(12_000_000L, 30_525_312L),
+                                wifiOnly = true,
+                            ),
+                    ),
+            ),
+        )
+
     @Test
     fun addLayerMenu() = screenShot("menu_add_layer", base().copy(panel = EditorPanel.Layers, menu = EditorMenu.AddLayer))
 

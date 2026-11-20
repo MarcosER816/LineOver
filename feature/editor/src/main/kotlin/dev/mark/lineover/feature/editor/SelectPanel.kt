@@ -57,7 +57,18 @@ internal fun SelectPanel(
             Modifier.padding(horizontal = LoSpacing.M).testTag(EditorTags.slot(toolId)),
             verticalArrangement = Arrangement.spacedBy(LoSpacing.Xs),
         ) {
-            Text(hintOf(toolId, settings), style = LoType.Caption, color = LoColors.TextSecondary)
+            Text(
+                if (toolId in
+                    SmartTools.ALL
+                ) {
+                    smartHint(toolId)
+                } else {
+                    hintOf(toolId, settings)
+                },
+                style = LoType.Caption,
+                color = LoColors.TextSecondary,
+            )
+            if (toolId in SmartTools.ALL) SmartToolOptions(toolId, state, onIntent)
             when (toolId) {
                 SelectTools.MARQUEE -> {
                     LoSegmented(

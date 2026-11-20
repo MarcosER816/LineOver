@@ -100,6 +100,7 @@ fun LineOverNavigation(
                         looks = container.looks,
                         layers = container.layerSources,
                         maskRasters = container.maskRasters,
+                        smartModels = container.smartModels,
                     )
                 }
                 entry<ExportRoute>(
@@ -136,6 +137,7 @@ fun LineOverNavigation(
                         },
                         onOpenGallery = openGallery,
                         lensProfiles = container.lensProfiles,
+                        smartModels = container.smartModels,
                     )
                 }
                 entry<SettingsSectionRoute> { key ->
@@ -146,6 +148,7 @@ fun LineOverNavigation(
                         onBack = back,
                         onOpenGallery = openGallery,
                         lensProfiles = container.lensProfiles,
+                        smartModels = container.smartModels,
                     )
                 }
                 entry<GalleryRoute> {

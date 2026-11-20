@@ -21,7 +21,9 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+import blend_reference as blend
 import reference
+import smart_reference as smart
 
 SUB = 4  # samples per pixel side when anti-aliased
 
@@ -74,7 +76,7 @@ def shape_mask(op: dict, h: int, w: int, scale: float) -> np.ndarray:
         if rx <= 0 or ry <= 0:
             return np.zeros((h, w))
         return _coverage(lambda x, y: ((((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2) <= 1.0).astype(np.float64), h, w, scale, aa)
-    if kind in ("lasso", "polygon"):
+    if kind in ("lasso", "polygon", "magnetic"):
         if len(op["points"]) < 6:
             return np.zeros((h, w))
         return _coverage(polygon_inside(op["points"]), h, w, scale, aa)
@@ -143,8 +145,13 @@ def combine(s: np.ndarray, a: np.ndarray, mode: str) -> np.ndarray:
 
 def distances(selected: np.ndarray) -> np.ndarray:
     """For every pixel, the Euclidean distance (pixel centres) to the nearest pixel that is not
-    [selected]; 0 on those (cv2.distanceTransform, exact)."""
-    return cv2.distanceTransform(selected.astype(np.uint8), cv2.DIST_L2, cv2.DIST_MASK_PRECISE).astype(np.float64)
+    [selected]; 0 on those (cv2.distanceTransform, exact).
+
+    The squared distance between pixel centres is an integer, so the result is snapped to
+    sqrt(round(d^2)): OpenCV's float result varies by ~2e-6 from call to call (Stage 16 found
+    selection/distance_outside flaky in --check), the snapped value is exact and stable."""
+    d = cv2.distanceTransform(selected.astype(np.uint8), cv2.DIST_L2, cv2.DIST_MASK_PRECISE).astype(np.float64)
+    return np.sqrt(np.round(d * d))
 
 
 def grow(s: np.ndarray, r: float) -> np.ndarray:
@@ -168,9 +175,12 @@ def smooth(s: np.ndarray, r: float) -> np.ndarray:
     return np.clip((blurred - 0.5) * 4.0 + 0.5, 0.0, 1.0)
 
 
-def evaluate(ops: list, image: np.ndarray, scale: float = 1.0, h: int | None = None, w: int | None = None) -> np.ndarray:
+def evaluate(ops: list, image: np.ndarray, scale: float = 1.0, h: int | None = None, w: int | None = None,
+             rasters: dict | None = None) -> np.ndarray:
     """The selection of [ops] on a grid the size of [image] (RGBA working space, used by the
-    wand and color range), rounded to R16F."""
+    wand, color range, model rasters and refine edge), rounded to R16F. [rasters]: saved model
+    masks by name (Stage 16). Quick selection (GrabCut) has no reference here: it is held to
+    cv2.grabCut by IoU (smart_reference)."""
     h = image.shape[0] if h is None else h
     w = image.shape[1] if w is None else w
     lab = None
@@ -178,8 +188,18 @@ def evaluate(ops: list, image: np.ndarray, scale: float = 1.0, h: int | None = N
     for op in ops:
         kind = op["kind"]
         mode = op.get("mode", "new")
-        if kind in ("rect", "ellipse", "lasso", "polygon"):
+        if kind in ("rect", "ellipse", "lasso", "polygon", "magnetic"):
             s = combine(s, shape_mask(op, h, w, scale), mode)
+        elif kind == "brush":
+            jj, ii = np.mgrid[0:h, 0:w].astype(np.float64)
+            stroke = {"points": op["points"], "radius": op["radius"], "hardness": op.get("hardness", 1.0)}
+            s = combine(s, blend.stroke_coverage(stroke, (ii + 0.5) / scale, (jj + 0.5) / scale, scale), mode)
+        elif kind == "raster":
+            low = rasters[op["source"]].astype(np.float64)
+            g = smart.guide(image)
+            s = combine(s, smart.jbu(low, smart.low_guide(g, low.shape[0], low.shape[1]), g), mode)
+        elif kind == "refine":
+            s = smart.refine(s, image, op["px"] * scale, op.get("contrast", 0.0))
         elif kind in ("wand", "color_range"):
             if lab is None:
                 lab = oklab_grid(image)
@@ -286,3 +306,23 @@ def tie_margin(ops: list, image: np.ndarray, scale: float = 1.0) -> float:
             margin = min(margin, np.min(np.abs(s - 0.5)[np.abs(s - 0.5) > 0]) if np.any(np.abs(s - 0.5) > 0) else np.inf)
         s = evaluate(ops[: k + 1], image, scale).astype(np.float64)
     return float(margin)
+
+
+# --- Stage 16: model masks, brushes, magnetic lasso, refine edge ------------------------------
+
+def scene_raster() -> np.ndarray:
+    """A 32 x 24 "model" mask over the 128 x 96 scene: a soft blob (as a segmenter returns)."""
+    yy, xx = np.mgrid[0:24, 0:32] + 0.5
+    d = np.hypot((xx - 13.3) / 9.1, (yy - 12.2) / 7.4)
+    return np.clip((1.0 - d) * 3.0 + 0.5, 0.0, 1.0).astype(np.float32)
+
+
+SMART_RASTERS = {"subject": scene_raster}
+
+SMART_OPS = [
+    {"kind": "raster", "mode": "new", "source": "subject", "width": 32, "height": 24, "tool": "subject"},
+    {"kind": "brush", "mode": "add", "radius": 6.5, "hardness": 0.6, "points": [80.3, 20.2, 95.6, 30.4, 110.1, 28.7]},
+    {"kind": "brush", "mode": "subtract", "radius": 4.2, "hardness": 1.0, "points": [30.4, 50.1, 40.7, 52.3]},
+    {"kind": "magnetic", "mode": "add", "points": [70.2, 60.3, 100.6, 62.1, 96.4, 88.2, 75.3, 85.7]},
+    {"kind": "refine", "px": 3.0, "contrast": 30.0},
+]

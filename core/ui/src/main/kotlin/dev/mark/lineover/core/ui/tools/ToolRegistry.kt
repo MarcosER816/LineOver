@@ -468,9 +468,27 @@ private fun buildTools(): List<ToolSpec> =
                 done = true,
             )
             strip(Select, "select.color_range", "Color range", 15, PanelType.Selection, LoIcons.Colorize, done = true)
-            strip(Select, "select.magnetic_lasso", "Magnetic lasso", 16, PanelType.Selection, LoIcons.Gesture, "edge snapping")
-            strip(Select, "select.quick_selection", "Quick selection", 16, PanelType.Selection, LoIcons.AdsClick, "smart brush select")
-            strip(Select, "select.object_select", "Object select", 16, PanelType.Selection, LoIcons.ArrowSelectorTool, "select object")
+            strip(Select, "select.magnetic_lasso", "Magnetic lasso", 16, PanelType.Selection, LoIcons.Gesture, "edge snapping", done = true)
+            strip(
+                Select,
+                "select.quick_selection",
+                "Quick selection",
+                16,
+                PanelType.Selection,
+                LoIcons.AdsClick,
+                "smart brush select",
+                done = true,
+            )
+            strip(
+                Select,
+                "select.object_select",
+                "Object select",
+                16,
+                PanelType.Selection,
+                LoIcons.ArrowSelectorTool,
+                "select object",
+                done = true,
+            )
             strip(
                 Select,
                 "select.subject_select",
@@ -480,9 +498,20 @@ private fun buildTools(): List<ToolSpec> =
                 LoIcons.FramePerson,
                 "select subject",
                 "cut out",
+                done = true,
             )
-            strip(Select, "select.sky_select", "Sky select", 16, PanelType.Selection, LoIcons.Landscape)
-            strip(Select, "select.refine_edge", "Refine edge", 16, PanelType.Selection, LoIcons.Deselect, "refine hair", "select and mask")
+            strip(Select, "select.sky_select", "Sky select", 16, PanelType.Selection, LoIcons.Landscape, done = true)
+            strip(
+                Select,
+                "select.refine_edge",
+                "Refine edge",
+                16,
+                PanelType.Selection,
+                LoIcons.Deselect,
+                "refine hair",
+                "select and mask",
+                done = true,
+            )
 
             strip(
                 Retouch,

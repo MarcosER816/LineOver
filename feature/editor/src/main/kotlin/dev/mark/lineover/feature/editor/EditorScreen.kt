@@ -73,6 +73,7 @@ import dev.mark.lineover.core.io.masks.MaskRasters
 import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.CanvasSurround
 import dev.mark.lineover.core.io.project.ProjectLibrary
+import dev.mark.lineover.core.ml.SmartModels
 import dev.mark.lineover.core.model.ToolCategory
 import dev.mark.lineover.core.ui.adaptive.LoWidthClass
 import dev.mark.lineover.core.ui.adaptive.LoWindowInfo
@@ -100,6 +101,7 @@ fun EditorRoute(
     looks: LooksStore? = null,
     layers: LayerSources? = null,
     maskRasters: MaskRasters? = null,
+    smartModels: SmartModels? = null,
 ) {
     val context = LocalContext.current
     val debuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
@@ -116,6 +118,7 @@ fun EditorRoute(
                 looks = looks,
                 layers = layers,
                 maskRasters = maskRasters,
+                smartModels = smartModels,
             )
         }
     WideColorGamutWindow()
@@ -388,6 +391,9 @@ private fun CanvasArea(
         // Overlay for the on-canvas handles: crop, perspective corners, guides (Stage 9);
         // gradients and pins in later stages.
         CanvasOverlayLayer(state)
+        // Stage 16: a model is selecting (the shimmer), or a model must be downloaded first.
+        if (state.smart.busy != null) SmartShimmer()
+        state.smart.sheet?.let { ModelSheetDialog(it, onIntent) }
     }
 }
 
