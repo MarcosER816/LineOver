@@ -5,17 +5,20 @@ import android.net.Uri
 import android.util.Log
 import androidx.exifinterface.media.ExifInterface
 import dev.mark.lineover.core.engine.EngineSession
+import dev.mark.lineover.core.engine.SelectionRaster
 import dev.mark.lineover.core.io.export.ExportDestinations
 import dev.mark.lineover.core.io.export.ExportMetadata
 import dev.mark.lineover.core.io.export.ExportTarget
 import dev.mark.lineover.core.io.layers.LayerSources
 import dev.mark.lineover.core.io.looks.LooksStore
+import dev.mark.lineover.core.io.masks.MaskRasters
 import dev.mark.lineover.core.io.project.DocumentLoad
 import dev.mark.lineover.core.io.project.ProjectLibrary
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.ExportFormat
 import dev.mark.lineover.core.model.ExportSettings
 import dev.mark.lineover.core.model.LayerMath
+import dev.mark.lineover.core.model.MaskPaint
 import dev.mark.lineover.core.model.OpParams
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -33,6 +36,9 @@ interface ExportEnvironment {
 
     /** The images of the edit's layers (Stage 13). */
     val layers: LayerSources? get() = null
+
+    /** Selections saved as mask pixels (Stage 15). */
+    val maskRasters: MaskRasters? get() = null
 
     interface Provider {
         val exportEnvironment: ExportEnvironment
@@ -173,6 +179,7 @@ class ExportRunner(
         val source = session.info.uri
         // Layer images at export size (Stage 13), dropped again once the pixels are rendered.
         registerLayers(session, graph)
+        registerMaskRasters(session, graph)
         val image =
             try {
                 session.setGraph(graph)?.let { fail("The edit could not be applied: $it") }
@@ -227,6 +234,30 @@ class ExportRunner(
             if (file == null || !session.registerLayerImage(name, file, full = true)) {
                 Log.w(TAG, "layer image $name is not on this device; exported without it")
             }
+        }
+    }
+
+    /** Saved selections the edit's masks name (Stage 15); a missing one leaves its mask as it was. */
+    private fun registerMaskRasters(
+        session: EngineSession,
+        graph: EditGraph,
+    ) {
+        val store = environment.maskRasters
+        val names =
+            LayerMath
+                .flatten(graph)
+                .mapNotNull { it.first.mask }
+                .flatMap { it.paint }
+                .filterIsInstance<MaskPaint.Raster>()
+                .map { it.source }
+                .toSet()
+        for (name in names) {
+            val raster = store?.load(name)
+            if (raster == null) {
+                Log.w(TAG, "mask raster $name is not on this device; exported without it")
+                continue
+            }
+            session.registerMaskRaster(name, SelectionRaster(raster.width, raster.height, 0, 0, raster.values))
         }
     }
 

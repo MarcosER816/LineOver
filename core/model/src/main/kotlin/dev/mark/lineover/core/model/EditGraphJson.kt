@@ -17,6 +17,9 @@ object EditGraphJson {
 
     fun decode(text: String): EditGraph = json.decodeFromString(EditGraph.serializer(), text)
 
+    /** Stage 15: the selection as the engine reads it ({"ops":[...]}); empty for none. */
+    fun encodeSelection(selection: Selection?): String = selection?.let { json.encodeToString(Selection.serializer(), it) }.orEmpty()
+
     /** One op as its JSON object (the "op" key holds its serial name). */
     fun opObject(op: OpParams): JsonObject = json.encodeToJsonElement(OpParams.serializer(), op).jsonObject
 

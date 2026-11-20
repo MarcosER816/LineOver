@@ -175,6 +175,10 @@ internal val EditorState.cropMode: CropMode?
  * the crop can grow again; while drawing Upright guides, the photo without geometry.
  */
 internal val EditorState.canvasGraph: EditGraph
+    get() = imageGraph.let { if (it.selection == null) it else it.copy(selection = null) }
+
+/** [canvasGraph] with the selection (the engine evaluates the selection on its own, Stage 15). */
+private val EditorState.imageGraph: EditGraph
     get() {
         val shown = shownGraph
         // A look held down in a strip (Stage 11).

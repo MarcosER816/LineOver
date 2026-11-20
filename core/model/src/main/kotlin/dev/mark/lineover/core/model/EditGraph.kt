@@ -57,6 +57,8 @@ data class EditGraph(
     val layers: List<Layer> = emptyList(),
     /** Stage 13: where layers blend; written only when linear. */
     @EncodeDefault(EncodeDefault.Mode.NEVER) val blendSpace: BlendSpace = BlendSpace.Gamma,
+    /** Stage 15: the selection, or none (the engine evaluates it apart from the image). */
+    @EncodeDefault(EncodeDefault.Mode.NEVER) val selection: Selection? = null,
 ) {
     /** A copy whose bottom layer ("background", created if missing) has [ops]. */
     fun withBackgroundOps(ops: List<OpParams>): EditGraph {

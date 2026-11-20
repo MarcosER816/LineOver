@@ -1,6 +1,7 @@
 package dev.mark.lineover.feature.editor
 
 import android.graphics.Bitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.lifecycle.viewModelScope
 import dev.mark.lineover.core.engine.CompareMode
 import dev.mark.lineover.core.engine.RenderScheduler
@@ -8,6 +9,7 @@ import dev.mark.lineover.core.io.layers.LayerSources
 import dev.mark.lineover.core.io.lens.LensProfileState
 import dev.mark.lineover.core.io.lens.LensProfileStore
 import dev.mark.lineover.core.io.looks.LooksStore
+import dev.mark.lineover.core.io.masks.MaskRasters
 import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.CanvasSurround
 import dev.mark.lineover.core.io.prefs.TapGestures
@@ -233,6 +235,10 @@ data class EditorState(
     val maskTarget: Boolean = false,
     val maskBrush: MaskBrush = MaskBrush(),
     val maskView: MaskView = MaskView.None,
+    /** Stage 15: the Select tools' settings (options bar and tool panels). */
+    val selectionSettings: SelectionSettings = SelectionSettings(),
+    /** Pictures of saved selections (mask thumbnails), by raster name. */
+    val maskThumbnails: Map<String, ImageBitmap> = emptyMap(),
 ) {
     val selectedToolId: String? get() = (panel as? EditorPanel.Tool)?.id
 
@@ -475,6 +481,11 @@ sealed interface EditorIntent {
         val action: LayerAction,
     ) : EditorIntent
 
+    /** The Select tools (Stage 15). */
+    data class Select(
+        val action: SelectAction,
+    ) : EditorIntent
+
     /** Two- or three-finger tap on the canvas (Settings → Gestures maps it to undo / redo). */
     data class MultiFingerTap(
         val fingers: Int,
@@ -555,6 +566,7 @@ class EditorViewModel(
     lensProfiles: LensProfileStore? = null,
     looks: LooksStore? = null,
     layers: LayerSources? = null,
+    maskRasters: MaskRasters? = null,
 ) : MviViewModel<EditorState, EditorIntent, EditorEffect>(
         EditorState(
             debuggable = debuggable,
@@ -579,7 +591,7 @@ class EditorViewModel(
 
     /** What the Stage 11 and Stage 13 actions need of this ViewModel. */
     private val actionsHost =
-        object : EditorLooksActions.Host, EditorLayersActions.Host {
+        object : EditorLooksActions.Host, EditorLayersActions.Host, EditorSelectionActions.Host {
             override val state get() = this@EditorViewModel.state.value
 
             override fun reduce(
@@ -612,6 +624,8 @@ class EditorViewModel(
     private val looksActions = EditorLooksActions(viewModelScope, renderDispatcher, actionsHost, looks)
 
     private val layersActions = EditorLayersActions(viewModelScope, renderDispatcher, actionsHost, layers)
+
+    private val selectionActions = EditorSelectionActions(viewModelScope, renderDispatcher, actionsHost, maskRasters, layers)
 
     /** Crop handles, perspective corners and guide lines from CanvasView. */
     val cropGestures get() = geometryActions.gestures
@@ -681,6 +695,7 @@ class EditorViewModel(
         scheduler = renderScheduler
         looksActions.onCanvasGraph(state.value.canvasGraph)
         layersActions.onCanvasGraph(state.value.canvasGraph)
+        selectionActions.onCanvasGraph(state.value.canvasGraph)
         renderScheduler.submit(state.value.shownGraph)
         syncCanvas(null, state.value)
         canvas.loading.collectLatest { loading ->
@@ -769,6 +784,7 @@ class EditorViewModel(
             intent is EditorIntent.Geometry -> geometryActions.onAction(intent.action)
             intent is EditorIntent.Looks -> looksActions.onAction(intent.action)
             intent is EditorIntent.Layers -> layersActions.onAction(intent.action)
+            intent is EditorIntent.Select -> selectionActions.onAction(intent.action)
             !onHistoryIntent(intent) -> onEditIntent(intent)
         }
     }
@@ -1177,17 +1193,32 @@ class EditorViewModel(
 
             override fun onMultiFingerTap(fingers: Int) = onIntent(EditorIntent.MultiFingerTap(fingers))
 
+            // One finger paints a targeted mask (Stage 14) or makes a selection (Stage 15).
+            private val selecting get() = state.value.selectTool != null
+
             override fun onPaintStart(
                 u: Float,
                 v: Float,
-            ) = onIntent(EditorIntent.Layers(LayerAction.PaintStart(u, v)))
+            ) = onIntent(
+                if (selecting) EditorIntent.Select(SelectAction.Start(u, v)) else EditorIntent.Layers(LayerAction.PaintStart(u, v)),
+            )
 
             override fun onPaintMove(
                 u: Float,
                 v: Float,
-            ) = onIntent(EditorIntent.Layers(LayerAction.PaintMove(u, v)))
+            ) = onIntent(if (selecting) EditorIntent.Select(SelectAction.Move(u, v)) else EditorIntent.Layers(LayerAction.PaintMove(u, v)))
 
-            override fun onPaintEnd() = onIntent(EditorIntent.Layers(LayerAction.PaintEnd))
+            override fun onPaintEnd() =
+                onIntent(if (selecting) EditorIntent.Select(SelectAction.End) else EditorIntent.Layers(LayerAction.PaintEnd))
+
+            override fun onPaintLoupe(
+                viewX: Float,
+                viewY: Float,
+                u: Float,
+                v: Float,
+            ) {
+                if (selecting) onIntent(EditorIntent.Select(SelectAction.Loupe(viewX, viewY, u, v)))
+            }
         }
 
     private fun EditorState.withLight(next: LightAdjustments): EditorState =
@@ -1244,10 +1275,12 @@ class EditorViewModel(
         if (before == null || before.canvasGraph != after.canvasGraph) {
             looksActions.onCanvasGraph(after.canvasGraph)
             layersActions.onCanvasGraph(after.canvasGraph)
+            selectionActions.onCanvasGraph(after.canvasGraph)
             scheduler?.submit(after.canvasGraph)
         }
         looksActions.afterSync(before, after)
         layersActions.afterSync(before, after)
+        selectionActions.afterSync(before, after)
         if (before == null || before.clippingShown != after.clippingShown) canvas.setClipping(after.clippingShown)
         if (before == null || before.compare != after.compare || before.split != after.split) {
             canvas.setCompare(after.compare, after.split)

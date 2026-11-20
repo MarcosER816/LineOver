@@ -274,6 +274,7 @@ private fun LayerList(
                     selected = layer.id == selected,
                     maskTargeted = layer.id == selected && state.maskTarget,
                     docSize = state.canvasSize,
+                    rasters = state.maskThumbnails,
                     onIntent = onIntent,
                     modifier =
                         Modifier
@@ -330,6 +331,7 @@ private fun LayerRow(
     selected: Boolean,
     maskTargeted: Boolean,
     docSize: Pair<Int, Int>?,
+    rasters: Map<String, androidx.compose.ui.graphics.ImageBitmap>,
     onIntent: (EditorIntent) -> Unit,
     modifier: Modifier,
     handle: Modifier,
@@ -411,7 +413,7 @@ private fun LayerRow(
                     tint = if (selected && !maskTargeted) LoColors.Accent else LoColors.TextSecondary,
                     modifier = Modifier.padding(horizontal = LoSpacing.Xxs),
                 )
-                MaskThumbnail(layer, docSize, maskTargeted, onIntent)
+                MaskThumbnail(layer, docSize, maskTargeted, onIntent, rasters)
                 Column(Modifier.weight(1f).padding(start = LoSpacing.Xs).alpha(if (layer.visible) 1f else HIDDEN_ALPHA)) {
                     Text(name, style = LoType.Body, color = LoColors.TextPrimary, maxLines = 1)
                     Text(captionOf(layer), style = LoType.Caption, color = LoColors.TextSecondary, maxLines = 1)

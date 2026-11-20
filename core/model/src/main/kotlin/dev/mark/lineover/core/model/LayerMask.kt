@@ -26,7 +26,7 @@ data class LayerMask(
     @EncodeDefault(EncodeDefault.Mode.NEVER) val paint: List<MaskPaint> = emptyList(),
 ) {
     /** [paint] with one more operation; a gradient replaces everything before it. */
-    fun with(op: MaskPaint): LayerMask = copy(paint = if (op is MaskPaint.Gradient) listOf(op) else paint + op)
+    fun with(op: MaskPaint): LayerMask = copy(paint = if (op is MaskPaint.Gradient || op is MaskPaint.Raster) listOf(op) else paint + op)
 
     /** The last operation replaced (a stroke that grows while the finger moves). */
     fun withLast(op: MaskPaint): LayerMask = copy(paint = paint.dropLast(1) + op)
@@ -62,6 +62,21 @@ sealed interface MaskPaint {
             y: Float,
         ): Stroke = copy(points = points + x + y)
     }
+
+    /**
+     * Replaces the mask with a saved selection (Stage 15): the raster [source] (a file of the
+     * app's mask store) of [width] x [height] pixels covering a [docWidth] x [docHeight]
+     * document, sampled bilinearly.
+     */
+    @Serializable
+    @SerialName("raster")
+    data class Raster(
+        val source: String,
+        val width: Float,
+        val height: Float,
+        val docWidth: Float,
+        val docHeight: Float,
+    ) : MaskPaint
 
     /** Replaces the mask with a linear ramp: [from] at (x0, y0) to [to] at (x1, y1). */
     @Serializable

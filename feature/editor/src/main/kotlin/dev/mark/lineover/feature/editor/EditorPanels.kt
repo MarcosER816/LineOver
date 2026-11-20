@@ -130,6 +130,10 @@ private fun ToolPanelContent(
             OpticsPanel(id, state, onIntent, onClose = close)
         }
 
+        id in SelectTools.ALL -> {
+            SelectPanel(id, state, onIntent, onClose = close)
+        }
+
         else -> {
             ToolRegistry[id]?.let { ToolPanel(it, close) }
         }

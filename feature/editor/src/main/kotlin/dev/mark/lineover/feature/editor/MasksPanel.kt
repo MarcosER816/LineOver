@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -26,6 +27,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import dev.mark.lineover.core.designsystem.LoColors
 import dev.mark.lineover.core.designsystem.LoIcons
@@ -291,6 +293,7 @@ internal fun MaskThumbnail(
     docSize: Pair<Int, Int>?,
     targeted: Boolean,
     onIntent: (EditorIntent) -> Unit,
+    rasters: Map<String, ImageBitmap> = emptyMap(),
 ) {
     val mask = layer.mask ?: return
     val (docW, docH) = docSize ?: (1 to 1)
@@ -318,6 +321,18 @@ internal fun MaskThumbnail(
             drawRect(grey(mask.base))
             for (op in mask.paint) {
                 when (op) {
+                    is MaskPaint.Raster -> {
+                        // A saved selection: its picture (made when it was saved or loaded).
+                        rasters[op.source]?.let {
+                            drawImage(
+                                it,
+                                dstSize = IntSize(size.width.toInt(), size.height.toInt()),
+                                colorFilter = null,
+                            )
+                        }
+                            ?: drawRect(grey(0.5f))
+                    }
+
                     is MaskPaint.Gradient -> {
                         drawRect(
                             Brush.linearGradient(

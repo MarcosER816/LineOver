@@ -74,6 +74,14 @@ interface CanvasGestureListener {
 
     /** The finger lifted, or a second finger arrived (the stroke so far is kept). */
     fun onPaintEnd() = Unit
+
+    /** Where the painting finger is on the view, for a loupe (Stage 15, lasso). */
+    fun onPaintLoupe(
+        viewX: Float,
+        viewY: Float,
+        u: Float,
+        v: Float,
+    ) = Unit
 }
 
 /** What one finger does on the canvas while a tool needs the image itself. */
@@ -149,6 +157,28 @@ class CanvasView(
         set(value) {
             if (field != value) endOneFinger()
             field = value
+        }
+
+    /**
+     * Stage 15: a selection is shown, so its marching ants move. Only the dash offset is sent,
+     * ANTS_FPS times a second; the outline itself is uploaded once per selection change.
+     */
+    var antsActive = false
+        set(value) {
+            if (field == value) return
+            field = value
+            mainHandler.removeCallbacks(antsTick)
+            if (value) mainHandler.post(antsTick)
+        }
+    private var antsPhase = 0f
+    private val antsTick =
+        object : Runnable {
+            override fun run() {
+                if (!antsActive) return
+                antsPhase = (antsPhase + ANTS_STEP) % ANTS_PERIOD
+                renderer?.setAntsPhase(antsPhase)
+                mainHandler.postDelayed(this, ANTS_MILLIS)
+            }
         }
 
     private val crop = CropGestures(transform, HANDLE_DP * resources.displayMetrics.density)
@@ -298,8 +328,14 @@ class CanvasView(
         publish()
     }
 
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        if (antsActive) mainHandler.post(antsTick)
+    }
+
     override fun onDetachedFromWindow() {
         endOneFinger()
+        mainHandler.removeCallbacks(antsTick)
         Choreographer.getInstance().removeFrameCallback(this)
         frameScheduled = false
         velocityTracker?.recycle()
@@ -476,6 +512,7 @@ class CanvasView(
         }
         val q = toImage(x, y)
         gestureListener?.onPaintMove(q[0], q[1])
+        gestureListener?.onPaintLoupe(x, y, q[0], q[1])
     }
 
     private fun movePick(
@@ -672,6 +709,9 @@ class CanvasView(
         const val HOLD_MILLIS = 250L
         const val SWIPE_STEP_DP = 48f
         const val HANDLE_DP = 24f // radius: 48 dp crop handles
+        const val ANTS_MILLIS = 80L
+        const val ANTS_STEP = 1f
+        const val ANTS_PERIOD = 8f
 
         const val DOUBLE_TAP_SECONDS = MotionTokens.STANDARD_MILLIS / 1000f
         val EASING = MotionTokens.StandardEasing

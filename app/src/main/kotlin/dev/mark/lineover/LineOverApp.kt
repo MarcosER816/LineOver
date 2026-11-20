@@ -7,6 +7,8 @@ import dev.mark.lineover.core.io.layers.FileLayerSources
 import dev.mark.lineover.core.io.layers.LayerSources
 import dev.mark.lineover.core.io.lens.LensProfileStore
 import dev.mark.lineover.core.io.looks.LooksLibrary
+import dev.mark.lineover.core.io.masks.FileMaskRasters
+import dev.mark.lineover.core.io.masks.MaskRasters
 import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.SharedAppPreferences
 import dev.mark.lineover.core.io.project.ProjectLibraries
@@ -34,6 +36,7 @@ class LineOverApp :
             override val projects get() = container.projects
             override val looks get() = container.looks
             override val layers get() = container.layerSources
+            override val maskRasters get() = container.maskRasters
             override val versionName: String = packageManager.getPackageInfo(packageName, 0).versionName.orEmpty()
         }
     }
@@ -65,6 +68,9 @@ class AppContainer(
 
     /** Photos imported as layers (Stage 13), stored by content hash. */
     val layerSources: LayerSources by lazy { FileLayerSources(app.contentResolver, File(app.filesDir, "layers")) }
+
+    /** Selections saved as mask pixels (Stage 15). */
+    val maskRasters: MaskRasters by lazy { FileMaskRasters(File(app.filesDir, "masks")) }
 
     /** Opens the image engine for the editor's canvas (one session per open project). */
     val canvases: EditorCanvasFactory by lazy { EngineCanvasFactory(app) }
