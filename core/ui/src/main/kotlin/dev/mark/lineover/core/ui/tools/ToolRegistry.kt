@@ -432,16 +432,54 @@ private fun buildTools(): List<ToolSpec> =
                 LoIcons.BlurLinear,
                 "graduated filter",
                 "gradient",
+                done = true,
             )
-            strip(Masks, "masks.radial_gradient_mask", "Radial gradient mask", 17, PanelType.Mask, LoIcons.BlurCircular, "radial filter")
-            strip(Masks, "masks.brush_mask", "Brush mask", 17, PanelType.Mask, LoIcons.Brush, "paint mask", "local brush")
-            strip(Masks, "masks.color_range_mask", "Color range mask", 17, PanelType.Mask, LoIcons.Colorize)
-            strip(Masks, "masks.luminance_range_mask", "Luminance range mask", 17, PanelType.Mask, LoIcons.Tonality, "brightness range")
-            strip(Masks, "masks.depth_range_mask", "Depth range mask", 17, PanelType.Mask, LoIcons.Stacks, "depth map")
-            strip(Masks, "masks.subject_mask", "Subject mask", 17, PanelType.Mask, LoIcons.FramePerson, "select subject", "person")
-            strip(Masks, "masks.sky_mask", "Sky mask", 17, PanelType.Mask, LoIcons.Landscape, "select sky")
-            strip(Masks, "masks.background_mask", "Background mask", 17, PanelType.Mask, LoIcons.BackgroundReplace, "select background")
-            strip(Masks, "masks.people_mask", "People mask", 17, PanelType.Mask, LoIcons.Face, "faces", "skin", "portrait")
+            strip(
+                Masks,
+                "masks.radial_gradient_mask",
+                "Radial gradient mask",
+                17,
+                PanelType.Mask,
+                LoIcons.BlurCircular,
+                "radial filter",
+                done = true,
+            )
+            strip(Masks, "masks.brush_mask", "Brush mask", 17, PanelType.Mask, LoIcons.Brush, "paint mask", "local brush", done = true)
+            strip(Masks, "masks.color_range_mask", "Color range mask", 17, PanelType.Mask, LoIcons.Colorize, done = true)
+            strip(
+                Masks,
+                "masks.luminance_range_mask",
+                "Luminance range mask",
+                17,
+                PanelType.Mask,
+                LoIcons.Tonality,
+                "brightness range",
+                done = true,
+            )
+            strip(Masks, "masks.depth_range_mask", "Depth range mask", 17, PanelType.Mask, LoIcons.Stacks, "depth map", done = true)
+            strip(
+                Masks,
+                "masks.subject_mask",
+                "Subject mask",
+                17,
+                PanelType.Mask,
+                LoIcons.FramePerson,
+                "select subject",
+                "person",
+                done = true,
+            )
+            strip(Masks, "masks.sky_mask", "Sky mask", 17, PanelType.Mask, LoIcons.Landscape, "select sky", done = true)
+            strip(
+                Masks,
+                "masks.background_mask",
+                "Background mask",
+                17,
+                PanelType.Mask,
+                LoIcons.BackgroundReplace,
+                "select background",
+                done = true,
+            )
+            strip(Masks, "masks.people_mask", "People mask", 17, PanelType.Mask, LoIcons.Face, "faces", "skin", "portrait", done = true)
 
             strip(
                 Select,

@@ -85,6 +85,7 @@ internal fun ColumnScope.PanelContent(
 }
 
 /** The panel of a tool: built tools (Light, Color) or the placeholder of a reserved one. */
+@Suppress("CyclomaticComplexMethod") // a table: one branch per tool family
 @Composable
 private fun ToolPanelContent(
     id: String,
@@ -132,6 +133,10 @@ private fun ToolPanelContent(
 
         id in SelectTools.ALL -> {
             SelectPanel(id, state, onIntent, onClose = close)
+        }
+
+        id in MaskTools.ALL -> {
+            LocalMaskPanel(id, state, onIntent, onClose = close)
         }
 
         else -> {
@@ -217,77 +222,6 @@ internal fun SlotPlaceholder(
                 color = if (tool.done) LoColors.Success else LoColors.TextSecondary,
             )
             if (detail != null) Text(detail, style = LoType.Caption, color = LoColors.TextSecondary)
-        }
-    }
-}
-
-/** Masks: the mask list, the add-mask menu and how masks combine (Stage 17). */
-@Composable
-private fun MasksSheet(
-    state: EditorState,
-    onIntent: (EditorIntent) -> Unit,
-) {
-    PanelHeader("Masks", "Local adjustments arrive in Stage 17", null)
-    Column(Modifier.padding(horizontal = LoSpacing.M), verticalArrangement = Arrangement.spacedBy(LoSpacing.Xs)) {
-        Text("No masks yet", style = LoType.Body, color = LoColors.TextSecondary, modifier = Modifier.testTag("mask-list"))
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(LoSpacing.Xs)) {
-            Box {
-                TextButton(onClick = { onIntent(EditorIntent.OpenMenu(EditorMenu.AddMask)) }) {
-                    Icon(painterResource(LoIcons.Add), contentDescription = null, tint = LoColors.Accent)
-                    Text("Add mask", style = LoType.Body, color = LoColors.Accent)
-                }
-                AddMenu(
-                    expanded = state.menu == EditorMenu.AddMask,
-                    ids = ToolRegistry.strip(ToolCategory.Masks).map { it.id },
-                    onIntent = onIntent,
-                )
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(LoSpacing.Xs), verticalAlignment = Alignment.CenterVertically) {
-            CombineButton(LoIcons.Add, "Add")
-            CombineButton(LoIcons.Remove, "Subtract")
-            CombineButton(LoIcons.JoinInner, "Intersect")
-        }
-    }
-}
-
-@Composable
-private fun CombineButton(
-    @DrawableRes icon: Int,
-    label: String,
-) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        LoIconButton(icon, "$label mask (Stage 17)", onClick = {}, enabled = false)
-        Text(label, style = LoType.Micro, color = LoColors.TextDisabled)
-    }
-}
-
-@Composable
-private fun AddMenu(
-    expanded: Boolean,
-    ids: List<String>,
-    onIntent: (EditorIntent) -> Unit,
-) {
-    DropdownMenu(
-        expanded = expanded,
-        onDismissRequest = { onIntent(EditorIntent.OpenMenu(null)) },
-        containerColor = LoColors.Surface2,
-        shape = LoShapes.Medium,
-    ) {
-        ids.forEach { id ->
-            val tool = requireNotNull(ToolRegistry[id])
-            DropdownMenuItem(
-                text = {
-                    Column {
-                        Text(tool.name, style = LoType.Body, color = LoColors.TextPrimary)
-                        Text("Stage ${tool.stage}", style = LoType.Micro, color = LoColors.TextSecondary)
-                    }
-                },
-                leadingIcon = { Icon(painterResource(tool.icon), contentDescription = null) },
-                onClick = { onIntent(EditorIntent.SelectTool(id)) },
-                colors = MenuDefaults.itemColors(leadingIconColor = LoColors.TextSecondary),
-                modifier = Modifier.testTag(EditorTags.slot(id)),
-            )
         }
     }
 }

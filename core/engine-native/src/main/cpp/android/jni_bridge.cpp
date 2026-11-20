@@ -395,6 +395,33 @@ JNIEXPORT jfloatArray LO_NATIVE(nativeSelectionGuide)(JNIEnv* env, jobject, jlon
     return out;
 }
 
+JNIEXPORT jfloatArray LO_NATIVE(nativePhotoLabAt)(JNIEnv* env, jobject, jlong engine, jfloat x, jfloat y) {
+    float lab[3];
+    if (lo_engine_photo_lab_at(handle(engine), x, y, lab) == 0) return nullptr;
+    jfloatArray out = env->NewFloatArray(3);
+    if (out != nullptr) env->SetFloatArrayRegion(out, 0, 3, lab);
+    return out;
+}
+
+// Stage 17: [width, height, docWidth, docHeight, values..., planes...] or null.
+JNIEXPORT jfloatArray LO_NATIVE(nativeUpsampleMask)(JNIEnv* env, jobject, jlong engine, jfloatArray low, jint lw, jint lh) {
+    if (low == nullptr || lw <= 0 || lh <= 0 || env->GetArrayLength(low) < static_cast<jsize>(lw) * lh) return nullptr;
+    std::vector<float> in(static_cast<std::size_t>(lw) * lh);
+    env->GetFloatArrayRegion(low, 0, static_cast<jsize>(in.size()), in.data());
+    int w = 0, h = 0, dw = 0, dh = 0;
+    float* data = lo_engine_upsample_mask(handle(engine), in.data(), lw, lh, &w, &h, &dw, &dh);
+    if (data == nullptr) return nullptr;
+    const jsize n = static_cast<jsize>(w) * h * 4;
+    jfloatArray out = env->NewFloatArray(n + 4);
+    if (out != nullptr) {
+        const jfloat header[4] = {static_cast<jfloat>(w), static_cast<jfloat>(h), static_cast<jfloat>(dw), static_cast<jfloat>(dh)};
+        env->SetFloatArrayRegion(out, 0, 4, header);
+        env->SetFloatArrayRegion(out, 4, n, data);
+    }
+    free(data);
+    return out;
+}
+
 JNIEXPORT jboolean LO_NATIVE(nativeLiveWireAnchor)(JNIEnv*, jobject, jlong engine, jfloat x, jfloat y, jfloat reach) {
     return lo_engine_live_wire_anchor(handle(engine), x, y, reach) != 0 ? JNI_TRUE : JNI_FALSE;
 }

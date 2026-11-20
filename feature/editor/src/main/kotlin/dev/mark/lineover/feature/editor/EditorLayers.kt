@@ -244,11 +244,11 @@ internal val EditorState.paintedMask: Layer?
 
 /** What one finger does on the canvas: paint the targeted mask, or the tools' own pick modes. */
 internal val EditorState.canvasPickMode: PickMode
-    get() = if (paintedMask != null || selectTool != null) PickMode.Paint else pickMode
+    get() = if (paintedMask != null || selectTool != null || localPainting) PickMode.Paint else pickMode
 
 /** The mask view the engine draws (only while the mask is targeted). */
 internal val EditorState.engineMaskView: Pair<String, MaskView>?
-    get() = paintedMask?.let { layer -> (layer.id to maskView).takeIf { maskView != MaskView.None } }
+    get() = paintedMask?.let { layer -> (layer.id to maskView).takeIf { maskView != MaskView.None } } ?: localMaskView
 
 /** The selected layer (null = the photo, or a layer that no longer exists). */
 internal val EditorState.selectedLayer: Layer?

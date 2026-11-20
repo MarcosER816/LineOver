@@ -12,6 +12,8 @@
 #include "lineover/graph.h"
 #include "lineover/layers.h"
 #include "lineover/selection.h"
+#include "lineover/smart_select.h"
+#include "lineover/color_ops.h"
 #include "lineover/thumbnail.h"
 
 #ifndef EGL_OPENGL_ES3_BIT_KHR
@@ -522,6 +524,44 @@ float Engine::selectionAt(float u, float v) {
     const int x = std::clamp(static_cast<int>(u * selectionW_), 0, selectionW_ - 1);
     const int y = std::clamp(static_cast<int>(v * selectionH_), 0, selectionH_ - 1);
     return selection_[static_cast<std::size_t>(y) * selectionW_ + x];
+}
+
+bool Engine::photoLabAt(float x, float y, float lab[3]) {
+    std::lock_guard<std::mutex> lock(selectionMutex_);
+    double scale = 1.0;
+    int docW = 0, docH = 0;
+    if (!sampleGrid(&scale, &docW, &docH)) return false;
+    // Stage 17: the photo under the layers (what local mask components read); the grid itself without layers.
+    const ImageF32& photo = sampledPhoto_.width > 0 ? sampledPhoto_ : sampledAll_;
+    const int i = std::clamp(static_cast<int>(std::floor(x * scale)), 0, photo.width - 1);
+    const int j = std::clamp(static_cast<int>(std::floor(y * scale)), 0, photo.height - 1);
+    colorops::toOklab(&photo.rgba[4 * (static_cast<std::size_t>(j) * photo.width + i)], lab);
+    for (int c = 0; c < 3; ++c) lab[c] *= 100.f;
+    return true;
+}
+
+bool Engine::upsampleMask(const float* low, int lw, int lh, std::vector<float>* values, std::vector<float>* planes, int* width,
+                          int* height, int* docWidth, int* docHeight) {
+    if (low == nullptr || lw <= 0 || lh <= 0) return false;
+    std::lock_guard<std::mutex> lock(selectionMutex_);
+    double scale = 1.0;
+    int docW = 0, docH = 0;
+    if (!sampleGrid(&scale, &docW, &docH)) return false;
+    const int w = sampledAll_.width, h = sampledAll_.height;
+    // Stage 17: a model's mask on the selection grid, joint-bilateral against the image (as a
+    // SelectionOp raster is), with the grid's colour guide for exports (MaskComponent::guide).
+    const std::vector<double> guide = smart::guide(sampledAll_.rgba.data(), w, h);
+    values->assign(static_cast<std::size_t>(w) * h, 0.f);
+    smart::jointBilateralUpsample(low, lw, lh, smart::lowGuide(guide, w, h, lw, lh), guide, w, h, values->data());
+    const std::size_t n = static_cast<std::size_t>(w) * h;
+    planes->resize(3 * n);
+    for (std::size_t p = 0; p < n; ++p)
+        for (int c = 0; c < 3; ++c) (*planes)[c * n + p] = static_cast<float>(guide[3 * p + c]);
+    *width = w;
+    *height = h;
+    *docWidth = docW;
+    *docHeight = docH;
+    return true;
 }
 
 bool Engine::selectionRaster(std::vector<float>* values, int* width, int* height, int* docWidth, int* docHeight) {

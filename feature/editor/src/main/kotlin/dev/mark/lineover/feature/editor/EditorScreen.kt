@@ -104,6 +104,7 @@ fun EditorRoute(
     smartModels: SmartModels? = null,
 ) {
     val context = LocalContext.current
+    val resolver = context.applicationContext.contentResolver
     val debuggable = (context.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
     val viewModel =
         viewModel(key = "editor-$projectId") {
@@ -119,6 +120,9 @@ fun EditorRoute(
                 layers = layers,
                 maskRasters = maskRasters,
                 smartModels = smartModels,
+                photoBytes = { uri ->
+                    runCatching { resolver.openInputStream(android.net.Uri.parse(uri))?.use { it.readBytes() } }.getOrNull()
+                },
             )
         }
     WideColorGamutWindow()
@@ -392,7 +396,7 @@ private fun CanvasArea(
         // gradients and pins in later stages.
         CanvasOverlayLayer(state)
         // Stage 16: a model is selecting (the shimmer), or a model must be downloaded first.
-        if (state.smart.busy != null) SmartShimmer()
+        if (state.smart.busy != null || state.localMask.busy != null) SmartShimmer()
         state.smart.sheet?.let { ModelSheetDialog(it, onIntent) }
     }
 }
@@ -400,6 +404,8 @@ private fun CanvasArea(
 @Composable
 private fun CanvasOverlayLayer(state: EditorState) {
     if (state.cropMode != null) CropOverlayLayer(state)
+    // Stage 17: the local masks' pins (taps are CanvasView's: MaskAction.Start picks them).
+    if (state.category == ToolCategory.Masks && state.cropMode == null) MaskPinsLayer(state)
 }
 
 /**

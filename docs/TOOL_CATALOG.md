@@ -1,6 +1,6 @@
 # Tool catalog
 
-Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 88 done.**
+Every tool LineOver will ever have, with the UI slot reserved for it. **162 tools, 98 done.**
 
 - **id**: stable identifier (`<group>.<tool>`), used in code, favourites and project files. Never renamed.
 - **UI slot**: where the tool lives. Slots are reserved now and are never moved (rule R9); a stage only *fills* slots.
@@ -156,16 +156,16 @@ The Favorites strip shows the tools the user pinned; it has no tools of its own.
 
 | id | Name | Category | UI slot | Stage | Status |
 | --- | --- | --- | --- | --- | --- |
-| `masks.linear_gradient_mask` | Linear gradient mask | Masks | `cat/Masks/01` | 17 | reserved |
-| `masks.radial_gradient_mask` | Radial gradient mask | Masks | `cat/Masks/02` | 17 | reserved |
-| `masks.brush_mask` | Brush mask | Masks | `cat/Masks/03` | 17 | reserved |
-| `masks.color_range_mask` | Color range mask | Masks | `cat/Masks/04` | 17 | reserved |
-| `masks.luminance_range_mask` | Luminance range mask | Masks | `cat/Masks/05` | 17 | reserved |
-| `masks.depth_range_mask` | Depth range mask | Masks | `cat/Masks/06` | 17 | reserved |
-| `masks.subject_mask` | Subject mask | Masks | `cat/Masks/07` | 17 | reserved |
-| `masks.sky_mask` | Sky mask | Masks | `cat/Masks/08` | 17 | reserved |
-| `masks.background_mask` | Background mask | Masks | `cat/Masks/09` | 17 | reserved |
-| `masks.people_mask` | People mask | Masks | `cat/Masks/10` | 17 | reserved |
+| `masks.linear_gradient_mask` | Linear gradient mask | Masks | `cat/Masks/01` | 17 | done |
+| `masks.radial_gradient_mask` | Radial gradient mask | Masks | `cat/Masks/02` | 17 | done |
+| `masks.brush_mask` | Brush mask | Masks | `cat/Masks/03` | 17 | done |
+| `masks.color_range_mask` | Color range mask | Masks | `cat/Masks/04` | 17 | done |
+| `masks.luminance_range_mask` | Luminance range mask | Masks | `cat/Masks/05` | 17 | done |
+| `masks.depth_range_mask` | Depth range mask | Masks | `cat/Masks/06` | 17 | done |
+| `masks.subject_mask` | Subject mask | Masks | `cat/Masks/07` | 17 | done |
+| `masks.sky_mask` | Sky mask | Masks | `cat/Masks/08` | 17 | done |
+| `masks.background_mask` | Background mask | Masks | `cat/Masks/09` | 17 | done |
+| `masks.people_mask` | People mask | Masks | `cat/Masks/10` | 17 | done |
 
 ## Select
 

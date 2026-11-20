@@ -132,6 +132,30 @@ class FakeEditorCanvas(
     var imageRequests = 0
     var anchor: Pair<Float, Float>? = null
 
+    // Stage 17: a model mask "upsampled" to an 8 x 6 grid over the document (nearest), its guide, and a fixed photo colour.
+    val labAt = floatArrayOf(55f, 4f, -12f)
+
+    override fun photoLabAt(
+        x: Float,
+        y: Float,
+    ): FloatArray = labAt.copyOf()
+
+    override fun upsampleMask(
+        values: FloatArray,
+        width: Int,
+        height: Int,
+    ): dev.mark.lineover.core.engine.UpsampledMask {
+        val w = 8
+        val h = 6
+        val up = FloatArray(w * h) { values[(it / w * height / h) * width + (it % w) * width / w] }
+        return dev.mark.lineover.core.engine.UpsampledMask(
+            dev.mark.lineover.core.engine
+                .SelectionRaster(w, h, imageWidth, imageHeight, up),
+            dev.mark.lineover.core.engine
+                .SelectionRaster(w, 3 * h, w, 3 * h, FloatArray(3 * w * h) { 0.5f }),
+        )
+    }
+
     override fun selectionImage(maxEdge: Int): dev.mark.lineover.core.engine.SelectionImage {
         imageRequests++
         return dev.mark.lineover.core.engine

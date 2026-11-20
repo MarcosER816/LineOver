@@ -289,6 +289,22 @@ float* lo_engine_selection_guide(lo_engine* engine, int* width, int* height) {
     return out;
 }
 
+int lo_engine_photo_lab_at(lo_engine* engine, float x, float y, float* lab3) {
+    return engine->engine->photoLabAt(x, y, lab3) ? 1 : 0;
+}
+
+float* lo_engine_upsample_mask(lo_engine* engine, const float* low, int lw, int lh, int* width, int* height, int* doc_width,
+                               int* doc_height) {
+    std::vector<float> values, planes;
+    if (!engine->engine->upsampleMask(low, lw, lh, &values, &planes, width, height, doc_width, doc_height)) return nullptr;
+    auto* out = static_cast<float*>(std::malloc((values.size() + planes.size()) * sizeof(float)));
+    if (out != nullptr) {
+        std::memcpy(out, values.data(), values.size() * sizeof(float));
+        std::memcpy(out + values.size(), planes.data(), planes.size() * sizeof(float));
+    }
+    return out;
+}
+
 int lo_engine_live_wire_anchor(lo_engine* engine, float x, float y, float reach) {
     return engine->engine->liveWireAnchor(x, y, reach) ? 1 : 0;
 }

@@ -17,9 +17,11 @@ import kotlinx.coroutines.withContext
 /** The tools that need a model (Stage 16; Stage 17 adds the masks that share them, and depth). */
 enum class SmartTool(
     val label: String,
+    /** Every tool that uses its model (Settings → AI models). */
+    val usedBy: String = label,
 ) {
-    Subject("Select subject, Subject / Background mask"),
-    Sky("Select sky, Sky / People mask"),
+    Subject("Select subject", "Select subject, Subject / Background mask"),
+    Sky("Select sky", "Select sky, Sky / People mask"),
     Object("Object select"),
     Depth("Depth range mask"),
 }

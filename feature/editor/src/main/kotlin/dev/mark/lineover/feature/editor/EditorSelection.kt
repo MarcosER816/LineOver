@@ -7,6 +7,7 @@ import dev.mark.lineover.core.io.layers.LayerSources
 import dev.mark.lineover.core.io.masks.MaskRaster
 import dev.mark.lineover.core.io.masks.MaskRasters
 import dev.mark.lineover.core.ml.SmartModels
+import dev.mark.lineover.core.ml.SmartTool
 import dev.mark.lineover.core.model.AdjustmentKind
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.EditGraphJson
@@ -237,6 +238,17 @@ internal class EditorSelectionActions(
         ) { host.modelsWifiOnly }
 
     private val settings get() = state().selectionSettings
+
+    /** Stage 17: a mask raster the engine now has (made by the Masks category). */
+    fun registered(name: String) {
+        synchronized(registered) { registered += name }
+    }
+
+    /** Stage 17: shows [tool]'s download sheet; [then] runs instead of a selection once it is ready. */
+    fun needModel(
+        tool: SmartTool,
+        then: () -> Unit,
+    ) = smart.needModel(tool, then)
 
     // The gesture in progress (one finger, from Start to End).
     private var startU = 0f

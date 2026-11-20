@@ -18,7 +18,9 @@ import dev.mark.lineover.core.designsystem.LineOverTheme
 import dev.mark.lineover.core.designsystem.LoColors
 import dev.mark.lineover.core.engine.CompareMode
 import dev.mark.lineover.core.engine.Histogram
+import dev.mark.lineover.core.model.AiMaskKind
 import dev.mark.lineover.core.model.BlendMode
+import dev.mark.lineover.core.model.CombineMode
 import dev.mark.lineover.core.model.CropAspect
 import dev.mark.lineover.core.model.CropMath
 import dev.mark.lineover.core.model.DetailTools
@@ -35,6 +37,7 @@ import dev.mark.lineover.core.model.LayerMask
 import dev.mark.lineover.core.model.LayerType
 import dev.mark.lineover.core.model.LightAdjustments
 import dev.mark.lineover.core.model.LightParam
+import dev.mark.lineover.core.model.MaskComponent
 import dev.mark.lineover.core.model.MaskPaint
 import dev.mark.lineover.core.model.OpParams
 import dev.mark.lineover.core.model.ProjectDocument
@@ -498,6 +501,52 @@ abstract class EditorScreenshots(
 
     @Test
     fun masksSheet() = shot("sheet_masks", base(ToolCategory.Masks))
+
+    /** Stage 17: two local masks (a linear gradient intersected with Sky, a brightened subject). */
+    private fun withMasks(): EditorState {
+        val sky =
+            Layer(
+                "m1",
+                ops = listOf(OpParams.Exposure(-0.8f)),
+                type = LayerType.Adjustment,
+                name = "Mask 1",
+                opacity = 85f,
+                mask =
+                    LayerMask(
+                        components =
+                            listOf(
+                                MaskComponent.Linear(2000f, 0f, 2000f, 1400f),
+                                MaskComponent.Raster("s", 8f, 6f, 4000f, 3000f, null, AiMaskKind.Sky, CombineMode.Intersect),
+                            ),
+                    ),
+            )
+        val subject =
+            Layer(
+                "m2",
+                ops = listOf(OpParams.Exposure(0.6f), OpParams.Clarity(20f)),
+                type = LayerType.Adjustment,
+                name = "Mask 2",
+                mask = LayerMask(components = listOf(MaskComponent.Radial(2600f, 1900f, 700f, 900f, 0f, 50f))),
+            )
+        return base(ToolCategory.Masks).copy(
+            image = ImageSummary(4000, 3000, 2048, 1536, "sRGB IEC61966-2.1", "8-bit sRGB", ultraHdr = false),
+            graph = EditGraph(layers = listOf(Layer(EditGraph.BACKGROUND), sky, subject)),
+            localMask = LocalMaskState(selectedId = "m1"),
+        )
+    }
+
+    @Test
+    fun masksSheetWithMasks() = shot("sheet_masks_list", withMasks())
+
+    @Test
+    fun localMaskPanel() =
+        shot(
+            "panel_local_mask",
+            withMasks().copy(
+                panel = EditorPanel.Tool(MaskTools.LINEAR),
+                localMask = LocalMaskState(selectedId = "m1", component = 1, overlay = true),
+            ),
+        )
 
     @Test
     fun addMaskMenu() = screenShot("menu_add_mask", base(ToolCategory.Masks).copy(menu = EditorMenu.AddMask))
