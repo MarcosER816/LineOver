@@ -110,6 +110,13 @@ void lo_engine_set_ants_phase(lo_engine* engine, float phase);
 float lo_engine_selection_at(lo_engine* engine, float u, float v);
 /* A malloc'd copy of the selection (R16F values as float; free()), its size and the document's; NULL without one. */
 float* lo_engine_selection_raster(lo_engine* engine, int* width, int* height, int* doc_width, int* doc_height);
+/* Stage 16: the selection grid's image as sRGB 8-bit RGBA (malloc'd, free()), <= max_edge; NULL before a preview. */
+uint8_t* lo_engine_selection_image(lo_engine* engine, int max_edge, int* width, int* height);
+/* The selection's colour guide planes (malloc'd; free()), width x 3 height; NULL without a selection. */
+float* lo_engine_selection_guide(lo_engine* engine, int* width, int* height);
+/* The magnetic lasso's live-wire (document px): an anchor, then paths from it (malloc'd x, y pairs; free()). */
+int lo_engine_live_wire_anchor(lo_engine* engine, float x, float y, float reach);
+float* lo_engine_live_wire_path(lo_engine* engine, float x, float y, int* count);
 /* Saved selections for masks (MaskPaint "raster"), process-wide. */
 void lo_register_mask_raster(const char* name, const float* values, int width, int height);
 void lo_unregister_mask_raster(const char* name);

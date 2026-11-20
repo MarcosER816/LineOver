@@ -175,6 +175,40 @@ class EngineSession private constructor(
         return SelectionRaster(a[0].toInt(), a[1].toInt(), a[DOC_W].toInt(), a[DOC_H].toInt(), a.copyOfRange(HEADER, a.size))
     }
 
+    /**
+     * Stage 16: what the selection tools see (the composite at <= 2048 px) as sRGB pixels at most
+     * [maxEdge] on the long side, for the segmentation models; null before a preview. Background
+     * thread only.
+     */
+    fun selectionImage(maxEdge: Int): SelectionImage? {
+        if (closed) return null
+        val size = IntArray(2)
+        val bytes = native.selectionImage(maxEdge, size) ?: return null
+        return SelectionImage(size[0], size[1], bytes)
+    }
+
+    /** The colour guide of the current selection (3 planes of sqrt(rgb), width x 3 height), or null. */
+    fun selectionGuide(): SelectionRaster? {
+        if (closed) return null
+        val a = native.selectionGuide() ?: return null
+        val w = a[0].toInt()
+        val h = a[1].toInt()
+        return SelectionRaster(w, h, w, h, a.copyOfRange(2, a.size))
+    }
+
+    /** The magnetic lasso: a live-wire anchored at document point (x, y), searching [reach] document px around it. */
+    fun liveWireAnchor(
+        x: Float,
+        y: Float,
+        reach: Float,
+    ): Boolean = !closed && native.liveWireAnchor(x, y, reach)
+
+    /** The live-wire path from the anchor to (x, y): document points x0, y0, x1, y1, ... (empty without an anchor). */
+    fun liveWirePath(
+        x: Float,
+        y: Float,
+    ): FloatArray = if (closed) FloatArray(0) else native.liveWirePath(x, y)
+
     /** A saved selection a mask can name (MaskPaint.Raster), for every engine of the process. */
     fun registerMaskRaster(
         name: String,

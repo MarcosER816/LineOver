@@ -232,7 +232,9 @@ class SelectionEditingTest {
             val layer = LayerMath.flatten(vm.state.value.graph).single().first
             assertEquals(LayerType.Adjustment, layer.type)
             val raster = layer.mask!!.paint.single() as MaskPaint.Raster
-            assertEquals(MaskPaint.Raster(raster.source, 4f, 3f, 8160f, 6120f), raster)
+            // Stage 16: the mask also names the selection's colour guide (for exports), saved beside it.
+            assertEquals(MaskPaint.Raster(raster.source, 4f, 3f, 8160f, 6120f, raster.guide), raster)
+            assertTrue(raster.guide != null && raster.guide in rasters.saved)
             assertTrue(raster.source in rasters.saved && raster.source in canvas.maskRasters)
             assertNull(vm.state.value.graph.selection) // the selection became the mask
             assertTrue(raster.source in vm.state.value.maskThumbnails)

@@ -6,6 +6,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import dev.mark.lineover.core.io.layers.LayerSources
 import dev.mark.lineover.core.io.masks.MaskRaster
 import dev.mark.lineover.core.io.masks.MaskRasters
+import dev.mark.lineover.core.ml.SmartModels
 import dev.mark.lineover.core.model.AdjustmentKind
 import dev.mark.lineover.core.model.EditGraph
 import dev.mark.lineover.core.model.EditGraphJson
@@ -30,14 +31,14 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sign
 
-/** The Select tools of Stage 15 (the others of the category are Stage 16). */
+/** The Select tools of Stage 15, and those of Stage 16 (SmartTools). */
 internal object SelectTools {
     const val MARQUEE = "select.marquee"
     const val LASSO = "select.lasso"
     const val POLYGON = "select.polygonal_lasso"
     const val WAND = "select.magic_wand"
     const val COLOR_RANGE = "select.color_range"
-    val ALL = setOf(MARQUEE, LASSO, POLYGON, WAND, COLOR_RANGE)
+    val ALL = setOf(MARQUEE, LASSO, POLYGON, WAND, COLOR_RANGE) + SmartTools.ALL
 }
 
 enum class MarqueeShape { Rectangle, Ellipse }
@@ -139,7 +140,7 @@ sealed interface SelectAction {
     data object End : SelectAction
 }
 
-/** The open Select tool of Stage 15, or null. */
+/** The open Select tool (Stage 15 / 16), or null. */
 internal val EditorState.selectTool: String? get() = selectedToolId?.takeIf { it in SelectTools.ALL }
 
 /** The selection the canvas shows (the previewed History state's, or the edit's). */
@@ -158,10 +159,14 @@ internal class EditorSelectionActions(
     private val host: Host,
     private val rasters: MaskRasters?,
     private val sources: LayerSources?,
+    models: SmartModels? = null,
 ) {
     /** What the actions need of [EditorViewModel]. */
     interface Host {
         val state: EditorState
+
+        /** Models download on Wi-Fi only (Settings, Stage 16). */
+        val modelsWifiOnly: Boolean get() = true
 
         fun reduce(
             label: String?,
@@ -183,6 +188,53 @@ internal class EditorSelectionActions(
     }
 
     private fun state() = host.state
+
+    /** The Stage 16 tools. */
+    private val smart =
+        EditorSmartActions(
+            scope,
+            dispatcher,
+            object : EditorSmartActions.Host {
+                override val state get() = host.state
+
+                override fun reduce(
+                    label: String?,
+                    block: EditorState.() -> EditorState,
+                ) = host.reduce(label, block)
+
+                override fun setState(block: EditorState.() -> EditorState) = host.setState(block)
+
+                override fun message(text: String) = host.message(text)
+
+                override fun endEdit() = host.endEdit()
+
+                override fun addShape(
+                    label: String?,
+                    op: SelectionOp.Shape,
+                ) = this@EditorSelectionActions.addShape(label, op)
+
+                override fun replaceLast(
+                    label: String?,
+                    op: SelectionOp,
+                ) {
+                    val selection = host.state.graph.selection ?: return
+                    reduce(label) { copy(graph = graph.copy(selection = selection.withLast(op))) }
+                }
+
+                override fun registered(name: String) {
+                    synchronized(registered) { registered += name }
+                }
+
+                override fun doc(
+                    u: Float,
+                    v: Float,
+                ) = this@EditorSelectionActions.doc(u, v)
+
+                override fun longEdge() = this@EditorSelectionActions.longEdge()
+            },
+            models,
+            rasters,
+        ) { host.modelsWifiOnly }
 
     private val settings get() = state().selectionSettings
 
@@ -211,6 +263,7 @@ internal class EditorSelectionActions(
             is SelectAction.Move -> move(action.u, action.v)
             is SelectAction.Loupe -> loupe(action)
             is SelectAction.End -> end()
+            is SmartAction -> smart.onAction(action)
         }
     }
 
@@ -276,6 +329,7 @@ internal class EditorSelectionActions(
         lastU = u
         lastV = v
         moved = false
+        state().selectTool?.takeIf { it in SmartTools.ALL }?.let { smart.start(it, u, v) }
     }
 
     private fun move(
@@ -287,6 +341,11 @@ internal class EditorSelectionActions(
         if (tool == null || point == null) return
         lastU = u
         lastV = v
+        if (tool in SmartTools.ALL) {
+            smart.move(tool, u, v, first = !moved)
+            moved = true
+            return
+        }
         if (!moved) {
             moved = true
             beginDrag(tool)
@@ -404,6 +463,7 @@ internal class EditorSelectionActions(
     private fun end() {
         host.setState { copy(loupe = null) }
         val tool = state().selectTool ?: return
+        if (tool in SmartTools.ALL) return smart.end(tool, moved)
         if (moved) {
             host.endEdit()
             if (tool != SelectTools.POLYGON) return
@@ -503,7 +563,23 @@ internal class EditorSelectionActions(
             canvas.registerMaskRaster(name, pixels)
             synchronized(registered) { registered += name }
             synchronized(thumbnails) { thumbnails[name] = maskThumbnail(pixels) }
-            MaskPaint.Raster(name, raster.width.toFloat(), raster.height.toFloat(), raster.docWidth.toFloat(), raster.docHeight.toFloat())
+            // Stage 16: its colour guide, so an export upsamples it against the full-resolution photo.
+            val guide =
+                canvas.selectionGuide()?.takeIf { it.width == raster.width && it.height == GUIDE_PLANES * raster.height }?.let { g ->
+                    val planes = MaskRaster(g.width, g.height, g.values)
+                    store.save(planes)?.also { guideName ->
+                        canvas.registerMaskRaster(guideName, planes)
+                        synchronized(registered) { registered += guideName }
+                    }
+                }
+            MaskPaint.Raster(
+                name,
+                raster.width.toFloat(),
+                raster.height.toFloat(),
+                raster.docWidth.toFloat(),
+                raster.docHeight.toFloat(),
+                guide,
+            )
         }
     }
 
@@ -630,7 +706,24 @@ internal class EditorSelectionActions(
         scope.launch {
             selectionJson.collect { json ->
                 val canvas = state().canvas
-                if (json != null && canvas != null) withContext(dispatcher) { canvas.setSelection(json) }
+                if (json != null && canvas != null) {
+                    withContext(dispatcher) {
+                        registerSelectionRasters(canvas)
+                        canvas.setSelection(json)
+                    }
+                }
+            }
+        }
+    }
+
+    /** Model masks (Stage 16) a selection names that the engine does not have yet (a reopened project). */
+    private fun registerSelectionRasters(canvas: dev.mark.lineover.feature.editor.canvas.EditorCanvas) {
+        val store = rasters ?: return
+        val missing = selectionRasterNames(state().graph.selection).filter { synchronized(registered) { it !in registered } }
+        for (name in missing) {
+            store.load(name)?.let { raster ->
+                canvas.registerMaskRaster(name, raster)
+                synchronized(registered) { registered += name }
             }
         }
     }
@@ -646,6 +739,7 @@ internal class EditorSelectionActions(
     }
 
     companion object {
+        const val GUIDE_PLANES = 3
         const val INSIDE = 0.5f
         const val LASSO_SPACING = 0.002f
         const val CLOSE_DISTANCE = 0.02f

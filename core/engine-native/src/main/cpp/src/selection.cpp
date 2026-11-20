@@ -3,11 +3,14 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <memory>
 #include <limits>
 #include <utility>
 
 #include "lineover/color_ops.h"
 #include "lineover/masks.h"
+#include "lineover/smart_select.h"
 
 namespace lo::selection {
 
@@ -218,7 +221,7 @@ void polygon(const SelectionOp& op, const Grid& g, std::vector<float>* a) {
 
 std::vector<float> shape(const SelectionOp& op, const Grid& g) {
     std::vector<float> a(static_cast<std::size_t>(g.width) * g.height, 0.f);
-    if (op.kind == "lasso" || op.kind == "polygon") {
+    if (op.kind == "lasso" || op.kind == "polygon" || op.kind == "magnetic") {
         polygon(op, g, &a);
         return a;
     }
@@ -308,6 +311,46 @@ std::vector<float> colorRange(const SelectionOp& op, const Grid& g, const std::v
     return a;
 }
 
+// A brush stroke's coverage (the mask brush of masks.h: value 1, full opacity).
+std::vector<float> brush(const SelectionOp& op, const Grid& g) {
+    LayerMask m;
+    m.base = 0.0;
+    MaskPaint p;
+    p.kind = "stroke";
+    p.value = 1.0;
+    p.radius = op.radius;
+    p.hardness = op.hardness;
+    p.points = op.points;
+    m.paint.push_back(p);
+    std::vector<float> a(static_cast<std::size_t>(g.width) * g.height);
+    masks::rasterize(m, 0, 0, g.width, g.height, g.scale, a.data());
+    return a;
+}
+
+// A model mask covering the document, brought to the grid by joint bilateral upsampling with the
+// grid's image (bilinear without one); nothing while it is not registered.
+std::vector<float> raster(const SelectionOp& op, const Grid& g) {
+    std::vector<float> a(static_cast<std::size_t>(g.width) * g.height, 0.f);
+    std::shared_ptr<const std::vector<float>> values;
+    int rw = 0, rh = 0;
+    if (!masks::findRaster(op.source, &values, &rw, &rh) || rw <= 0 || rh <= 0) return a;
+    if (g.rgba != nullptr) {
+        const std::vector<double> guide = smart::guide(g.rgba, g.width, g.height);
+        smart::jointBilateralUpsample(values->data(), rw, rh, smart::lowGuide(guide, g.width, g.height, rw, rh), guide,
+                                      g.width, g.height, a.data());
+        return a;
+    }
+    LayerMask m;
+    MaskPaint p;
+    p.kind = "raster";
+    p.source = op.source;
+    p.docWidth = g.width / g.scale;
+    p.docHeight = g.height / g.scale;
+    m.paint.push_back(p);
+    masks::rasterize(m, 0, 0, g.width, g.height, g.scale, a.data());
+    return a;
+}
+
 void combine(std::vector<float>* s, const std::vector<float>& a, const std::string& mode) {
     for (std::size_t p = 0; p < s->size(); ++p) {
         float& v = (*s)[p];
@@ -325,14 +368,55 @@ void combine(std::vector<float>* s, const std::vector<float>& a, const std::stri
 
 }  // namespace
 
-std::vector<float> evaluate(const std::vector<SelectionOp>& ops, const Grid& g) {
+namespace {
+
+bool costly(const std::string& kind) { return kind == "raster" || kind == "quick" || kind == "refine"; }
+
+// The longest checkpoint whose recipe starts [ops] (on the same grid), or null.
+const Cache::Checkpoint* resume(const std::vector<SelectionOp>& ops, const Grid& g, Cache* cache) {
+    if (cache == nullptr) return nullptr;
+    if (cache->generation != g.generation || cache->width != g.width || cache->height != g.height || cache->scale != g.scale) {
+        cache->checkpoints.clear();
+        cache->generation = g.generation;
+        cache->width = g.width;
+        cache->height = g.height;
+        cache->scale = g.scale;
+        return nullptr;
+    }
+    const Cache::Checkpoint* best = nullptr;
+    for (const Cache::Checkpoint& c : cache->checkpoints) {
+        if (c.ops.size() > ops.size() || (best != nullptr && c.ops.size() <= best->ops.size())) continue;
+        if (std::equal(c.ops.begin(), c.ops.end(), ops.begin())) best = &c;
+    }
+    return best;
+}
+
+constexpr std::size_t kCheckpoints = 4;
+
+}  // namespace
+
+std::vector<float> evaluate(const std::vector<SelectionOp>& ops, const Grid& g, Cache* cache) {
     std::vector<float> s(static_cast<std::size_t>(g.width) * g.height, 0.f);
     if (g.width <= 0 || g.height <= 0) return s;
+    std::size_t from = 0;
+    if (const Cache::Checkpoint* c = resume(ops, g, cache)) {
+        s = c->s;
+        from = c->ops.size();
+    }
     std::vector<float> lab, labPhoto;
-    for (const SelectionOp& op : ops) {
+    for (std::size_t index = from; index < ops.size(); ++index) {
+        const SelectionOp& op = ops[index];
         const std::string& k = op.kind;
-        if (k == "rect" || k == "ellipse" || k == "lasso" || k == "polygon") {
+        if (k == "rect" || k == "ellipse" || k == "lasso" || k == "polygon" || k == "magnetic") {
             combine(&s, shape(op, g), op.mode);
+        } else if (k == "brush") {
+            combine(&s, brush(op, g), op.mode);
+        } else if (k == "raster") {
+            combine(&s, raster(op, g), op.mode);
+        } else if (k == "quick") {
+            combine(&s, quickSelect(op, g), op.mode);
+        } else if (k == "refine") {
+            smart::refine(&s, g.rgba, g.width, g.height, op.px * g.scale, op.contrast);
         } else if (k == "wand" || k == "color_range") {
             const bool photo = !op.allLayers && g.rgbaPhoto != nullptr;
             std::vector<float>& source = photo ? labPhoto : lab;
@@ -355,9 +439,89 @@ std::vector<float> evaluate(const std::vector<SelectionOp>& ops, const Grid& g) 
         } else if (k == "border") {
             border(&s, g.width, g.height, op.px * g.scale);
         }
+        if (cache != nullptr && costly(k)) {
+            cache->checkpoints.push_back({std::vector<SelectionOp>(ops.begin(), ops.begin() + static_cast<std::ptrdiff_t>(index) + 1), s});
+            if (cache->checkpoints.size() > kCheckpoints) cache->checkpoints.erase(cache->checkpoints.begin());
+        }
     }
     for (float& v : s) v = masks::fromHalf(masks::toHalf(v));  // R16F
     return s;
+}
+
+std::vector<float> lightness(const float* rgba, int width, int height) {
+    const std::size_t n = static_cast<std::size_t>(width) * height;
+    std::vector<float> l(n);
+    for (std::size_t p = 0; p < n; ++p) {
+        float lab[3];
+        colorops::toOklab(rgba + 4 * p, lab);
+        l[p] = std::clamp(lab[0], 0.f, 1.f);
+    }
+    return l;
+}
+
+std::vector<float> quickSelect(const SelectionOp& op, const Grid& g) {
+    const std::size_t n = static_cast<std::size_t>(g.width) * g.height;
+    std::vector<float> out(n, 0.f);
+    const std::size_t count = op.points.size() / 2;
+    if (count == 0 || g.rgba == nullptr || op.radius <= 0.0) return out;
+    // The region around the stroke (grid px): its box grown by 3 radii and 60 % of its size.
+    double bx0 = op.points[0], by0 = op.points[1], bx1 = bx0, by1 = by0;
+    for (std::size_t k = 1; k < count; ++k) {
+        bx0 = std::min(bx0, op.points[2 * k]);
+        bx1 = std::max(bx1, op.points[2 * k]);
+        by0 = std::min(by0, op.points[2 * k + 1]);
+        by1 = std::max(by1, op.points[2 * k + 1]);
+    }
+    const double r = op.radius * g.scale;
+    const double margin = std::max({3.0 * r, 0.6 * std::max(bx1 - bx0, by1 - by0) * g.scale, 24.0});
+    const int x0 = std::max(0, static_cast<int>(std::floor(bx0 * g.scale - margin)));
+    const int y0 = std::max(0, static_cast<int>(std::floor(by0 * g.scale - margin)));
+    const int x1 = std::min(g.width, static_cast<int>(std::ceil(bx1 * g.scale + margin)));
+    const int y1 = std::min(g.height, static_cast<int>(std::ceil(by1 * g.scale + margin)));
+    const int rw = x1 - x0, rh = y1 - y0;
+    if (rw < 4 || rh < 4) return out;
+    // Work at <= 320 px (GrabCut's graph), then bring the cut back with the image as the guide.
+    const double f = std::max(1.0, std::max(rw, rh) / 320.0);
+    const int lw = std::max(1, static_cast<int>(std::ceil(rw / f))), lh = std::max(1, static_cast<int>(std::ceil(rh / f)));
+    std::vector<float> roi(static_cast<std::size_t>(rw) * rh * 4);
+    for (int j = 0; j < rh; ++j)
+        std::copy(g.rgba + 4 * (static_cast<std::size_t>(y0 + j) * g.width + x0),
+                  g.rgba + 4 * (static_cast<std::size_t>(y0 + j) * g.width + x1), roi.begin() + 4 * static_cast<std::ptrdiff_t>(j) * rw);
+    const std::vector<double> guide = smart::guide(roi.data(), rw, rh);
+    const std::vector<double> lowG = smart::lowGuide(guide, rw, rh, lw, lh);
+    std::vector<double> rgb(lowG.size());
+    for (std::size_t q = 0; q < lowG.size(); ++q) rgb[q] = lowG[q] * 255.0;
+    // Trimap: the stroke is object; the region's edges are background where they are not the
+    // image's edges (the object may run off the photo); the rest is probably background.
+    std::vector<std::uint8_t> tri(static_cast<std::size_t>(lw) * lh, smart::kPrBgd);
+    // Low pixel (i, j) is the document point ((x0 + (i + 0.5) f) / scale, ...).
+    for (int j = 0; j < lh; ++j)
+        for (int i = 0; i < lw; ++i) {
+            const double dx = (x0 + (i + 0.5) * rw / lw) / g.scale, dy = (y0 + (j + 0.5) * rh / lh) / g.scale;
+            double best = std::numeric_limits<double>::infinity();
+            for (std::size_t k = 0; k < count; ++k) {
+                const double ax = op.points[2 * k], ay = op.points[2 * k + 1];
+                const double bx = k + 1 < count ? op.points[2 * k + 2] : ax, by = k + 1 < count ? op.points[2 * k + 3] : ay;
+                const double sx = bx - ax, sy = by - ay, ll = sx * sx + sy * sy;
+                const double t = ll > 0.0 ? std::clamp(((dx - ax) * sx + (dy - ay) * sy) / ll, 0.0, 1.0) : 0.0;
+                best = std::min(best, std::hypot(dx - (ax + t * sx), dy - (ay + t * sy)));
+            }
+            std::uint8_t& v = tri[static_cast<std::size_t>(j) * lw + i];
+            if (best <= op.radius) {
+                v = smart::kFgd;
+            } else if ((i == 0 && x0 > 0) || (j == 0 && y0 > 0) || (i == lw - 1 && x1 < g.width) || (j == lh - 1 && y1 < g.height)) {
+                v = smart::kBgd;
+            }
+        }
+    smart::grabCut(rgb, lw, lh, &tri, 4);
+    std::vector<float> low(tri.size());
+    for (std::size_t q = 0; q < tri.size(); ++q) low[q] = (tri[q] == smart::kFgd || tri[q] == smart::kPrFgd) ? 1.f : 0.f;
+    std::vector<float> up(static_cast<std::size_t>(rw) * rh);
+    smart::jointBilateralUpsample(low.data(), lw, lh, lowG, guide, rw, rh, up.data());
+    for (int j = 0; j < rh; ++j)
+        std::copy(up.begin() + static_cast<std::ptrdiff_t>(j) * rw, up.begin() + static_cast<std::ptrdiff_t>(j + 1) * rw,
+                  out.begin() + static_cast<std::ptrdiff_t>(static_cast<std::size_t>(y0 + j) * g.width + x0));
+    return out;
 }
 
 void contours(const float* s, int width, int height, double scale, std::vector<float>* segments) {

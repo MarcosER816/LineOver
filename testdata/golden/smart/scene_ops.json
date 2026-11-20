@@ -1,0 +1,55 @@
+[
+ {
+  "kind": "raster",
+  "mode": "new",
+  "source": "subject",
+  "width": 32,
+  "height": 24,
+  "tool": "subject"
+ },
+ {
+  "kind": "brush",
+  "mode": "add",
+  "radius": 6.5,
+  "hardness": 0.6,
+  "points": [
+   80.3,
+   20.2,
+   95.6,
+   30.4,
+   110.1,
+   28.7
+  ]
+ },
+ {
+  "kind": "brush",
+  "mode": "subtract",
+  "radius": 4.2,
+  "hardness": 1.0,
+  "points": [
+   30.4,
+   50.1,
+   40.7,
+   52.3
+  ]
+ },
+ {
+  "kind": "magnetic",
+  "mode": "add",
+  "points": [
+   70.2,
+   60.3,
+   100.6,
+   62.1,
+   96.4,
+   88.2,
+   75.3,
+   85.7
+  ]
+ },
+ {
+  "kind": "refine",
+  "px": 3.0,
+  "contrast": 30.0
+ }
+]

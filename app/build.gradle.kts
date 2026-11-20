@@ -14,10 +14,17 @@ val hasReleaseKeystore = keystorePath != null && file(keystorePath).isFile
 android {
     namespace = "dev.mark.lineover"
 
+    sourceSets {
+        // Debug builds only: the CC0 photos and reference masks of the AI self-test (Stage 16).
+        getByName("debug") {
+            assets.directories.add(rootProject.file("testdata/smart").path)
+        }
+    }
+
     defaultConfig {
         applicationId = "dev.mark.lineover"
-        versionCode = 20
-        versionName = "0.15.0"
+        versionCode = 21
+        versionName = "0.16.0"
     }
 
     signingConfigs {

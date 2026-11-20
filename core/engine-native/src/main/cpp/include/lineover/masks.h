@@ -37,6 +37,8 @@ private:
 void registerRaster(const std::string& name, std::shared_ptr<const std::vector<float>> values, int width, int height);
 void unregisterRaster(const std::string& name);
 bool hasRaster(const std::string& name);
+// The registered raster [name]; false when there is none.
+bool findRaster(const std::string& name, std::shared_ptr<const std::vector<float>>* values, int* width, int* height);
 
 // OpenCV's Gaussian kernel for [sigma] (pixels); empty when sigma <= 0.
 std::vector<double> gaussianKernel(double sigma);
@@ -46,7 +48,10 @@ void gaussianBlur(const float* in, int width, int height, double sigma, float* o
 
 // The raw mask (base and paint, before invert / feather / density) at buffer pixels
 // (x0 + i, y0 + j), i.e. document points ((x0 + i + 0.5) / scale, (y0 + j + 0.5) / scale).
-void rasterize(const LayerMask& mask, int x0, int y0, int width, int height, double scale, float* out);
+// [guideRgba] (optional, Stage 16): the image under those pixels (working space, RGBA); rasters
+// with a guide are then upsampled by joint bilateral filtering against it.
+void rasterize(const LayerMask& mask, int x0, int y0, int width, int height, double scale, float* out,
+               const float* guideRgba = nullptr);
 
 // Which buffer pixels a mask is rendered for: [originX, originX + width) x [originY, ...)
 // of a document that is docWidth x docHeight buffer pixels at [scale].
@@ -57,6 +62,9 @@ struct MaskRegion {
 };
 
 // The final mask (1 = shown) of [region] into [out] (R16F tiles of the region's size).
-void render(const LayerMask& mask, const MaskRegion& region, MaskTiles* out);
+// [guideRgba] (optional, Stage 16): the region's image (exports pass the full-resolution
+// photo); used for guided rasters when the mask has no feather (a feather's reach would read
+// pixels outside the region, so feathered masks stay bilinear and tiles never differ).
+void render(const LayerMask& mask, const MaskRegion& region, MaskTiles* out, const float* guideRgba = nullptr);
 
 }  // namespace lo::masks

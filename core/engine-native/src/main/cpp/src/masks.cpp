@@ -218,6 +218,60 @@ void paintRaster(const MaskPaint& p, int x0, int y0, int width, int height, doub
     }
 }
 
+// A guided raster (Stage 16): joint bilateral upsampling (smart_select.h's weights: sigma_s 1
+// raster px, sigma_r 0.1, reach 2) against sqrt(rgb) of [guideRgba], with the raster's guide
+// planes as the low-resolution colours. Bilinear when the guide is missing.
+bool paintGuidedRaster(const MaskPaint& p, int x0, int y0, int width, int height, double scale, float* out,
+                       const float* guideRgba) {
+    Raster r, g;
+    {
+        std::lock_guard<std::mutex> lock(gRasterMutex);
+        auto it = gRasters.find(p.source);
+        auto gt = gRasters.find(p.guide);
+        if (it == gRasters.end() || gt == gRasters.end()) return false;
+        r = it->second;
+        g = gt->second;
+    }
+    if (r.width <= 0 || r.height <= 0 || g.width != r.width || g.height != 3 * r.height || p.docWidth <= 0.0 || p.docHeight <= 0.0)
+        return false;
+    const std::vector<float>& v = *r.values;
+    const float* planes = g.values->data();
+    const std::size_t plane = static_cast<std::size_t>(r.width) * r.height;
+    const double sx = r.width / p.docWidth, sy = r.height / p.docHeight;
+    constexpr double kSigmaS = 1.0, kSigmaR = 0.1;
+    constexpr int kReach = 2;
+    for (int j = 0; j < height; ++j) {
+        const double vv = (y0 + j + 0.5) / scale * sy - 0.5;
+        const int fv = static_cast<int>(std::floor(vv));
+        for (int i = 0; i < width; ++i) {
+            const double uu = (x0 + i + 0.5) / scale * sx - 0.5;
+            const int fu = static_cast<int>(std::floor(uu));
+            const float* px = guideRgba + 4 * (static_cast<std::size_t>(j) * width + i);
+            double gp[3];
+            for (int c = 0; c < 3; ++c) gp[c] = std::sqrt(std::clamp(static_cast<double>(px[c]), 0.0, 1.0));
+            double num = 0.0, den = 0.0;
+            for (int ky = -kReach; ky <= kReach; ++ky) {
+                const int qy = fv + ky;
+                const double dy = qy - vv;
+                if (qy < 0 || qy >= r.height || std::abs(dy) > kReach) continue;
+                for (int kx = -kReach; kx <= kReach; ++kx) {
+                    const int qx = fu + kx;
+                    const double dx = qx - uu;
+                    if (qx < 0 || qx >= r.width || std::abs(dx) > kReach) continue;
+                    const std::size_t q = static_cast<std::size_t>(qy) * r.width + qx;
+                    const double d0 = gp[0] - planes[q], d1 = gp[1] - planes[plane + q], d2 = gp[2] - planes[2 * plane + q];
+                    const double w = std::exp(-(dx * dx + dy * dy) / (2 * kSigmaS * kSigmaS)) *
+                                     std::exp(-(d0 * d0 + d1 * d1 + d2 * d2) / (2 * kSigmaR * kSigmaR));
+                    num += w * v[q];
+                    den += w;
+                }
+            }
+            if (den > 0.0) out[static_cast<std::size_t>(j) * width + i] = static_cast<float>(num / den);
+        }
+    }
+    return true;
+}
+
 void paintGradient(const MaskPaint& p, int x0, int y0, int width, int height, double scale, float* out) {
     const double dx = p.x1 - p.x0, dy = p.y1 - p.y0, ll = dx * dx + dy * dy;
     for (int j = 0; j < height; ++j) {
@@ -242,6 +296,16 @@ void unregisterRaster(const std::string& name) {
     gRasters.erase(name);
 }
 
+bool findRaster(const std::string& name, std::shared_ptr<const std::vector<float>>* values, int* width, int* height) {
+    std::lock_guard<std::mutex> lock(gRasterMutex);
+    auto it = gRasters.find(name);
+    if (it == gRasters.end()) return false;
+    *values = it->second.values;
+    *width = it->second.width;
+    *height = it->second.height;
+    return true;
+}
+
 bool hasRaster(const std::string& name) {
     std::lock_guard<std::mutex> lock(gRasterMutex);
     return gRasters.count(name) != 0;
@@ -263,20 +327,23 @@ void gaussianBlur(const float* in, int width, int height, double sigma, float* o
     std::copy(blurred.begin(), blurred.end(), out);
 }
 
-void rasterize(const LayerMask& mask, int x0, int y0, int width, int height, double scale, float* out) {
+void rasterize(const LayerMask& mask, int x0, int y0, int width, int height, double scale, float* out,
+               const float* guideRgba) {
     std::fill(out, out + static_cast<std::size_t>(width) * height, static_cast<float>(mask.base));
     for (const MaskPaint& p : mask.paint) {
         if (p.kind == "gradient") {
             paintGradient(p, x0, y0, width, height, scale, out);
         } else if (p.kind == "raster") {
-            paintRaster(p, x0, y0, width, height, scale, out);
+            const bool guided = guideRgba != nullptr && !p.guide.empty() &&
+                                paintGuidedRaster(p, x0, y0, width, height, scale, out, guideRgba);
+            if (!guided) paintRaster(p, x0, y0, width, height, scale, out);
         } else if (p.kind == "stroke") {
             paintStroke(p, x0, y0, width, height, scale, out);
         }
     }
 }
 
-void render(const LayerMask& mask, const MaskRegion& region, MaskTiles* out) {
+void render(const LayerMask& mask, const MaskRegion& region, MaskTiles* out, const float* guideRgba) {
     const int w = region.width, h = region.height;
     out->reset(w, h);
     if (w <= 0 || h <= 0) return;
@@ -298,7 +365,9 @@ void render(const LayerMask& mask, const MaskRegion& region, MaskTiles* out) {
     range(region.originX - r, region.originX + w + r, docW, &xlo, &xhi);
     range(region.originY - r, region.originY + h + r, docH, &ylo, &yhi);
     std::vector<float> raw(static_cast<std::size_t>(xhi - xlo) * (yhi - ylo));
-    rasterize(mask, xlo, ylo, xhi - xlo, yhi - ylo, region.scale, raw.data());
+    // The guide covers exactly the region, so it is used only without a feather apron.
+    const bool exact = r == 0 && xlo == region.originX && ylo == region.originY && xhi - xlo == w && yhi - ylo == h;
+    rasterize(mask, xlo, ylo, xhi - xlo, yhi - ylo, region.scale, raw.data(), exact ? guideRgba : nullptr);
     const int pw = w + 2 * r, ph = h + 2 * r;
     std::vector<float> padded(static_cast<std::size_t>(pw) * ph);
     for (int j = 0; j < ph; ++j) {

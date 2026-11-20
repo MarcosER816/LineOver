@@ -28,6 +28,8 @@
 #include "gpu_pipeline.h"
 #include "lineover/geometry.h"
 #include "lineover/lines.h"
+#include "lineover/selection.h"
+#include "lineover/smart_select.h"
 #include "lineover/thumbnail.h"
 #include "lineover/graph.h"
 #include "lineover/layers.h"
@@ -113,6 +115,18 @@ public:
     float selectionAt(float u, float v);
     // A copy of the selection (R16F values) and the document size it covers; false without one.
     bool selectionRaster(std::vector<float>* values, int* width, int* height, int* docWidth, int* docHeight);
+    // Stage 16: the selection grid's image (what the selection tools see: the composite at
+    // <= 2048 px) as sRGB 8-bit RGBA, box-averaged to <= maxEdge, for the segmentation models.
+    // Any thread but the main one; false before a preview.
+    bool selectionImage(int maxEdge, std::vector<std::uint8_t>* rgba, int* width, int* height);
+    // The selection's colour guide (MaskPaint "raster" guide): 3 planes of sqrt(rgb) of the grid
+    // the current selection was evaluated on (width x 3 height); false without a selection.
+    bool selectionGuide(std::vector<float>* planes, int* width, int* height);
+    // The magnetic lasso: a live-wire from the anchor (document px) over the grid's OKLab
+    // lightness, within [reach] document px of it; liveWirePath reads the path to (x, y) back
+    // as document points x0, y0, x1, y1, ... (empty without an anchor).
+    bool liveWireAnchor(float x, float y, float reach);
+    std::vector<float> liveWirePath(float x, float y);
     // Stage 14: the canvas shows layer [layerId]'s mask (layers::MaskView); the next renderComposite applies it.
     void setMaskView(const std::string& layerId, int view);
     void renderComposite();
@@ -275,6 +289,14 @@ private:
     int selectionW_ = 0, selectionH_ = 0, selectionDocW_ = 0, selectionDocH_ = 0;
     std::shared_ptr<const Graph> sampledGraph_;
     ImageF32 sampledAll_, sampledPhoto_;
+    std::uint64_t sampledGeneration_ = 0;
+    selection::Cache selectionCache_;      // Stage 16: checkpoints after costly ops
+    smart::LiveWire liveWire_;             // the magnetic lasso, on sampledAll_
+    std::uint64_t liveWireGeneration_ = 0;
+    double liveWireScale_ = 1.0;
+    // Renders the selection grid if the graph changed (selectionMutex_ held); false without a
+    // preview. [scale]: grid px per document px.
+    bool sampleGrid(double* scale, int* docW, int* docH);
     std::vector<float> pendingAnts_;
     bool antsChanged_ = false;
     float antsPhase_ = 0.f;

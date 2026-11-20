@@ -44,12 +44,14 @@ import dev.mark.lineover.core.designsystem.component.LoEmptyState
 import dev.mark.lineover.core.designsystem.component.LoIconButton
 import dev.mark.lineover.core.designsystem.component.LoPlaceholderTool
 import dev.mark.lineover.core.designsystem.component.LoSegmented
+import dev.mark.lineover.core.designsystem.component.LoSwitchRow
 import dev.mark.lineover.core.io.lens.LensProfileState
 import dev.mark.lineover.core.io.lens.LensProfileStore
 import dev.mark.lineover.core.io.lens.LensfunManifest
 import dev.mark.lineover.core.io.prefs.AppPreferences
 import dev.mark.lineover.core.io.prefs.CanvasSurround
 import dev.mark.lineover.core.io.prefs.TapGestures
+import dev.mark.lineover.core.ml.SmartModels
 import dev.mark.lineover.core.ui.adaptive.rememberLoWindowInfo
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -63,6 +65,7 @@ fun SettingsRoute(
     onOpenSection: (SettingsSection) -> Unit,
     onOpenGallery: (() -> Unit)?,
     lensProfiles: LensProfileStore? = null,
+    smartModels: SmartModels? = null,
 ) {
     val viewModel =
         viewModel {
@@ -71,6 +74,7 @@ fun SettingsRoute(
                 showDebug = onOpenGallery != null,
                 preferences = preferences,
                 lensProfiles = lensProfiles,
+                smartModels = smartModels,
             )
         }
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -128,26 +132,23 @@ fun SettingsSectionScreen(
     onOpenGallery: (() -> Unit)?,
     modifier: Modifier = Modifier,
     lensProfiles: LensProfileStore? = null,
+    smartModels: SmartModels? = null,
 ) {
-    val surround by preferences.surround.collectAsStateWithLifecycle()
-    val lensState = lensProfiles?.state?.collectAsStateWithLifecycle()?.value ?: LensProfileState.Missing
-    val scope = rememberCoroutineScope()
+    // The same ViewModel as the two-pane screen: every section's actions work here too.
+    val viewModel =
+        viewModel {
+            SettingsViewModel(
+                versionName,
+                showDebug = onOpenGallery != null,
+                preferences = preferences,
+                lensProfiles = lensProfiles,
+                smartModels = smartModels,
+            )
+        }
+    val state by viewModel.state.collectAsStateWithLifecycle()
     Column(modifier.fillMaxSize().background(LoColors.Bg).windowInsetsPadding(WindowInsets.safeDrawing)) {
         TitleBar(section.title, onBack)
-        SectionDetail(
-            section,
-            SettingsState(versionName = versionName, surround = surround, lensProfiles = lensState),
-            onIntent = {
-                when (it) {
-                    is SettingsIntent.SetSurround -> preferences.setSurround(it.surround)
-                    is SettingsIntent.DownloadLensProfiles -> lensProfiles?.let { store -> scope.launch { store.download() } }
-                    is SettingsIntent.DeleteLensProfiles -> lensProfiles?.let { store -> scope.launch { store.delete() } }
-                    else -> Unit
-                }
-            },
-            onOpenGallery,
-            Modifier.fillMaxSize(),
-        )
+        SectionDetail(section, state, onIntent = viewModel::onIntent, onOpenGallery, Modifier.fillMaxSize())
     }
 }
 
@@ -219,7 +220,7 @@ private fun SectionDetail(
         when (section) {
             SettingsSection.AiModels -> {
                 LensProfilesRow(state.lensProfiles, state.lensProfilesBytes, onIntent)
-                AiModelsDetail(state.models, onIntent)
+                AiModelsDetail(state.models, state.modelsWifiOnly, onIntent)
             }
 
             SettingsSection.About -> {
@@ -312,6 +313,7 @@ private fun ReservedNote(section: SettingsSection) {
 @Composable
 private fun AiModelsDetail(
     models: List<AiModelEntry>,
+    wifiOnly: Boolean,
     onIntent: (SettingsIntent) -> Unit,
 ) {
     Text(
@@ -320,12 +322,14 @@ private fun AiModelsDetail(
         style = LoType.Body,
         color = LoColors.TextSecondary,
     )
+    LoSwitchRow(
+        "Download on Wi-Fi only",
+        checked = wifiOnly,
+        onCheckedChange = { onIntent(SettingsIntent.SetModelsWifiOnly(it)) },
+        description = "On mobile data a tool asks before downloading its model",
+    )
     if (models.isEmpty()) {
-        LoEmptyState(
-            LoIcons.AutoFixHigh,
-            "No models downloaded",
-            body = "The first AI tools (subject and sky selection) arrive in Stage 16. Downloaded models will be listed here.",
-        )
+        LoEmptyState(LoIcons.AutoFixHigh, "No AI models in this build", body = "AI tools list their models here.")
     } else {
         models.forEach { AiModelRow(it, onDelete = { onIntent(SettingsIntent.DeleteModel(it.id)) }) }
     }
@@ -405,11 +409,10 @@ fun AiModelRow(
     ) {
         Column(Modifier.weight(1f)) {
             Text(model.name, style = LoType.Body, color = LoColors.TextPrimary)
-            Text(
-                "${formatSize(model.sizeBytes)} · ${model.licence} · ${if (model.downloaded) "Downloaded" else "Not downloaded"}",
-                style = LoType.Caption,
-                color = LoColors.TextSecondary,
-            )
+            val size = if (model.sizeBytes > 0L) formatSize(model.sizeBytes) else "Google Play services"
+            val status = model.status ?: if (model.downloaded) "Downloaded" else "Not downloaded"
+            val usedBy = if (model.usedBy.isNotBlank()) "${model.usedBy} · " else ""
+            Text("$usedBy$size · ${model.licence} · $status", style = LoType.Caption, color = LoColors.TextSecondary)
         }
         LoIconButton(LoIcons.Delete, "Delete ${model.name}", onClick = onDelete, enabled = model.downloaded)
     }

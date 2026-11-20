@@ -426,6 +426,8 @@ internal fun SelectionOptionsBar(
         val has = state.selection != null
         LoChip("Invert", selected = false, onClick = { select(SelectAction.Invert) }, enabled = has)
         LoChip("Deselect", selected = false, onClick = { select(SelectAction.Deselect) }, enabled = has)
+        // Stage 16: the one-tap smart selections.
+        SmartButtons(state, onIntent)
     }
 }
 

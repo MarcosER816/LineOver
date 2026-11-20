@@ -137,6 +137,97 @@ sealed interface SelectionOp {
         override val label: String get() = "Color range"
     }
 
+    /** Magnetic lasso (Stage 16): the live-wire path that snapped to edges, closed like a lasso. */
+    @Serializable
+    @SerialName("magnetic")
+    data class Magnetic(
+        override val mode: SelectionMode,
+        val antiAlias: Boolean,
+        val points: List<Float>,
+    ) : Shape {
+        override fun withMode(mode: SelectionMode) = copy(mode = mode)
+
+        override val label: String get() = "Magnetic lasso"
+    }
+
+    /** Add / subtract brush (Stage 16): a round brush stroke of [radius] document px. */
+    @Serializable
+    @SerialName("brush")
+    data class Brush(
+        override val mode: SelectionMode,
+        val radius: Float,
+        val hardness: Float,
+        val points: List<Float>,
+    ) : Shape {
+        override fun withMode(mode: SelectionMode) = copy(mode = mode)
+
+        fun plus(
+            x: Float,
+            y: Float,
+        ): Brush = copy(points = points + x + y)
+
+        override val label: String get() = if (mode == SelectionMode.Subtract) "Subtract brush" else "Add brush"
+    }
+
+    /**
+     * A model's mask (Stage 16: Select subject / sky, Object select), saved as pixels ([source],
+     * [width] x [height], covering the document) like a selection made into a mask. The engine
+     * brings it to the canvas resolution by joint bilateral upsampling with the image.
+     */
+    @Serializable
+    @SerialName("raster")
+    data class Raster(
+        override val mode: SelectionMode,
+        val source: String,
+        val width: Float,
+        val height: Float,
+        val tool: String,
+    ) : Shape {
+        override fun withMode(mode: SelectionMode) = copy(mode = mode)
+
+        override val label: String
+            get() =
+                when (tool) {
+                    TOOL_SUBJECT -> "Select subject"
+                    TOOL_SKY -> "Select sky"
+                    else -> "Object select"
+                }
+
+        companion object {
+            const val TOOL_SUBJECT = "subject"
+            const val TOOL_SKY = "sky"
+            const val TOOL_OBJECT = "object"
+        }
+    }
+
+    /** Quick selection (Stage 16): a brush stroke that GrabCut grows to the object's edges. */
+    @Serializable
+    @SerialName("quick")
+    data class Quick(
+        override val mode: SelectionMode,
+        val radius: Float,
+        val points: List<Float>,
+    ) : Shape {
+        override fun withMode(mode: SelectionMode) = copy(mode = mode)
+
+        fun plus(
+            x: Float,
+            y: Float,
+        ): Quick = copy(points = points + x + y)
+
+        override val label: String get() = "Quick selection"
+    }
+
+    /** Refine edge (Stage 16): guided-filter matting of [px] document px, then [contrast] (0..100). */
+    @Serializable
+    @SerialName("refine")
+    data class Refine(
+        val px: Float,
+        val contrast: Float,
+    ) : SelectionOp {
+        override val label: String get() = "Refine edge"
+    }
+
     @Serializable
     @SerialName("all")
     data object All : SelectionOp {

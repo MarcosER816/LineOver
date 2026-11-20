@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <vector>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -271,6 +272,35 @@ int lo_engine_set_selection(lo_engine* engine, const char* json, char* error, si
 void lo_engine_set_ants_phase(lo_engine* engine, float phase) { engine->engine->setAntsPhase(phase); }
 
 float lo_engine_selection_at(lo_engine* engine, float u, float v) { return engine->engine->selectionAt(u, v); }
+
+uint8_t* lo_engine_selection_image(lo_engine* engine, int max_edge, int* width, int* height) {
+    std::vector<std::uint8_t> rgba;
+    if (!engine->engine->selectionImage(max_edge, &rgba, width, height)) return nullptr;
+    auto* out = static_cast<uint8_t*>(std::malloc(rgba.size()));
+    if (out != nullptr) std::memcpy(out, rgba.data(), rgba.size());
+    return out;
+}
+
+float* lo_engine_selection_guide(lo_engine* engine, int* width, int* height) {
+    std::vector<float> planes;
+    if (!engine->engine->selectionGuide(&planes, width, height)) return nullptr;
+    auto* out = static_cast<float*>(std::malloc(planes.size() * sizeof(float)));
+    if (out != nullptr) std::memcpy(out, planes.data(), planes.size() * sizeof(float));
+    return out;
+}
+
+int lo_engine_live_wire_anchor(lo_engine* engine, float x, float y, float reach) {
+    return engine->engine->liveWireAnchor(x, y, reach) ? 1 : 0;
+}
+
+float* lo_engine_live_wire_path(lo_engine* engine, float x, float y, int* count) {
+    const std::vector<float> path = engine->engine->liveWirePath(x, y);
+    *count = static_cast<int>(path.size());
+    if (path.empty()) return nullptr;
+    auto* out = static_cast<float*>(std::malloc(path.size() * sizeof(float)));
+    if (out != nullptr) std::memcpy(out, path.data(), path.size() * sizeof(float));
+    return out;
+}
 
 float* lo_engine_selection_raster(lo_engine* engine, int* width, int* height, int* doc_width, int* doc_height) {
     std::vector<float> values;

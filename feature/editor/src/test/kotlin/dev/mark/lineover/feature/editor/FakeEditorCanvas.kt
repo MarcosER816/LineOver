@@ -127,6 +127,47 @@ class FakeEditorCanvas(
         maskRasters[name] = raster
     }
 
+    // Stage 16: a small grey image for the models, guide planes, and a live-wire that runs
+    // straight from the anchor through a midpoint.
+    var imageRequests = 0
+    var anchor: Pair<Float, Float>? = null
+
+    override fun selectionImage(maxEdge: Int): dev.mark.lineover.core.engine.SelectionImage {
+        imageRequests++
+        return dev.mark.lineover.core.engine
+            .SelectionImage(4, 3, ByteArray(4 * 3 * 4) { 0x80.toByte() })
+    }
+
+    override fun selectionGuide(): dev.mark.lineover.core.engine.SelectionRaster? =
+        if (selections.lastOrNull().isNullOrEmpty()) {
+            null
+        } else {
+            dev.mark.lineover.core.engine.SelectionRaster(
+                4,
+                9,
+                4,
+                9,
+                FloatArray(36) { 0.5f },
+            )
+        }
+
+    override fun liveWireAnchor(
+        x: Float,
+        y: Float,
+        reach: Float,
+    ): Boolean {
+        anchor = x to y
+        return true
+    }
+
+    override fun liveWirePath(
+        x: Float,
+        y: Float,
+    ): FloatArray {
+        val (ax, ay) = anchor ?: return FloatArray(0)
+        return floatArrayOf(ax, ay, (ax + x) / 2, (ay + y) / 2 + 10f, x, y)
+    }
+
     override fun setMaskView(
         layerId: String?,
         view: Int,

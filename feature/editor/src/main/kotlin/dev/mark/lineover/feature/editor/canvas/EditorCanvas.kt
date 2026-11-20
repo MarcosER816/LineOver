@@ -10,6 +10,7 @@ import dev.mark.lineover.core.engine.EngineSession
 import dev.mark.lineover.core.engine.EngineStats
 import dev.mark.lineover.core.engine.Histogram
 import dev.mark.lineover.core.engine.NativeOp
+import dev.mark.lineover.core.engine.SelectionImage
 import dev.mark.lineover.core.engine.SelectionRaster
 import dev.mark.lineover.core.io.masks.MaskRaster
 import dev.mark.lineover.core.model.AutoResult
@@ -55,6 +56,25 @@ interface SelectionCanvas {
         name: String,
         raster: MaskRaster,
     ) = Unit
+
+    /** Stage 16: what the selection tools see, as sRGB pixels (<= [maxEdge]), for the models. Off the main thread. */
+    fun selectionImage(maxEdge: Int): SelectionImage? = null
+
+    /** The colour guide of the current selection (3 planes, width x 3 height), or null. Off the main thread. */
+    fun selectionGuide(): SelectionRaster? = null
+
+    /** The magnetic lasso: anchors the live-wire at document point (x, y). Off the main thread. */
+    fun liveWireAnchor(
+        x: Float,
+        y: Float,
+        reach: Float,
+    ): Boolean = false
+
+    /** The live-wire path from the anchor to (x, y), document points x0, y0, ... Off the main thread. */
+    fun liveWirePath(
+        x: Float,
+        y: Float,
+    ): FloatArray = FloatArray(0)
 }
 
 /** The image engine as the editor sees it: draws the canvas, takes edits, reports loading. */
@@ -293,6 +313,21 @@ private class EngineCanvas(
         name: String,
         raster: MaskRaster,
     ) = session.registerMaskRaster(name, SelectionRaster(raster.width, raster.height, 0, 0, raster.values))
+
+    override fun selectionImage(maxEdge: Int): SelectionImage? = session.selectionImage(maxEdge)
+
+    override fun selectionGuide(): SelectionRaster? = session.selectionGuide()
+
+    override fun liveWireAnchor(
+        x: Float,
+        y: Float,
+        reach: Float,
+    ): Boolean = session.liveWireAnchor(x, y, reach)
+
+    override fun liveWirePath(
+        x: Float,
+        y: Float,
+    ): FloatArray = session.liveWirePath(x, y)
 
     override fun setAntsPhase(phase: Float) = session.setAntsPhase(phase)
 

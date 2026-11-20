@@ -2,6 +2,29 @@
 
 All notable changes, newest first. One section per stage.
 
+## Stage 16 — Selections II (0.16.0)
+
+### Added
+
+- **Select Subject** and **Select Sky**: one tap in the selection options bar (or in their
+  tools). The canvas shimmers while the model works.
+- **Object select**: tap or scribble on an object; tap again to add, switch to Remove to take
+  parts away.
+- **Quick selection**: paint over an object and the selection grows to its edges.
+- **Magnetic lasso**: trace along an edge and the line snaps to it.
+- **Refine edge**: radius and contrast for soft edges such as hair and fur, with a live preview.
+- Add / subtract brushes to fix any selection by hand.
+- The first use of a tool that needs a model shows what it downloads (name, size, licence,
+  source) and a Download button; it then selects at once. Models are checked (SHA-256), resume
+  after an interruption, download on Wi-Fi only unless you allow mobile data, and can be
+  deleted in **Settings → AI models**.
+- Masks made from a selection now follow the photo's edges at full resolution when exported.
+
+### Changed
+
+- Settings → AI models lists every model with its tool, size and licence, and has a
+  "Download on Wi-Fi only" switch (on).
+
 ## Stage 15 — Selections I (0.15.0)
 
 ### Added

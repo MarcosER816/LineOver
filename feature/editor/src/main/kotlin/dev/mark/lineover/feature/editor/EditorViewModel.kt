@@ -15,6 +15,7 @@ import dev.mark.lineover.core.io.prefs.CanvasSurround
 import dev.mark.lineover.core.io.prefs.TapGestures
 import dev.mark.lineover.core.io.project.DocumentLoad
 import dev.mark.lineover.core.io.project.ProjectLibrary
+import dev.mark.lineover.core.ml.SmartModels
 import dev.mark.lineover.core.model.ColorAdjustments
 import dev.mark.lineover.core.model.CropOverlay
 import dev.mark.lineover.core.model.DetailAdjustments
@@ -237,6 +238,8 @@ data class EditorState(
     val maskView: MaskView = MaskView.None,
     /** Stage 15: the Select tools' settings (options bar and tool panels). */
     val selectionSettings: SelectionSettings = SelectionSettings(),
+    /** The smart selection tools (Stage 16): their settings, the model sheet, the shimmer. */
+    val smart: SmartSelectState = SmartSelectState(),
     /** Pictures of saved selections (mask thumbnails), by raster name. */
     val maskThumbnails: Map<String, ImageBitmap> = emptyMap(),
 ) {
@@ -550,8 +553,11 @@ sealed interface EditorEffect {
  * The editor of one project. Stage 3 is the shell: every tool has its slot and opens a
  * placeholder; the engine (Stage 4) renders the edit, the Light tools (Stage 5) are the
  * first that change it.
+ *
+ * MVI: the single ViewModel of the editor screen (ARCHITECTURE.md), hence its size; its actions
+ * live in the Editor*Actions classes, the intents and their wiring here.
  */
-@Suppress("TooManyFunctions") // MVI: the single ViewModel of the editor screen (ARCHITECTURE.md)
+@Suppress("TooManyFunctions", "LargeClass")
 class EditorViewModel(
     private val projectId: Long,
     private val library: ProjectLibrary,
@@ -567,6 +573,8 @@ class EditorViewModel(
     looks: LooksStore? = null,
     layers: LayerSources? = null,
     maskRasters: MaskRasters? = null,
+    /** The segmentation models (Stage 16), downloaded on first use. */
+    smartModels: SmartModels? = null,
 ) : MviViewModel<EditorState, EditorIntent, EditorEffect>(
         EditorState(
             debuggable = debuggable,
@@ -593,6 +601,8 @@ class EditorViewModel(
     private val actionsHost =
         object : EditorLooksActions.Host, EditorLayersActions.Host, EditorSelectionActions.Host {
             override val state get() = this@EditorViewModel.state.value
+
+            override val modelsWifiOnly get() = preferences.modelsWifiOnly.value
 
             override fun reduce(
                 label: String?,
@@ -625,7 +635,7 @@ class EditorViewModel(
 
     private val layersActions = EditorLayersActions(viewModelScope, renderDispatcher, actionsHost, layers)
 
-    private val selectionActions = EditorSelectionActions(viewModelScope, renderDispatcher, actionsHost, maskRasters, layers)
+    private val selectionActions = EditorSelectionActions(viewModelScope, renderDispatcher, actionsHost, maskRasters, layers, smartModels)
 
     /** Crop handles, perspective corners and guide lines from CanvasView. */
     val cropGestures get() = geometryActions.gestures
@@ -1160,66 +1170,7 @@ class EditorViewModel(
     }
 
     /** What CanvasView reports, as intents. */
-    val gestures: CanvasGestureListener =
-        object : CanvasGestureListener {
-            override fun onHoldChanged(holding: Boolean) = onIntent(EditorIntent.HoldOriginal(holding))
-
-            override fun onSwipeSelect(steps: Int) = onIntent(EditorIntent.SwipeSelect(steps))
-
-            override fun onSwipeAdjust(fraction: Float) = onIntent(EditorIntent.SwipeAdjust(fraction))
-
-            override fun onSwipeActive(active: Boolean) = onIntent(EditorIntent.SwipeActive(active))
-
-            override fun onEyedropperMove(
-                viewX: Float,
-                viewY: Float,
-                u: Float,
-                v: Float,
-            ) = onIntent(EditorIntent.EyedropperMove(viewX, viewY, u, v))
-
-            override fun onEyedropperEnd(
-                u: Float?,
-                v: Float?,
-            ) = onIntent(EditorIntent.EyedropperEnd(u, v))
-
-            override fun onTargetedStart(
-                u: Float,
-                v: Float,
-            ) = onIntent(EditorIntent.TargetedStart(u, v))
-
-            override fun onTargetedDrag(fraction: Float) = onIntent(EditorIntent.TargetedDrag(fraction))
-
-            override fun onTargetedEnd() = onIntent(EditorIntent.TargetedEnd)
-
-            override fun onMultiFingerTap(fingers: Int) = onIntent(EditorIntent.MultiFingerTap(fingers))
-
-            // One finger paints a targeted mask (Stage 14) or makes a selection (Stage 15).
-            private val selecting get() = state.value.selectTool != null
-
-            override fun onPaintStart(
-                u: Float,
-                v: Float,
-            ) = onIntent(
-                if (selecting) EditorIntent.Select(SelectAction.Start(u, v)) else EditorIntent.Layers(LayerAction.PaintStart(u, v)),
-            )
-
-            override fun onPaintMove(
-                u: Float,
-                v: Float,
-            ) = onIntent(if (selecting) EditorIntent.Select(SelectAction.Move(u, v)) else EditorIntent.Layers(LayerAction.PaintMove(u, v)))
-
-            override fun onPaintEnd() =
-                onIntent(if (selecting) EditorIntent.Select(SelectAction.End) else EditorIntent.Layers(LayerAction.PaintEnd))
-
-            override fun onPaintLoupe(
-                viewX: Float,
-                viewY: Float,
-                u: Float,
-                v: Float,
-            ) {
-                if (selecting) onIntent(EditorIntent.Select(SelectAction.Loupe(viewX, viewY, u, v)))
-            }
-        }
+    val gestures: CanvasGestureListener = EditorGestures({ state.value }, ::onIntent)
 
     private fun EditorState.withLight(next: LightAdjustments): EditorState =
         copy(light = next, graph = graph.withBackgroundOps(editOps(next, color, grade, geometryOp, detail, looks = looks)))

@@ -252,6 +252,24 @@ python3 tools/golden/generate.py --check
 - The marching ants animate only their dash offset (`setAntsPhase`); the outline is traced
   once per selection change.
 
+## Smart selections and AI models (Stage 16)
+
+- `smart_select.cpp` (JBU, guided matte, live-wire, GrabCut / graph cut), the new kinds in
+  `selection.cpp` and `tools/golden/smart_reference.py` / `selection_reference.py` change
+  together; ctest `smart_select_test` holds them (live-wire paths exact, the rest 1e-3,
+  GrabCut by IoU against `cv2.grabCut`).
+- Models are never bundled (D3): add one to `ModelCatalog` with its measured size and SHA-256,
+  its licence checked (R10), and a runtime in `:core:ml` behind `SmartModels`. Downloads go
+  through `ModelStore` only (resume, SHA-256, Wi-Fi only, delete).
+- A model's mask enters a selection as pixels (`SelectionOp.Raster`, saved by `MaskRasters`,
+  registered before the recipe names it); never re-run a model to rebuild a recipe.
+- Expensive selection ops (raster, quick, refine) are checkpointed by `selection::Cache`; keep
+  `operator==` of `SelectionOp` complete when adding a field.
+- Models run off the main thread on one background thread; never hold the editor's state
+  while waiting for one. Never send an image off the device.
+- `testdata/smart` holds the CC0 photos and reference masks of `SmartSelectIoUTest`; see its
+  `SOURCES.md` before changing any of them.
+
 ## History and projects (Stage 8)
 
 - Every edit goes through `EditorViewModel.reduce`, which records it in `EditHistory`; never
