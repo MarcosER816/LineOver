@@ -1,0 +1,269 @@
+{
+ "schemaVersion": 1,
+ "layers": [
+  {
+   "id": "background",
+   "ops": []
+  },
+  {
+   "id": "m0",
+   "type": "raster",
+   "source": "s1",
+   "sourceSize": [
+    80,
+    60
+   ],
+   "transform": [
+    1.1817693036146495,
+    0.2083778132003164,
+    -0.2083778132003164,
+    1.1817693036146495,
+    20.0,
+    12.0
+   ],
+   "blend": "multiply",
+   "opacity": 80.0,
+   "mask": {
+    "feather": 2.5,
+    "density": 80.0,
+    "paint": [
+     {
+      "kind": "stroke",
+      "value": 0.0,
+      "radius": 14.0,
+      "hardness": 0.4,
+      "opacity": 100.0,
+      "points": [
+       10.3,
+       20.1,
+       60.7,
+       35.2,
+       110.9,
+       80.4
+      ]
+     },
+     {
+      "kind": "stroke",
+      "value": 1.0,
+      "radius": 4.5,
+      "hardness": 1.0,
+      "opacity": 100.0,
+      "points": [
+       30.2,
+       28.6,
+       70.4,
+       40.3
+      ]
+     },
+     {
+      "kind": "stroke",
+      "value": 0.0,
+      "radius": 9.0,
+      "hardness": 0.0,
+      "opacity": 50.0,
+      "points": [
+       3.4,
+       90.2
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "id": "m1",
+   "type": "raster",
+   "source": "s1",
+   "sourceSize": [
+    80,
+    60
+   ],
+   "transform": [
+    0.3535533905932738,
+    0.35355339059327373,
+    -0.35355339059327373,
+    0.3535533905932738,
+    100.37,
+    50.21
+   ],
+   "blend": "color",
+   "clip": true
+  },
+  {
+   "id": "m2",
+   "type": "adjustment",
+   "clip": true,
+   "opacity": 60.0,
+   "ops": [
+    {
+     "op": "invert"
+    }
+   ]
+  },
+  {
+   "id": "m3",
+   "type": "adjustment",
+   "ops": [
+    {
+     "op": "exposure",
+     "ev": 1.0
+    }
+   ],
+   "mask": {
+    "inverted": true,
+    "feather": 1.5,
+    "paint": [
+     {
+      "kind": "gradient",
+      "x0": 12.3,
+      "y0": 8.7,
+      "x1": 101.6,
+      "y1": 77.9,
+      "from": 1.0,
+      "to": 0.0
+     }
+    ]
+   }
+  },
+  {
+   "id": "m4",
+   "type": "raster",
+   "source": "s1",
+   "sourceSize": [
+    80,
+    60
+   ],
+   "transform": [
+    0.7,
+    0.0,
+    -0.0,
+    0.7,
+    5.13,
+    60.29
+   ],
+   "blend": "screen",
+   "clip": true
+  },
+  {
+   "id": "m5",
+   "type": "group",
+   "isolated": true,
+   "blend": "difference",
+   "mask": {
+    "base": 0.0,
+    "paint": [
+     {
+      "kind": "stroke",
+      "value": 1.0,
+      "radius": 20.0,
+      "hardness": 0.6,
+      "opacity": 100.0,
+      "points": [
+       40.6,
+       50.3,
+       90.1,
+       40.8
+      ]
+     }
+    ]
+   },
+   "children": [
+    {
+     "type": "raster",
+     "source": "s1",
+     "sourceSize": [
+      80,
+      60
+     ],
+     "transform": [
+      0.9,
+      0.0,
+      -0.0,
+      0.9,
+      30.0,
+      30.0
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m6",
+   "type": "group",
+   "opacity": 70.0,
+   "mask": {
+    "paint": [
+     {
+      "kind": "gradient",
+      "x0": 0.4,
+      "y0": 47.3,
+      "x1": 127.2,
+      "y1": 49.1,
+      "from": 0.0,
+      "to": 1.0
+     }
+    ]
+   },
+   "children": [
+    {
+     "type": "adjustment",
+     "ops": [
+      {
+       "op": "saturation",
+       "amount": -80.0
+      }
+     ]
+    }
+   ]
+  },
+  {
+   "id": "m7",
+   "type": "raster",
+   "source": "s1",
+   "sourceSize": [
+    80,
+    60
+   ],
+   "transform": [
+    0.563815572471545,
+    -0.20521208599540122,
+    0.20521208599540122,
+    0.563815572471545,
+    70.0,
+    40.0
+   ],
+   "blend": "overlay",
+   "mask": {
+    "enabled": false,
+    "base": 0.0
+   }
+  },
+  {
+   "id": "m8",
+   "type": "raster",
+   "source": "s1",
+   "sourceSize": [
+    80,
+    60
+   ],
+   "transform": [
+    1.1817693036146495,
+    0.2083778132003164,
+    -0.2083778132003164,
+    1.1817693036146495,
+    20.0,
+    12.0
+   ],
+   "visible": false
+  },
+  {
+   "id": "m9",
+   "type": "adjustment",
+   "clip": true,
+   "ops": [
+    {
+     "op": "invert"
+    }
+   ]
+  }
+ ],
+ "blendSpace": "linear"
+}

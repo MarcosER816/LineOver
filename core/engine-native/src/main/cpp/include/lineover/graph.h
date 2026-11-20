@@ -27,6 +27,29 @@ struct OpParams {
 // A layer (Stage 13). The first layer of type "background" (or without a type: graphs from
 // before Stage 13) is the photo; its ops are the develop edit. The other fields are written
 // only when they differ from these defaults (Kotlin omits default values the same way).
+// Layer masks (Stage 14): paint in document pixels, rendered by masks.h.
+struct MaskPaint {
+    std::string kind;  // "stroke" or "gradient"
+    // stroke: a round brush along a polyline (x0, y0, x1, y1, ...)
+    double value = 1.0;      // 1 paints white (reveal), 0 black (hide)
+    double radius = 10.0;    // document px
+    double hardness = 1.0;   // 0..1: where the falloff starts
+    double opacity = 100.0;  // percent
+    std::vector<double> points;
+    // gradient: replaces the mask with a linear ramp from (x0, y0) to (x1, y1)
+    double x0 = 0.0, y0 = 0.0, x1 = 0.0, y1 = 0.0;
+    double from = 1.0, to = 0.0;
+};
+
+struct LayerMask {
+    double base = 1.0;  // 1 = white (reveal all), 0 = black (hide all)
+    bool enabled = true;
+    bool inverted = false;
+    double density = 100.0;  // percent
+    double feather = 0.0;    // Gaussian sigma, document px
+    std::vector<MaskPaint> paint;
+};
+
 struct Layer {
     std::string id;
     std::vector<OpParams> ops;
@@ -42,6 +65,9 @@ struct Layer {
     std::vector<double> sourceSize;  // its full pixel size (w, h)
     std::vector<double> transform;   // a, b, c, d, e, f: source px -> document px; empty = identity
     std::vector<Layer> children;     // groups
+    bool clip = false;               // clipped to the nearest unclipped layer below (Stage 14)
+    bool hasMask = false;
+    LayerMask mask;
 };
 
 struct Graph {
@@ -63,6 +89,8 @@ std::unique_ptr<OpList> buildPointOps(const std::vector<OpParams>& ops, std::str
 // Returns false (and sets `error`) on malformed JSON or a wrong shape.
 bool parseGraph(const std::string& json, Graph* out, std::string* error);
 
+// A layer mask as the graph writes it (a cache key for rendered masks).
+std::string serializeMaskJson(const LayerMask& mask);
 std::string serializeGraph(const Graph& graph);
 
 // The background layer's ops, ready to run (other layers are composited). Ops this engine does not

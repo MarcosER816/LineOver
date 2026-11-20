@@ -260,6 +260,10 @@ void lo_release_full_layer_images(void) { lo::layers::releaseFullLayerImages(); 
 
 void lo_engine_render_composite(lo_engine* engine) { engine->engine->renderComposite(); }
 
+void lo_engine_set_mask_view(lo_engine* engine, const char* layer_id, int view) {
+    engine->engine->setMaskView(layer_id != nullptr ? layer_id : "", view);
+}
+
 void lo_unregister_lut(const char* id) {
     if (id != nullptr) lo::unregisterLut(id);
 }

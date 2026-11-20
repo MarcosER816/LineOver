@@ -360,6 +360,12 @@ bool Engine::autoSettings(AutoSettings* out) {
     return source && source->width > 0 && lo::autoSettings(source->rgba.data(), source->width, source->height, out);
 }
 
+void Engine::setMaskView(const std::string& layerId, int view) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    maskViewLayer_ = layerId;
+    maskView_ = view;
+}
+
 void Engine::renderComposite() {
     std::shared_ptr<const Graph> graph;
     std::shared_ptr<const ImageF32> source;
@@ -367,6 +373,8 @@ void Engine::renderComposite() {
     std::shared_ptr<const DetailFields> fields;
     bool layered;
     int imageW;
+    std::string maskLayer;
+    int maskView;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         graph = graph_;
@@ -375,10 +383,12 @@ void Engine::renderComposite() {
         fields = fields_;
         layered = layered_;
         imageW = imageWidth_;
+        maskLayer = maskViewLayer_;
+        maskView = maskView_;
     }
     ImageF32 image;
     if (layered && graph && source && source->width > 0) {
-        renderGraphImage(*source, guided.get(), *graph, &image, fields.get(), imageW, kCompositeEdge);
+        renderGraphImage(*source, guided.get(), *graph, &image, fields.get(), imageW, kCompositeEdge, &maskLayer, maskView);
     }
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -1592,6 +1602,8 @@ bool Engine::renderOutputTile(int tx, int ty, std::vector<float>* out, int* widt
         region.height = h;
         region.originX = x0;
         region.originY = y0;
+        region.docWidth = g.outputWidth;  // masks feather across tile edges (Stage 14)
+        region.docHeight = g.outputHeight;
         std::string skipped;
         layers::compositeLayers(*graph, out->data(), region, true, &skipped);
         if (!skipped.empty()) LOGW("export: layers skipped: %s", skipped.c_str());

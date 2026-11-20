@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import math
 
+import cv2
 import numpy as np
 
 MODES = [
@@ -206,16 +207,20 @@ def composite(backdrop: np.ndarray, source: np.ndarray, mode: str, amount: float
     return out
 
 
-def lerp_space(before: np.ndarray, after: np.ndarray, k: float, space: str) -> np.ndarray:
-    """A pass-through group's opacity: before -> after by k, in the blending space."""
-    if k >= 1:
-        return after
+def lerp_space(before: np.ndarray, after: np.ndarray, k, space: str) -> np.ndarray:
+    """A pass-through group's opacity: before -> after by k (a number, or per pixel when the
+    group has a mask), in the blending space."""
+    if np.ndim(k) == 0:
+        if k >= 1:
+            return after
+    else:
+        k = np.asarray(k)[..., None]
     out = before.astype(np.float64).copy()
     if space == "gamma":
         out[..., :3] = decode(encode(before[..., :3]) + k * (encode(after[..., :3]) - encode(before[..., :3])))
     else:
         out[..., :3] = before[..., :3] + k * (after[..., :3] - before[..., :3])
-    out[..., 3] = before[..., 3] + k * (after[..., 3] - before[..., 3])
+    out[..., 3:4] = before[..., 3:4] + k * (after[..., 3:4] - before[..., 3:4])
     return out
 
 
@@ -276,34 +281,136 @@ def apply_ops(image: np.ndarray, ops: list) -> np.ndarray:
     return out.astype(np.float64)
 
 
-def render_layers(layers: list, backdrop: np.ndarray, images: dict, space: str, doc_x, doc_y) -> np.ndarray:
+# --- Layer masks (Stage 14) ---------------------------------------------------------------------
+#
+# A mask is a base value (1 = white, reveal all) and paint operations in document pixels:
+# round brush strokes (polyline, radius, hardness, opacity, value) and linear gradients (which
+# replace the mask). It is rasterised at buffer pixel centres, inverted, feathered with a
+# Gaussian of sigma = feather document pixels (exactly OpenCV's GaussianBlur, BORDER_REFLECT_101
+# at the document edges) and scaled by density: m' = 1 - density (1 - m).
+
+
+def _smoothstep(t):
+    t = np.clip(t, 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def brush_inner(radius: float, hardness: float, scale: float) -> float:
+    """Where the brush's falloff starts (fraction of the radius): at least one buffer pixel of
+    soft edge, so a hard brush stays a continuous profile (no ties at any resolution)."""
+    r = radius * scale
+    soft = 1.0 / r if r > 1.0 else 1.0
+    return max(0.0, min(hardness, 1.0 - soft))
+
+
+def stroke_coverage(stroke: dict, doc_x, doc_y, scale: float) -> np.ndarray:
+    pts = np.asarray(stroke["points"], dtype=np.float64).reshape(-1, 2)
+    r = stroke["radius"]
+    inner = brush_inner(r, stroke.get("hardness", 1.0), scale)
+    best = np.full(doc_x.shape, np.inf)
+    segs = [(pts[i], pts[i + 1]) for i in range(len(pts) - 1)] if len(pts) > 1 else [(pts[0], pts[0])]
+    for p0, p1 in segs:
+        dx, dy = p1[0] - p0[0], p1[1] - p0[1]
+        ll = dx * dx + dy * dy
+        if ll > 0:
+            t = np.clip(((doc_x - p0[0]) * dx + (doc_y - p0[1]) * dy) / ll, 0.0, 1.0)
+        else:
+            t = 0.0
+        d = np.hypot(doc_x - (p0[0] + t * dx), doc_y - (p0[1] + t * dy))
+        best = np.minimum(best, d)
+    d = best / r
+    return np.where(d <= inner, 1.0, 1.0 - _smoothstep((d - inner) / max(1.0 - inner, 1e-12)))
+
+
+def rasterize_mask(mask: dict, doc_x, doc_y, scale: float) -> np.ndarray:
+    m = np.full(doc_x.shape, float(mask.get("base", 1.0)))
+    for p in mask.get("paint", []):
+        if p["kind"] == "gradient":
+            dx, dy = p["x1"] - p["x0"], p["y1"] - p["y0"]
+            ll = dx * dx + dy * dy
+            t = np.clip(((doc_x - p["x0"]) * dx + (doc_y - p["y0"]) * dy) / ll, 0.0, 1.0) if ll > 0 else np.ones(doc_x.shape)
+            m = p["from"] + (p["to"] - p["from"]) * t
+        elif p["kind"] == "stroke":
+            cov = stroke_coverage(p, doc_x, doc_y, scale) * p.get("opacity", 100.0) / 100.0
+            m = m + (p["value"] - m) * cov
+        else:
+            raise ValueError(p["kind"])
+    return m
+
+
+def feather(m: np.ndarray, sigma_px: float) -> np.ndarray:
+    """OpenCV GaussianBlur (float32, ksize from sigma, BORDER_REFLECT_101)."""
+    if sigma_px <= 0:
+        return m
+    return cv2.GaussianBlur(m.astype(np.float32), (0, 0), sigma_px).astype(np.float64)
+
+
+def finish_mask(mask: dict, raw: np.ndarray, scale: float) -> np.ndarray:
+    m = 1.0 - raw if mask.get("inverted", False) else raw
+    m = feather(m, mask.get("feather", 0.0) * scale)
+    return 1.0 - mask.get("density", 100.0) / 100.0 * (1.0 - m)
+
+
+def layer_mask(layer: dict, doc_x, doc_y, scale: float):
+    """The layer's final mask (1 = shown) as an array, or None (no mask or disabled). Masks are
+    stored as R16F in the engine: the reference rounds the same way."""
+    mask = layer.get("mask")
+    if mask is None or not mask.get("enabled", True):
+        return None
+    m = finish_mask(mask, rasterize_mask(mask, doc_x, doc_y, scale), scale)
+    return m.astype(np.float16).astype(np.float64)
+
+
+def render_layers(layers: list, backdrop: np.ndarray, images: dict, space: str, doc_x, doc_y,
+                  scale: float = 1.0) -> np.ndarray:
+    """Layers bottom to top. A clipped layer ("clip") shows only where its base (the nearest
+    unclipped layer below it among its siblings) covers: the base's shape alpha x its mask x its
+    opacity. Adjustment layers and groups cover everywhere (times their mask)."""
     out = backdrop.astype(np.float64)
+    base = None  # coverage of the current clipping base, or None (no base: clip is ignored)
     for layer in layers:
-        if not layer.get("visible", True):
+        kind = layer.get("type", "background")
+        if kind == "background":
             continue
-        kind = layer["type"]
+        clipped = layer.get("clip", False) and base is not None
+        if not layer.get("visible", True):
+            if not clipped:
+                base = np.zeros(doc_x.shape)  # a hidden base hides its clipped layers
+            continue
         amount = layer.get("opacity", 100.0) / 100.0 * layer.get("fill", 100.0) / 100.0
         mode = layer.get("blend", "normal")
+        mask = layer_mask(layer, doc_x, doc_y, scale)
+        weight = np.ones(doc_x.shape) if mask is None else mask
+        if clipped:
+            weight = weight * base
+        shape = np.ones(doc_x.shape)
         if kind == "group":
             if layer.get("isolated", False):
                 empty = np.zeros_like(out)
-                group = render_layers(layer.get("children", []), empty, images, space, doc_x, doc_y)
+                group = render_layers(layer.get("children", []), empty, images, space, doc_x, doc_y, scale)
+                shape = group[..., 3].copy()
+                group[..., 3] *= weight
                 out = composite(out, group, mode, amount, space, doc_x, doc_y)
             else:
                 before = out
-                out = render_layers(layer.get("children", []), out, images, space, doc_x, doc_y)
-                out = lerp_space(before, out, amount, space)
+                out = render_layers(layer.get("children", []), out, images, space, doc_x, doc_y, scale)
+                out = lerp_space(before, out, amount * weight, space)
         elif kind in ("raster", "smart"):
             image = images[layer["source"]]
             if kind == "smart" and layer.get("ops"):
                 image = apply_ops(image, layer["ops"])
             src = sample(image, layer["sourceSize"], layer["transform"], doc_x, doc_y)
+            shape = src[..., 3].copy()
+            src[..., 3] *= weight
             out = composite(out, src, mode, amount, space, doc_x, doc_y)
         elif kind == "adjustment":
             src = apply_ops(out, layer.get("ops", []))
-            src[..., 3] = 1.0
+            src[..., 3] = weight
             out = composite(out, src, mode, amount, space, doc_x, doc_y)
-        # text / shape (Stages 23 / 24): nothing yet
+        else:
+            shape = np.zeros(doc_x.shape)  # text / shape (Stages 23 / 24): nothing yet
+        if not clipped:
+            base = shape * (np.ones(doc_x.shape) if mask is None else mask) * layer.get("opacity", 100.0) / 100.0
     return out
 
 
@@ -315,7 +422,7 @@ def composite_document(background: np.ndarray, layers: list, images: dict, space
     jj, ii = np.mgrid[0:h, 0:w]
     doc_x = (origin[0] + ii + 0.5) / scale
     doc_y = (origin[1] + jj + 0.5) / scale
-    return render_layers(layers, background, images, space, doc_x, doc_y).astype(np.float32)
+    return render_layers(layers, background, images, space, doc_x, doc_y, scale).astype(np.float32)
 
 
 # --- Test inputs --------------------------------------------------------------------------------
@@ -396,6 +503,61 @@ def scene_layers(isolated: bool = True) -> list:
         {"type": "text"},
         {"type": "raster", "source": "s1", "sourceSize": [80, 60], "transform": place(0.5, 45.0, 100.37, 50.21), "blend": "color"},
         {"type": "raster", "source": "s1", "sourceSize": [80, 60], "transform": place(0.7, 0.0, 5.13, 60.29), "blend": "soft_light"},
+    ]
+
+
+def test_mask() -> dict:
+    """The mask the feather goldens use: white, a soft black stroke, a hard white one inside it,
+    and a half-opacity black dab near an edge (the blur reflects there)."""
+    return {
+        "paint": [
+            {"kind": "stroke", "value": 0.0, "radius": 14.0, "hardness": 0.4, "opacity": 100.0,
+             "points": [10.3, 20.1, 60.7, 35.2, 110.9, 80.4]},
+            {"kind": "stroke", "value": 1.0, "radius": 4.5, "hardness": 1.0, "opacity": 100.0,
+             "points": [30.2, 28.6, 70.4, 40.3]},
+            {"kind": "stroke", "value": 0.0, "radius": 9.0, "hardness": 0.0, "opacity": 50.0,
+             "points": [3.4, 90.2]},
+        ],
+    }
+
+
+FEATHER_SIGMAS = (0.8, 2.5, 6.0)
+
+
+def mask_scene_layers() -> list:
+    """Stage 14's compositor scene: masks (strokes, gradient, inverted, feathered, density,
+    disabled) on raster, adjustment and group layers; clipping (a chain, a clipped adjustment, a
+    clipped layer over an adjustment base, over a hidden base). The placements are the tie-free
+    ones of scene_layers."""
+    soft = test_mask()
+    return [
+        {"type": "raster", "source": "s1", "sourceSize": [80, 60], "transform": place(1.2, 10.0, 20.0, 12.0),
+         "blend": "multiply", "opacity": 80.0,
+         "mask": {"feather": 2.5, "density": 80.0, "paint": soft["paint"]}},
+        {"type": "raster", "source": "s1", "sourceSize": [80, 60], "transform": place(0.5, 45.0, 100.37, 50.21),
+         "blend": "color", "clip": True},
+        {"type": "adjustment", "clip": True, "opacity": 60.0, "ops": [{"op": "invert"}]},
+        {"type": "adjustment", "ops": [{"op": "exposure", "ev": 1.0}],
+         "mask": {"inverted": True, "feather": 1.5,
+                  "paint": [{"kind": "gradient", "x0": 12.3, "y0": 8.7, "x1": 101.6, "y1": 77.9, "from": 1.0, "to": 0.0}]}},
+        {"type": "raster", "source": "s1", "sourceSize": [80, 60], "transform": place(0.7, 0.0, 5.13, 60.29),
+         "blend": "screen", "clip": True},
+        {"type": "group", "isolated": True, "blend": "difference",
+         "mask": {"base": 0.0, "paint": [{"kind": "stroke", "value": 1.0, "radius": 20.0, "hardness": 0.6,
+                                          "opacity": 100.0, "points": [40.6, 50.3, 90.1, 40.8]}]},
+         "children": [
+             {"type": "raster", "source": "s1", "sourceSize": [80, 60], "transform": place(0.9, 0.0, 30.0, 30.0)},
+         ]},
+        {"type": "group", "opacity": 70.0,
+         "mask": {"paint": [{"kind": "gradient", "x0": 0.4, "y0": 47.3, "x1": 127.2, "y1": 49.1, "from": 0.0, "to": 1.0}]},
+         "children": [
+             {"type": "adjustment", "ops": [{"op": "saturation", "amount": -80.0}]},
+         ]},
+        {"type": "raster", "source": "s1", "sourceSize": [80, 60], "transform": place(0.6, -20.0, 70.0, 40.0),
+         "blend": "overlay", "mask": {"enabled": False, "base": 0.0}},
+        {"type": "raster", "source": "s1", "sourceSize": [80, 60], "transform": place(1.2, 10.0, 20.0, 12.0),
+         "visible": False},
+        {"type": "adjustment", "clip": True, "ops": [{"op": "invert"}]},
     ]
 
 

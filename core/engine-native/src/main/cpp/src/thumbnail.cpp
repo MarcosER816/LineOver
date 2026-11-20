@@ -41,7 +41,7 @@ ImageF32 boxDownsample(const float* rgba, int width, int height, int maxEdge) {
 }
 
 bool renderGraphImage(const ImageF32& source, const GuidedCoefficients* coefficients, const Graph& graph, ImageF32* out,
-                      const DetailFields* fields, int fullWidth, int maxEdge) {
+                      const DetailFields* fields, int fullWidth, int maxEdge, const std::string* maskLayer, int maskView) {
     std::string skipped;
     const auto ops = buildOps(graph, &skipped);
     std::vector<float> working = source.rgba;
@@ -86,7 +86,9 @@ bool renderGraphImage(const ImageF32& source, const GuidedCoefficients* coeffici
     layerRegion.scale = outScale;
     layers::compositeLayers(graph, working.data(), layerRegion, false, nullptr);
     Finishing finishing;
-    if (finishingOf(graph, &finishing)) applyFinishing(finishing, working.data(), width, height, outW, outH, 0, 0, outScale);
+    if (maskLayer != nullptr && maskView != 0) {
+        layers::showMask(graph, *maskLayer, static_cast<layers::MaskView>(maskView), working.data(), layerRegion);
+    } else if (finishingOf(graph, &finishing)) applyFinishing(finishing, working.data(), width, height, outW, outH, 0, 0, outScale);
     out->width = width;
     out->height = height;
     out->rgba.swap(working);
