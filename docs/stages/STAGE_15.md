@@ -193,4 +193,4 @@ POCO F7 Ultra, `lineover-<sha>.apk`:
 
 ## Open questions (R12)
 
-1. **Should the loupe default to on?** Now on (lasso only). Default if unanswered: on.
+1. **Should the loupe default to on?** Answered by Mark at the start of Stage 16: **yes**, it stays on.

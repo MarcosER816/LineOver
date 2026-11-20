@@ -24,7 +24,7 @@ listed in `TOOL_CATALOG.md`; stages 1–4 build the foundation they plug into.
 | 13 | Layers | Raster, adjustment, group, smart object; opacity, fill, 27 blend modes | ✅ |
 | 14 | Layer masks | Layer mask, clipping mask | ✅ |
 | 15 | Selections I | Marquee, lasso, polygonal lasso, magic wand, color range | ✅ |
-| 16 | Selections II | Magnetic lasso, quick selection, object / subject / sky select, refine edge (first downloadable models, D3) | 🔜 |
+| 16 | Selections II | Magnetic lasso, quick selection, object / subject / sky select, refine edge (first downloadable models, D3) | ✅ |
 | 17 | Local masks | Linear, radial, brush, color range, luminance range, depth range, subject / sky / background / people | ⬜ |
 | 18 | Paint | Brush, pencil, eraser, mixer brush, gradient, paint bucket, pattern, color picker | ⬜ |
 | 19 | Retouch I | Spot healing, healing brush, clone stamp, patch, red-eye, dodge, burn, sponge, blur / sharpen / smudge | ⬜ |

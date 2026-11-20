@@ -24,4 +24,16 @@ val OpenSourceLicences =
         OpenSourceLicence("kotlinx.serialization", "Apache-2.0", "https://github.com/Kotlin/kotlinx.serialization"),
         OpenSourceLicence("Roboto Flex", "SIL Open Font License 1.1", "https://github.com/googlefonts/roboto-flex"),
         OpenSourceLicence("Material Symbols", "Apache-2.0", "https://github.com/google/material-design-icons"),
+        // Stage 16: the on-device ML runtimes (models are downloaded, never bundled: Settings → AI models).
+        OpenSourceLicence(
+            "LiteRT (Google AI Edge), with its GPU and Qualcomm NPU plugins",
+            "Apache-2.0",
+            "https://github.com/google-ai-edge/LiteRT",
+        ),
+        OpenSourceLicence("MediaPipe Tasks Vision", "Apache-2.0", "https://github.com/google-ai-edge/mediapipe"),
+        OpenSourceLicence(
+            "ML Kit Subject Segmentation (Google Play services)",
+            "ML Kit Terms of Service",
+            "https://developers.google.com/ml-kit/terms",
+        ),
     )

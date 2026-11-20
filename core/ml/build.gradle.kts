@@ -24,3 +24,19 @@ dependencies {
     implementation(libs.mlkit.subject.segmentation)
     testImplementation(libs.kotlinx.coroutines.test)
 }
+
+android {
+    sourceSets {
+        // The IoU test reads the CC0 photos and their reference masks as assets.
+        getByName("androidTest") {
+            assets.directories.add(rootProject.file("testdata/smart").path)
+        }
+    }
+}
+
+dependencies {
+    androidTestImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.kotlinx.coroutines.test)
+}

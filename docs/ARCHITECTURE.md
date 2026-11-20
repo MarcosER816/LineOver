@@ -450,11 +450,33 @@ background layer (the photo): develop ops (GPU tiles / CPU) -> geometry warp   =
 - Imported photos live in `files/layers` (`LayerSources`, SHA-256 names); the graph never
   names the person's original.
 
-## AI models
+## AI models (Stage 16)
 
-`ModelSpec` (`:core:ml`) describes a model: id, name, URL, size, licence, SHA-256. A tool
-that needs a model shows its size and licence, downloads it on first use, verifies the
-SHA-256 (`Sha256`) before loading, and Settings can delete it. The runtime is LiteRT.
+`ModelSpec` (`:core:ml`) describes a model: id, name, URL, size, licence, SHA-256, file.
+`ModelCatalog` lists the downloadable ones (MagicTouch V2, the ADE20K sky model).
+
+- **ModelStore** downloads into `noBackupFilesDir/models` as `<file>.part` with progress,
+  resumes with an HTTP Range request (3 tries per use, the part kept across sessions), verifies
+  the SHA-256 and only then renames the file into place, so a model on disk is always verified.
+  It refuses offline (nothing requested) and on metered networks while "Wi-Fi only" is on
+  (`AppPreferences.modelsWifiOnly`, default on), and deletes on request.
+- **Runtimes.** `SkySegmenter`: LiteRT `CompiledModel` (512 × 512, class 3 = sky).
+  `ObjectSegmenter`: MediaPipe `InteractiveSegmenter` (taps / scribbles as strokes; the image
+  is encoded once, each prompt runs the decoder). `SubjectSegmenter`: ML Kit Subject
+  Segmentation, a Google Play services module (`ModuleInstallClient`, released from Settings).
+- **AcceleratorPicker**: NPU → GPU → CPU (NPU only on arm64 and when Qualcomm's runtime is
+  already on the device), then the faster of the first that compiles and the CPU by a warm
+  inference on the phone, remembered per model.
+- **SmartModels** (`DeviceSmartModels`) is what the editor and Settings use: states, the sheet's
+  info, prepare (download / install), segment (one background thread), delete.
+
+The editor (`EditorSmartActions`) asks the engine for the selection grid's image
+(`selectionImage`, sRGB ≤ 1024 px), runs a model, saves its mask (`MaskRasters`) and adds a
+`SelectionOp.Raster`; the engine upsamples it to the grid by joint bilateral filtering
+against the image. Quick selection (GrabCut), the magnetic lasso (live-wire), refine edge
+(guided-filter matting) and the brushes are engine selection ops (`smart_select.h`); costly
+ones are checkpointed (`selection::Cache`). A mask made from a selection carries a colour guide
+raster, and exports upsample it against the full-resolution photo (`masks::render` with a guide).
 
 ## Testing
 
