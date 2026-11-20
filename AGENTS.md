@@ -236,6 +236,22 @@ python3 tools/golden/generate.py --check
   show seams.
 - Mask and clip JSON round-trips `testdata/graph/edit_graph_masks.json` in C++ and Kotlin.
 
+## Selections (Stage 15)
+
+- The selection is a recipe in `EditGraph.selection` (`Selection`, `SelectionOp`, JSON `kind`,
+  parsed by `parseSelection`); `canvasGraph` leaves it out, so selecting never re-renders the
+  image. The engine evaluates it on the render dispatcher only (never the main thread),
+  through `EditorSelectionActions`' queue.
+- `selection.cpp`, `tools/golden/selection_reference.py` and `testdata/golden/selection/`
+  change together; the flood fill must equal `cv2.floodFill` pixel for pixel, the distance
+  transform `cv2.distanceTransform`. Test recipes keep a margin from ties (wand ΔE vs
+  tolerance, 0.5 before grow / border).
+- A mask made from a selection saves its pixels (`MaskRasters`, `MaskPaint.Raster`); register
+  them before a graph names them (editor: `EditorSelectionActions.onCanvasGraph`, export:
+  `ExportRunner.render`).
+- The marching ants animate only their dash offset (`setAntsPhase`); the outline is traced
+  once per selection change.
+
 ## History and projects (Stage 8)
 
 - Every edit goes through `EditorViewModel.reduce`, which records it in `EditHistory`; never

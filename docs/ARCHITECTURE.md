@@ -394,6 +394,21 @@ The JNI bridge only marshals Java values to the C API (`android/lo_api.h`). The 
 `CMakeLists.txt` builds the Android shared library (through Gradle) and, on Linux, the
 host static library plus the ctest tests.
 
+### Selections (Stage 15)
+
+```
+EditGraph.selection = recipe of SelectionOp (document px)  --(not in the canvas graph)-->
+  EngineSession.setSelection (render dispatcher, in order, latest wins)
+  -> selection::evaluate on the composite grid (<= 2048 px): shapes (4x4 AA), wand (OKLab dE +
+     scanline flood fill), color range, modes, EDT grow/shrink/border, feather, smooth -> R16F
+  -> selection::contours (marching squares) -> GL lines -> ants dash shader (offset animated)
+To mask: selection raster -> MaskRasters file -> MaskPaint.Raster (registered like layer images)
+```
+
+- `selection.cpp` and `tools/golden/selection_reference.py` change together; ctest
+  `selection_test` holds the flood fill identical to `cv2.floodFill` and the distance transform
+  to `cv2.distanceTransform`.
+
 ### Layer masks (Stage 14)
 
 ```
