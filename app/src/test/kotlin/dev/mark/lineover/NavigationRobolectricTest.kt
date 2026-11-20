@@ -95,8 +95,11 @@ class NavigationRobolectricTest {
         composeRule.onNodeWithContentDescription("Back").performClick()
 
         composeRule.onNodeWithText("Debug").performScrollTo().performClick()
-        composeRule.onNodeWithText("Component gallery").assertIsDisplayed()
+        // Stage 16: Debug is a menu (component gallery, AI self-test).
+        composeRule.onNodeWithText("AI self-test (Select subject IoU)").assertIsDisplayed()
+        composeRule.onNodeWithText("Component gallery").performClick()
         composeRule.onNodeWithText("LoSlider").assertIsDisplayed()
+        composeRule.onNodeWithContentDescription("Back").performClick()
         composeRule.onNodeWithContentDescription("Back").performClick()
 
         composeRule.onNodeWithContentDescription("Back").performClick()
